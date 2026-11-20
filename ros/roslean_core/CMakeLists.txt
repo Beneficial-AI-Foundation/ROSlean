@@ -136,8 +136,14 @@ install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 # against the install tree alone.
 install(DIRECTORY "${LEAN_INCLUDE_DIR}/lean"
   DESTINATION include/${PROJECT_NAME}/lean_sdk)
-install(FILES "${LEAN_SYSROOT}/LICENSE" DESTINATION share/${PROJECT_NAME}/lean_sdk OPTIONAL)
-install(DIRECTORY "${LEAN_SYSROOT}/LICENSES" DESTINATION share/${PROJECT_NAME}/lean_sdk OPTIONAL)
+# Licences of Lean and of the libraries linked into libroslean_core.
+foreach(_lic LICENSE LICENSES)
+  if(IS_DIRECTORY "${LEAN_SYSROOT}/${_lic}")
+    install(DIRECTORY "${LEAN_SYSROOT}/${_lic}" DESTINATION share/${PROJECT_NAME}/lean_sdk)
+  elseif(EXISTS "${LEAN_SYSROOT}/${_lic}")
+    install(FILES "${LEAN_SYSROOT}/${_lic}" DESTINATION share/${PROJECT_NAME}/lean_sdk)
+  endif()
+endforeach()
 
 if(BUILD_TESTING)
   # Checks the C++ wrapper against the library, without ROS.

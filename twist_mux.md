@@ -20,7 +20,7 @@ rule. The node accepts the same configurations as upstream `twist_mux` 4.5 (exce
 non-finite or absurdly large timeouts, SPEC D5) and
 makes the same decisions in every comparison run so far; the one known
 exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
-Built and tested on macOS arm64 only; Linux is untested.
+Built and tested on macOS arm64 (pixi) and on Linux arm64 (Docker, Ubuntu 24.04 with ROS from apt).
 
 **Set-up.** Install [elan](https://github.com/leanprover/elan) (Lean) and
 [pixi](https://pixi.sh) (ROS 2 Jazzy from RoboStack) and put both on `PATH`.
@@ -32,6 +32,8 @@ pixi run test      # C interface tests, then both nodes side by side against ups
 pixi run prove     # check every theorem (first run fetches Mathlib)
 pixi run demo      # turtlesim: planner, keyboard teleop and an e-stop lock
 ```
+
+On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean at run time (see the README).
 
 **Reading order.**
 
@@ -166,7 +168,7 @@ Decisions taken:
 - [x] Silence: match the original (publish nothing). A timer and a zero command stay a possible extension.
 - [x] Equal priorities: reproduce the original (first live input in handle order wins).
 
-Still open: Linux build and deployment, a Gazebo/Nav2 demo, and CI for the ROS packages (the GitHub workflows check the Lean proofs only).
+Still open: a Gazebo/Nav2 demo, and CI for the ROS packages (the GitHub workflows check the Lean proofs only).
 
 ## Sources
 

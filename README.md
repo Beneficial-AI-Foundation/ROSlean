@@ -13,9 +13,10 @@ velocity command sources by priority, freshness and locks.
 
 | Path | Contents |
 | --- | --- |
-| `ROSleanCore/` | Lean, no Mathlib. The executable model (`Mux.lean`) and its C interface (`FFI.lean`). Compiled to a shared library that the node loads. |
+| `ROSleanCore/` | Lean, no Mathlib. The executable model (`Mux.lean`) and its C interface (`FFI.lean`). Compiled to C and linked into the library that the node loads. |
 | `ROSlean/` | Lean + Mathlib. Theorems about `ROSleanCore`. Never linked into a node. |
-| `ros/roslean_core` | Builds the Lean library with lake and exposes it to ROS packages: CMake target, C++ wrapper, FFI tests. |
+| `ros/roslean_core` | Compiles the C that Lean generates and links it with the Lean runtime into one self-contained library, `libroslean_core`; C++ wrapper, FFI tests. |
+| `docker/` | Linux build and run-time image. |
 | `ros/roslean_twist_mux` | The node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
 
@@ -24,7 +25,8 @@ velocity command sources by priority, freshness and locks.
 Requires [elan](https://github.com/leanprover/elan) and
 [pixi](https://pixi.sh), both on `PATH`. The ROS 2 Jazzy environment
 (RoboStack, about 1 GB) is installed into `.pixi/` on first use, and the first
-build also downloads Mathlib. Verified on macOS arm64 only.
+build also downloads Mathlib. Verified on macOS arm64 this way; on Linux the
+verified route is the Docker build below.
 
 ```sh
 pixi run build     # lake build of the core + colcon build of the ROS packages
@@ -39,6 +41,33 @@ Run the node the same way as upstream:
 pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_mux \
   --ros-args --params-file ros/roslean_twist_mux/config/example.yaml'
 ```
+
+## Linux and deployment
+
+Lean is needed to build, not to run. `roslean_core` installs a single
+library, `libroslean_core` (about 6 MB on Linux), that contains the compiled
+model, the Lean runtime and Lean's standard library and depends only on the
+C library. The install tree does not refer to the Lean toolchain or to this
+checkout, so it can be copied to another machine of the same OS and
+architecture that has ROS 2 Jazzy.
+
+```sh
+docker build -f docker/Dockerfile -t roslean-twist-mux .
+docker run --rm --network host roslean-twist-mux                # example config
+docker run --rm --network host -v $PWD/my.yaml:/cfg.yaml roslean-twist-mux \
+  ros2 run roslean_twist_mux twist_mux --ros-args --params-file /cfg.yaml
+```
+
+The image is built in two stages on the official `ros:jazzy-ros-base`
+(Ubuntu 24.04, ROS from apt). The first installs Lean, builds the packages,
+runs all tests including the comparison with apt's `ros-jazzy-twist-mux`, and
+checks that the install tree is self-contained; the build fails if any of
+that fails. The final image holds ROS and the install tree only.
+`--build-arg RUN_TESTS=0` skips the tests. Verified on linux/arm64.
+
+Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
+`colcon build --base-paths ros` in this directory, which is what the
+Dockerfile does.
 
 ## Demo
 

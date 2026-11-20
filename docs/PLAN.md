@@ -18,7 +18,8 @@ properties, plus a reusable Lean-to-ROS shim.
 
 ```
 ROSleanCore/   Lean, no Mathlib. Executable model: Config, State, Event, step.
-               Built as a shared library and loaded by the ROS node.
+               Lake compiles it to C; `ros/roslean_core` links that C with the
+               Lean runtime into one shared library, which the node loads.
 ROSlean/       Lean + Mathlib. Theorems about ROSleanCore. Never linked into a node.
 ros/<pkg>/     ament_cmake packages. C++ shim only: subscriptions, parameters,
                clock, publishing. No decision logic.
@@ -50,11 +51,15 @@ agent; the findings and what was done about them are in
   template: they run `lake build` (the proofs) and a docs deployment that
   needs GitHub Pages enabled. Nothing in CI builds the ROS packages or runs
   the tests.
-- **Linux.** Nothing has been built or run on Linux. The CMake rpath handling
-  for Linux is a guess (marked UNVERIFIED in `lean_core.cmake`).
-- **Deployment.** The node loads the Lean runtime from the elan toolchain and
-  the core library from `.lake/build`; the install tree is not relocatable.
-  Static linking is the intended fix.
+- **Linux beyond the container.** The Docker build (`docker/Dockerfile`,
+  Ubuntu 24.04, apt ROS, linux/arm64) builds, passes all tests against
+  apt's upstream `twist_mux` and yields a self-contained install tree. Not
+  tried: Linux through pixi/RoboStack, and a build without network access.
+- **Packaging.** No Debian or conda package. A ROS build farm release would
+  need the generated C and the Lean runtime vendored, since the farm has
+  neither Lean nor network. The Docker build also clones Mathlib, which the
+  core does not use, because the core and the proofs share one lake package;
+  splitting them would remove that.
 - **Gazebo / Nav2 demo.** `ros-gz-sim` exists on RoboStack for macOS arm64
   but was not tried; the demo uses turtlesim and a scripted planner.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
@@ -70,24 +75,26 @@ These changed the plan above.
    that imports Mathlib into a node is impractical, so the model and the proofs
    live in two `lean_lib`s. This is why the architecture splits `ROSleanCore`
    from `ROSlean`.
-2. **Lake prefixes names with the package.** The library is
-   `libROSlean_ROSleanCore.dylib` and the initialiser is
+2. **Lake prefixes names with the package.** The initialiser is
    `initialize_ROSlean_ROSleanCore(uint8_t builtin)`, with one argument.
    Older tutorials show a different name and a second `world` argument. The
    generated C in `.lake/build/ir/` is the authority.
-3. **The core library does not carry the Lean runtime.** Lake builds it with
-   undefined runtime symbols, so the node itself must link `libleanshared`
-   and carry an rpath to the elan toolchain. This works for development but
-   the binary is not relocatable. Deploying to a robot needs either static
-   linking of `libleanrt` / `libInit` or shipping the toolchain libraries;
-   this is new work and has not been done.
+3. **The generated C is not standalone; link the runtime statically.** A
+   library built by lake has undefined runtime symbols, and the spike made
+   the node load the 189 MB `libleanshared` from the elan toolchain through
+   an absolute rpath. That worked for development but the install tree could
+   not be copied anywhere. Since 2026-11-20 `roslean_core` compiles the
+   generated C itself and links it with the toolchain's static `libInit`,
+   `libleanrt`, GMP, libuv and (on Linux) libc++ into `libroslean_core`
+   (4 to 6 MB), exporting only `roslean_*`, `initialize_ROSlean_*` and
+   `lean_*`. The Lean C headers are installed next to it. Lean is then a
+   build-time dependency only.
 4. **On macOS the node aborts at load unless unused dylibs are stripped.**
    ROS message targets pull in `*_rosidl_generator_py` libraries that expect
-   Python symbols from the host process. `-Wl,-dead_strip_dylibs` fixes it.
-   The CMake logic for this and for finding Lean lives in
-   `ros/roslean_core/cmake/lean_core.cmake`.
-5. **colcon does not know about Lean.** `roslean_core`'s CMake now runs
-   `lake build ROSleanCore:shared` on every build. A changed `@[export]`
+   Python symbols from the host process. `-Wl,-dead_strip_dylibs` fixes it;
+   `roslean_core` passes it on to its dependants.
+5. **colcon does not know about Lean.** `roslean_core`'s CMake runs
+   `lake build ROSleanCore` on every build. A changed `@[export]`
    signature used to go unnoticed by C++; `roslean_core` now compiles
    `ffi.h` against the Lean-generated C, so a mismatch fails the build.
    One blind spot remains: Lean passes `Int64` as `uint64_t`, so signedness
@@ -103,9 +110,10 @@ These changed the plan above.
 
 - **Simulator on macOS.** Gazebo and Nav2 under RoboStack on osx-arm64 are
   unverified; the demo uses turtlesim.
-- **Linux parity.** Everything so far is verified on macOS arm64 only.
-  `pixi.toml` lists Linux platforms, but the rpath and dylib handling in
-  CMake has not been exercised there.
+- **libc++ next to libstdc++.** On Linux `libroslean_core.so` contains a
+  static copy of Lean's libc++ while ROS uses libstdc++. Its symbols are
+  hidden and the tests pass, but this is the part most likely to need care
+  on another distribution or compiler.
 - **Thin proofs.** As noted in the scope doc; the pipeline and shim are the
   main deliverable.
 
@@ -129,3 +137,8 @@ These changed the plan above.
     in the model, no theorems tying the C interface to the model, two
     confounded test expectations, and one false theorem attempt of mine was
     caught by Lean itself.
+13. **"It compiles to C" is true and is not the hard part.** The generated C
+    built unchanged with gcc on Ubuntu. What deployment needed was the
+    runtime linked in statically (lesson 3), an export list so that the
+    embedded libc++, GMP and libuv stay private, and a relative rpath. With
+    those the first Linux build passed every test.
