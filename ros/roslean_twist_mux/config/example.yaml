@@ -1,0 +1,29 @@
+# Example configuration. Same format as upstream twist_mux, with one extra
+# rule: input priorities must be pairwise distinct (docs/SPEC.md, D1).
+# Timeouts are in seconds and must be written as floating point (0.0, not 0).
+twist_mux:
+  ros__parameters:
+    use_stamped: true
+    topics:
+      navigation:
+        topic   : nav_vel
+        timeout : 0.5
+        priority: 10
+      keyboard:
+        topic   : key_vel
+        timeout : 0.5
+        priority: 90
+      joystick:
+        topic   : joy_vel
+        timeout : 0.5
+        priority: 100
+    locks:
+      pause:
+        topic   : pause_navigation
+        timeout : 0.0
+        # Same priority as the joystick, so it does not block it.
+        priority: 100
+      e_stop:
+        topic   : e_stop
+        timeout : 0.0
+        priority: 255

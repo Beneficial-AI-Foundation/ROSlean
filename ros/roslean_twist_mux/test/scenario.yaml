@@ -1,0 +1,32 @@
+# Configuration for test/scenario.py. Valid for both this package and
+# upstream twist_mux (input priorities are distinct).
+twist_mux:
+  ros__parameters:
+    use_stamped: true
+    topics:
+      navigation:
+        topic   : nav_vel
+        timeout : 0.5
+        priority: 10
+      keyboard:
+        topic   : key_vel
+        timeout : 0.5
+        priority: 90
+      joystick:
+        topic   : joy_vel
+        timeout : 0.5
+        priority: 100
+    locks:
+      watchdog:
+        # Has a timeout: a silent publisher locks everything below 50.
+        topic   : watchdog
+        timeout : 0.4
+        priority: 50
+      pause:
+        topic   : pause_navigation
+        timeout : 0.0
+        priority: 100
+      e_stop:
+        topic   : e_stop
+        timeout : 0.0
+        priority: 255
