@@ -33,6 +33,18 @@ add_custom_target(roslean_core_lake ALL
 
 include(cmake/lean_core.cmake)
 
+# Fails the build if include/roslean_core/ffi.h disagrees with the Lean
+# exports. List every generated file that defines an exported function.
+foreach(_gen ROSleanCore ROSleanCore/Noop ROSleanCore/FFI)
+  string(MAKE_C_IDENTIFIER "check_signatures_${_gen}" _tgt)
+  add_library(${_tgt} OBJECT test/check_signatures.c)
+  target_compile_definitions(${_tgt} PRIVATE "GENERATED_C=\"${_gen}.c\"")
+  target_include_directories(${_tgt} PRIVATE include "${ROSLEAN_ROOT}/.lake/build/ir")
+  target_include_directories(${_tgt} SYSTEM PRIVATE "${LEAN_INCLUDE_DIR}")
+  target_compile_options(${_tgt} PRIVATE -w)  # generated code
+  add_dependencies(${_tgt} roslean_core_lake)
+endforeach()
+
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 install(FILES cmake/lean_core.cmake DESTINATION share/${PROJECT_NAME}/cmake)
 

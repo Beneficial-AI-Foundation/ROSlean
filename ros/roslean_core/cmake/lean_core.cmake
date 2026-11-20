@@ -3,23 +3,26 @@
 # CMakeLists.txt and, after installation, by every package that calls
 # `find_package(roslean_core)`.
 #
-# Requires ROSLEAN_ROOT (root of the lake project). Optional: LEAN_SYSROOT.
+# Requires ROSLEAN_ROOT (root of the lake project).
 
 if(TARGET roslean_core::lean)
   return()
 endif()
 
-if(NOT LEAN_SYSROOT)
-  # Run inside the lake project so elan picks the version pinned in lean-toolchain.
-  find_program(LEAN_EXECUTABLE lean HINTS "$ENV{HOME}/.elan/bin" REQUIRED)
-  execute_process(
-    COMMAND "${LEAN_EXECUTABLE}" --print-prefix
-    WORKING_DIRECTORY "${ROSLEAN_ROOT}"
-    OUTPUT_VARIABLE LEAN_SYSROOT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    COMMAND_ERROR_IS_FATAL ANY)
-endif()
-set(LEAN_SYSROOT "${LEAN_SYSROOT}" CACHE PATH "Lean toolchain prefix")
+# The toolchain is whatever `lean-toolchain` pins. Recompute it on every
+# configure, and re-configure when the pin changes, so that the headers and
+# runtime used for C++ never lag behind the toolchain that lake builds with.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ROSLEAN_ROOT}/lean-toolchain")
+find_program(LEAN_EXECUTABLE lean HINTS "$ENV{HOME}/.elan/bin" REQUIRED)
+execute_process(
+  COMMAND "${LEAN_EXECUTABLE}" --print-prefix
+  WORKING_DIRECTORY "${ROSLEAN_ROOT}"
+  OUTPUT_VARIABLE LEAN_SYSROOT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  COMMAND_ERROR_IS_FATAL ANY)
+unset(LEAN_INCLUDE_DIR CACHE)
+unset(ROSLEAN_CORE_LIBRARY CACHE)
+unset(LEAN_SHARED_LIBRARY CACHE)
 
 set(_lean_libdir "${LEAN_SYSROOT}/lib/lean")
 set(_core_libdir "${ROSLEAN_ROOT}/.lake/build/lib")
@@ -48,6 +51,13 @@ if(APPLE)
   # Drop every dylib the executable does not actually reference.
   set_property(TARGET roslean_core::lean PROPERTY
     INTERFACE_LINK_OPTIONS "-Wl,-dead_strip_dylibs")
+elseif(UNIX)
+  # UNVERIFIED (not yet built on Linux). The core library depends on further
+  # Lean libraries that are found only through the executable's rpath. The
+  # default DT_RUNPATH does not apply to such transitive dependencies; the
+  # older DT_RPATH does.
+  set_property(TARGET roslean_core::lean PROPERTY
+    INTERFACE_LINK_OPTIONS "-Wl,--disable-new-dtags")
 endif()
 
 # The Lean libraries live outside any install tree. Executables linking
