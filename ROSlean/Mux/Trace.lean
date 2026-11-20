@@ -205,6 +205,44 @@ theorem init_reads (cfg : Config) (k : Nat) :
 
 /-! ## Statements about event sequences only -/
 
+/-- **Decision as a function of history.** After any sequence of events `es`
+from start-up, a message on input `i` at time `t` is forwarded iff
+
+* `i` is a configured input with positive priority;
+* every lock that is *locked* has priority at most `i`'s, where a lock is
+  locked if its last message carried `true`, or it has a timeout and its last
+  message (or start-up, time 0, if there was none) is more than the timeout
+  before `t`;
+* every other input that is *live* has priority strictly below `i`'s, where
+  an input is live if it never expires or its last message (or time 0) is at
+  most its timeout before `t`.
+
+Nothing here refers to internal state. "Before `t`" is arithmetic on the
+recorded clock readings; no monotonicity of the clock is assumed (A2). -/
+theorem run_forward_iff_history (cfg : Config) (es : List Event) (i t : Nat) :
+    (step cfg (run cfg (State.init cfg) es).1 (.input i t)).2 = true ↔
+    ∃ hi, cfg.inputs[i]? = some hi ∧ 0 < hi.priority ∧
+      (∀ j hj, cfg.locks[j]? = some hj →
+        ((0 < hj.timeout ∧ lastLockStamp j es 0 + hj.timeout < t) ∨
+          lastLockValue j es false = true) →
+        hj.priority ≤ hi.priority) ∧
+      (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i →
+        (hk.timeout = 0 ∨ t ≤ lastInputStamp k es 0 + hk.timeout) →
+        hk.priority < hi.priority) := by
+  rw [forward_iff]
+  refine exists_congr fun hi => and_congr_right fun _ => and_congr_right fun _ => and_congr ?_ ?_
+  · refine forall_congr' fun j => forall_congr' fun hj => forall_congr' fun hg => ?_
+    have hl := (List.getElem?_eq_some_iff.mp hg).1
+    rw [lockActive_iff, run_lockStamp _ _ _ _ hl, run_lockValue _ _ _ _ hl,
+      (init_reads cfg j).2.1, (init_reads cfg j).2.2]
+    simp [hg]
+  · refine forall_congr' fun k => forall_congr' fun hk => forall_congr' fun hg =>
+      forall_congr' fun _ => ?_
+    have hl := (List.getElem?_eq_some_iff.mp hg).1
+    rw [inputLive_iff, run_inputStamp _ _ _ _ hl, (init_reads cfg k).1]
+    simp only [hg, Option.some.injEq, exists_eq_left']
+    constructor <;> intro h h' <;> apply h <;> omega
+
 /-- **Dead lock publisher, over a run from start-up.** Take any sequence of
 events `es` followed by a message on input `i` at time `t`. If some lock `j`
 with a timeout and a priority above `i`'s received its last message (or none
@@ -237,8 +275,9 @@ theorem run_not_forward_of_lock_true (cfg : Config) (es : List Event) (i t : Nat
   omega
 
 /-- **Priority, over a run from start-up.** If some other input `k` of higher
-priority received a message at most its timeout before `t` (or never
-expires), a message on input `i` at time `t` is not forwarded. -/
+priority never expires, or its last message (or start-up, time 0, if it has
+never spoken) is at most its timeout before `t`, a message on input `i` at
+time `t` is not forwarded. -/
 theorem run_not_forward_of_higher_live (cfg : Config) (es : List Event) (i t : Nat)
     (hi : Handle) (hgi : cfg.inputs[i]? = some hi)
     (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk) (hne : k ≠ i)

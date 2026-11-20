@@ -24,8 +24,10 @@ structure Handle where
   timeout : Nat
   deriving Repr, DecidableEq
 
-/-- Node configuration. Input priorities are pairwise distinct (D1), so the
-selected input is determined by the config and never by list order. -/
+/-- Node configuration. Input priorities are pairwise distinct (D1), so
+selection cannot depend on list order: `ROSlean.Mux.select_eq_some_iff`
+characterises the selected input without reference to it. Use
+`Config.validate` to build one from raw handles; it also clamps priorities. -/
 structure Config where
   inputs : List Handle
   locks : List Handle

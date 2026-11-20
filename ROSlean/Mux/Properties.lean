@@ -236,19 +236,32 @@ theorem forward_of_others_expired (cfg : Config) (st : State) (i t : Nat)
     rw [hgk] at hgk'; cases hgk'
     exact absurd h hnot
 
-/-- An input stays live for exactly `timeout` after its last message: it
-suppresses lower inputs at `stamp + timeout` and no longer at
-`stamp + timeout + 1` (R4, strict comparison). -/
-theorem inputLive_boundary (cfg : Config) (st : State) (k : Nat) (hk : Handle)
+/-- An input with a timeout is live exactly up to and including
+`stamp + timeout` (R4, strict comparison). -/
+theorem inputLive_iff_le (cfg : Config) (st : State) (now k : Nat) (hk : Handle)
     (hgk : cfg.inputs[k]? = some hk) (hto : 0 < hk.timeout) :
-    inputLive cfg st (st.inputStamp k + hk.timeout) k = true ∧
-    inputLive cfg st (st.inputStamp k + hk.timeout + 1) k = false := by
-  constructor
-  · exact (inputLive_iff ..).mpr ⟨hk, hgk, by omega⟩
-  · rw [Bool.eq_false_iff]
-    intro h
-    obtain ⟨hk', hgk', hnot⟩ := (inputLive_iff ..).mp h
-    rw [hgk] at hgk'; cases hgk'
-    exact hnot ⟨hto, by omega⟩
+    inputLive cfg st now k = true ↔ now ≤ st.inputStamp k + hk.timeout := by
+  rw [inputLive_iff]; simp only [hgk, Option.some.injEq, exists_eq_left']; omega
+
+/-- **A lock above every input freezes everything.** If lock `j` has a
+priority strictly above every input's and its last value is `true`, no message
+is forwarded. This is what an e-stop lock relies on; note that it needs the
+lock to be *strictly* above all inputs, and priorities are clamped to 255, so
+an input at 255 can never be frozen (R8, R10a). -/
+theorem not_forward_of_top_lock (cfg : Config) (st : State) (j : Nat) (hj : Handle)
+    (hgj : cfg.locks[j]? = some hj) (hval : st.lockValue j = true)
+    (htop : ∀ (k : Nat) (hk : Handle), cfg.inputs[k]? = some hk → hk.priority < hj.priority)
+    (e : Event) :
+    (step cfg st e).2 = false := by
+  cases e with
+  | lock j' v t => exact step_lock_snd ..
+  | input i t =>
+    by_contra hfwd
+    have hfwd' : (step cfg st (.input i t)).2 = true := by simpa using hfwd
+    obtain ⟨hi, hgi, -⟩ := forward_configured cfg st i t hfwd'
+    have := forward_lock cfg st i t hfwd' hi hgi j hj hgj
+      (lockActive_of_value cfg st t j hj hgj hval)
+    have := htop i hi hgi
+    omega
 
 end ROSlean.Mux

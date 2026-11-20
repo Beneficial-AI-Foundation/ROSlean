@@ -45,6 +45,10 @@ def decisions (es : List Event) : List Bool := (run cfg (State.init cfg) es).2
 def cfgEq : Config :=
   { inputs := [⟨10, 500⟩, ⟨100, 500⟩], locks := [⟨100, 200⟩], inputs_distinct := by decide }
 
+/-- One input and a lock above it with a timeout of 200. -/
+def cfgLock : Config :=
+  { inputs := [⟨100, 500⟩], locks := [⟨200, 200⟩], inputs_distinct := by decide }
+
 def decisionsEq (es : List Event) : List Bool := (run cfgEq (State.init cfgEq) es).2
 
 -- Lock explicitly released: planner drives. Lock publisher then goes silent
@@ -52,11 +56,13 @@ def decisionsEq (es : List Event) : List Bool := (run cfgEq (State.init cfgEq) e
 #guard decisionsEq [.lock 0 false 1000, .input 0 1100, .input 0 1201, .input 1 1202]
   = [false, true, false, true]
 
--- A lock with a timeout that has never published: not locked while the clock
--- is below its timeout, locked after, released by the first `false`.
-#guard decisionsEq [.input 0 200, .input 0 201, .lock 0 false 300, .input 0 301]
-  = [false, false, false, false]  -- clock near 0: teleop (never heard) still counts as live
-#guard decisionsEq [.input 0 1000, .lock 0 false 1001, .input 0 1002] = [false, false, true]
+-- A never-heard lock with a timeout, as seen by teleop on a clock near 0 (so
+-- that nothing else interferes). `cfgLock` has only teleop and a lock above it.
+-- Not locked while the clock is within the lock's timeout (200), locked
+-- after, and released by the first `false`.
+#guard (run cfgLock (State.init cfgLock)
+    [.input 0 200, .input 0 201, .lock 0 false 300, .input 0 301, .input 0 501]).2
+  = [true, false, false, true, false]
 
 -- The clock jumps backwards: nothing expires, stamps are overwritten (A2).
 #guard decisions [.input 1 1000, .input 0 900, .input 0 1400, .input 0 1501]

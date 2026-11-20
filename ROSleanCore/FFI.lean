@@ -37,15 +37,23 @@ structure Mux where
 @[export roslean_mux_builder_new]
 def builderNew (_ : Unit) : Builder := { inputs := [], locks := [] }
 
-/-- Appends an input; its index is the number of inputs added before it. -/
+/-- Builds a handle from the raw parameter values: a negative priority becomes
+0 (R1; the upper clamp is applied by `Config.validate`), and a timeout that is
+zero or negative becomes 0, i.e. never expires (R2). -/
+def handleOfRaw (priority timeoutNs : Int64) : Handle :=
+  ⟨priority.toInt.toNat, timeoutNs.toInt.toNat⟩
+
+/-- Appends an input; its index is the number of inputs added before it.
+`priority` is the raw parameter value and `timeoutNs` the timeout truncated to
+nanoseconds. -/
 @[export roslean_mux_builder_add_input]
-def builderAddInput (b : Builder) (priority timeoutNs : UInt64) : Builder :=
-  { b with inputs := b.inputs ++ [⟨priority.toNat, timeoutNs.toNat⟩] }
+def builderAddInput (b : Builder) (priority timeoutNs : Int64) : Builder :=
+  { b with inputs := b.inputs ++ [handleOfRaw priority timeoutNs] }
 
 /-- Appends a lock; its index is the number of locks added before it. -/
 @[export roslean_mux_builder_add_lock]
-def builderAddLock (b : Builder) (priority timeoutNs : UInt64) : Builder :=
-  { b with locks := b.locks ++ [⟨priority.toNat, timeoutNs.toNat⟩] }
+def builderAddLock (b : Builder) (priority timeoutNs : Int64) : Builder :=
+  { b with locks := b.locks ++ [handleOfRaw priority timeoutNs] }
 
 /-- Error codes of `builderCheck`. -/
 def errorCode : Except ConfigError Config → UInt8
