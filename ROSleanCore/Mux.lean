@@ -14,8 +14,11 @@ namespace ROSleanCore.Mux
 /-- Node-clock time in nanoseconds (D2). -/
 abbrev Time := Nat
 
-/-- Priority; higher wins. The shim clamps to 0..255 as upstream does (R1). -/
+/-- Priority; higher wins. -/
 abbrev Priority := Nat
+
+/-- Largest priority; larger values are clamped to it (R1). -/
+def maxPriority : Priority := 255
 
 /-- Static configuration of one input or one lock (R1). -/
 structure Handle where
@@ -36,8 +39,15 @@ inductive ConfigError where
   | duplicateInputPriority
   deriving Repr, DecidableEq
 
-/-- Validates a proposed configuration (D1). -/
+/-- R1: clamps the priority to `maxPriority`. (Negative priorities cannot be
+represented; the shim maps them to 0.) -/
+def Handle.clamp (h : Handle) : Handle := { h with priority := min h.priority maxPriority }
+
+/-- Builds a configuration from raw handles: clamps priorities (R1), then
+rejects duplicate input priorities (D1). -/
 def Config.validate (inputs locks : List Handle) : Except ConfigError Config :=
+  let inputs := inputs.map Handle.clamp
+  let locks := locks.map Handle.clamp
   if h : (inputs.map (·.priority)).Nodup then
     .ok { inputs, locks, inputs_distinct := h }
   else
@@ -46,8 +56,10 @@ def Config.validate (inputs locks : List Handle) : Except ConfigError Config :=
 /-- The configuration with no inputs and no locks. -/
 def Config.empty : Config := { inputs := [], locks := [], inputs_distinct := .nil }
 
-/-- Dynamic state (R3). Handles are addressed by their index in the config;
-an index with no entry reads as the initial value. -/
+/-- Dynamic state (R3). Handles are addressed by their index in the config.
+The lists need not have the config's length: an index with no entry reads as
+the initial value, and writes extend the list (`setPad`), so no update is ever
+lost. -/
 structure State where
   /-- Arrival time of the last message on each input. -/
   inputStamps : List Time
@@ -62,6 +74,11 @@ def State.init (cfg : Config) : State where
   inputStamps := List.replicate cfg.inputs.length 0
   lockStamps := List.replicate cfg.locks.length 0
   lockValues := List.replicate cfg.locks.length false
+
+/-- Writes `v` at index `i`, first extending the list with `d` if it is too
+short. Together with `List.getD · · d` this behaves as a total map. -/
+def setPad {α : Type} (l : List α) (i : Nat) (v d : α) : List α :=
+  if i < l.length then l.set i v else l ++ List.replicate (i - l.length) d ++ [v]
 
 def State.inputStamp (st : State) (i : Nat) : Time := st.inputStamps.getD i 0
 def State.lockStamp (st : State) (j : Nat) : Time := st.lockStamps.getD j 0
@@ -92,23 +109,25 @@ def inputLive (cfg : Config) (st : State) (now : Time) (k : Nat) : Bool :=
   | none => false
 
 /-- R8, negated: input `k` is live and its priority is not below the lock
-priority. -/
-def unmasked (cfg : Config) (st : State) (now : Time) (k : Nat) : Bool :=
+priority `lp`. -/
+def unmasked (cfg : Config) (st : State) (now : Time) (lp : Priority) (k : Nat) : Bool :=
   match cfg.inputs[k]? with
-  | some h => inputLive cfg st now k && lockPriority cfg st now ≤ h.priority
+  | some h => inputLive cfg st now k && lp ≤ h.priority
   | none => false
 
 /-- One iteration of upstream's selection loop: keep the best `(priority,
 index)` seen so far, replacing it only on a strictly greater priority. -/
-def selectStep (cfg : Config) (st : State) (now : Time)
+def selectStep (cfg : Config) (st : State) (now : Time) (lp : Priority)
     (best : Priority × Option Nat) (hk : Handle × Nat) : Priority × Option Nat :=
-  if unmasked cfg st now hk.2 && best.1 < hk.1.priority then (hk.1.priority, some hk.2) else best
+  if unmasked cfg st now lp hk.2 && best.1 < hk.1.priority then (hk.1.priority, some hk.2)
+  else best
 
 /-- R9: the index of the selected input, if any. A literal transcription of
 the loop in upstream `TwistMux::hasPriority`: start from priority 0 and no
 selection, and scan the inputs in order. -/
 def select (cfg : Config) (st : State) (now : Time) : Option Nat :=
-  (cfg.inputs.zipIdx.foldl (selectStep cfg st now) (0, none)).2
+  let lp := lockPriority cfg st now
+  (cfg.inputs.zipIdx.foldl (selectStep cfg st now lp) (0, none)).2
 
 /-- What the node reacts to. -/
 inductive Event where
@@ -119,14 +138,20 @@ inductive Event where
   deriving Repr, DecidableEq
 
 /-- R11, R12: process one event. The boolean says whether to forward the
-message that was just received; it is always `false` for lock events. -/
+message that was just received; it is always `false` for lock events. An
+event for an index that is not in the config changes nothing. -/
 def step (cfg : Config) (st : State) : Event → State × Bool
   | .input i t =>
-    let st' := { st with inputStamps := st.inputStamps.set i t }
-    (st', select cfg st' t == some i)
+    if i < cfg.inputs.length then
+      let st' := { st with inputStamps := setPad st.inputStamps i t 0 }
+      (st', select cfg st' t == some i)
+    else (st, false)
   | .lock j value t =>
-    ({ st with lockStamps := st.lockStamps.set j t, lockValues := st.lockValues.set j value },
-      false)
+    if j < cfg.locks.length then
+      ({ st with
+          lockStamps := setPad st.lockStamps j t 0
+          lockValues := setPad st.lockValues j value false }, false)
+    else (st, false)
 
 /-- Runs a sequence of events from a state, returning the final state and the
 forwarding decision for each event. -/

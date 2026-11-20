@@ -35,8 +35,9 @@ def decisions (es : List Event) : List Bool := (run cfg (State.init cfg) es).2
     .lock 0 false 1040, .input 1 1050]
   = [true, false, false, false, false, true]
 
--- At start-up (clock still within the timeouts) both inputs count as live, so
--- the planner is suppressed by a teleop that has never spoken (R3, R4).
+-- With a clock near 0 (simulation time just started) both inputs count as
+-- live, so the planner is suppressed by a teleop that has never spoken (R3,
+-- R4). On a wall clock this cannot happen: every stamp-0 handle has expired.
 #guard decisions [.input 0 100, .input 0 501] = [false, true]
 
 /-- A lock at the same priority as teleop blocks the planner but not teleop
@@ -51,6 +52,27 @@ def decisionsEq (es : List Event) : List Bool := (run cfgEq (State.init cfgEq) e
 #guard decisionsEq [.lock 0 false 1000, .input 0 1100, .input 0 1201, .input 1 1202]
   = [false, true, false, true]
 
+-- A lock with a timeout that has never published: not locked while the clock
+-- is below its timeout, locked after, released by the first `false`.
+#guard decisionsEq [.input 0 200, .input 0 201, .lock 0 false 300, .input 0 301]
+  = [false, false, false, false]  -- clock near 0: teleop (never heard) still counts as live
+#guard decisionsEq [.input 0 1000, .lock 0 false 1001, .input 0 1002] = [false, false, true]
+
+-- The clock jumps backwards: nothing expires, stamps are overwritten (A2).
+#guard decisions [.input 1 1000, .input 0 900, .input 0 1400, .input 0 1501]
+  = [true, false, false, true]
+
+/-- A lock strictly between the two inputs, plus a lower lock. -/
+def cfgMid : Config :=
+  { inputs := [⟨10, 500⟩, ⟨100, 500⟩], locks := [⟨5, 0⟩, ⟨50, 0⟩], inputs_distinct := by decide }
+
+-- The low lock blocks nothing. The middle lock blocks the planner only; with
+-- teleop silent and the planner masked, nothing is forwarded (R7, R8).
+#guard (run cfgMid (State.init cfgMid)
+    [.lock 0 true 1000, .input 0 1001, .lock 1 true 1002, .input 0 1003, .input 1 1004,
+     .lock 1 false 1005, .input 0 1600]).2
+  = [false, true, false, false, true, false, true]
+
 /-- A never-expiring input (timeout 0) suppresses lower ones for ever without
 having sent anything (R5), and a priority-0 input is never forwarded (R9). -/
 def cfgOdd : Config :=
@@ -62,8 +84,15 @@ def cfgOdd : Config :=
 -- Out-of-range indices are never forwarded.
 #guard decisions [.input 7 1000, .lock 7 true 1001, .input 0 1002] = [false, false, true]
 
+-- A state with missing entries loses no updates: the lock is recorded.
+#guard (run cfg ⟨[], [], []⟩ [.lock 0 true 10, .input 0 1000]).2 = [false, false]
+#guard (run cfg ⟨[], [], []⟩ [.input 0 1000, .input 0 1001]).2 = [true, true]
+
 -- Duplicate input priorities are rejected (D1); a lock may share a priority.
+-- Priorities are clamped to 255 first, which can create duplicates (R1).
 #guard (Config.validate [⟨10, 0⟩, ⟨10, 5⟩] []).toOption.isNone
+#guard (Config.validate [⟨300, 0⟩, ⟨400, 0⟩] []).toOption.isNone
+#guard ((Config.validate [⟨300, 0⟩] [⟨999, 0⟩]).toOption.map (·.locks)) = some [⟨255, 0⟩]
 #guard (Config.validate [⟨10, 0⟩, ⟨20, 5⟩] [⟨10, 0⟩, ⟨10, 0⟩]).toOption.isSome
 
 end ROSlean.Mux.Examples
