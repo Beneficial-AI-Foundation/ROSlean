@@ -1,8 +1,9 @@
-# Configuration for test/scenario.py. Valid for both this package and
-# upstream twist_mux (input priorities are distinct).
+# Configuration for the main scenarios in test/scenario.py. Valid for both
+# this package and upstream twist_mux (input priorities are distinct).
+# Timeouts are binary fractions so that upstream's floating-point arithmetic
+# is exact at the boundaries the scenarios probe.
 twist_mux:
   ros__parameters:
-    use_stamped: true
     topics:
       navigation:
         topic   : nav_vel
@@ -20,7 +21,7 @@ twist_mux:
       watchdog:
         # Has a timeout: a silent publisher locks everything below 50.
         topic   : watchdog
-        timeout : 0.4
+        timeout : 0.25
         priority: 50
       pause:
         topic   : pause_navigation

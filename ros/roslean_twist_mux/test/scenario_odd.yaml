@@ -1,0 +1,26 @@
+# Edge cases: a priority-0 input (never selected), a priority above 255
+# (clamped), a never-expiring input, and a negative timeout (never expires).
+twist_mux:
+  ros__parameters:
+    topics:
+      zero:
+        topic   : zero_vel
+        timeout : 0.5
+        priority: 0
+      low:
+        topic   : low_vel
+        timeout : 0.5
+        priority: 10
+      mid:
+        topic   : mid_vel
+        timeout : -1.0
+        priority: 20
+      sticky:
+        topic   : sticky_vel
+        timeout : 0.0
+        priority: 300
+    locks:
+      top:
+        topic   : top_lock
+        timeout : 0.0
+        priority: 255

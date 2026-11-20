@@ -63,6 +63,13 @@ public:
     }
     mux_.emplace(builder.build());  // throws roslean::ConfigError
 
+    const auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
+    if (use_stamped) {
+      pub_stamped_ = create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel_out", qos);
+    } else {
+      pub_ = create_publisher<geometry_msgs::msg::Twist>("cmd_vel_out", qos);
+    }
+
     for (uint32_t i = 0; i < inputs.size(); ++i) {
       log_handle("Topic", inputs[i]);
       if (inputs[i].priority == 0) {
@@ -89,13 +96,6 @@ public:
             mux_->on_lock(j, msg->data, now_ns());
           }));
     }
-
-    const auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
-    if (use_stamped) {
-      pub_stamped_ = create_publisher<geometry_msgs::msg::TwistStamped>("cmd_vel_out", qos);
-    } else {
-      pub_ = create_publisher<geometry_msgs::msg::Twist>("cmd_vel_out", qos);
-    }
   }
 
 private:
@@ -108,13 +108,12 @@ private:
   template<typename MsgT>
   void subscribe_input(
     uint32_t i, const std::string & topic,
-    typename rclcpp::Publisher<MsgT>::SharedPtr & pub)
+    typename rclcpp::Publisher<MsgT>::SharedPtr pub)
   {
-    // `pub` is a reference to a member that is assigned after this call.
     subs_.push_back(
       create_subscription<MsgT>(
         topic, rclcpp::SystemDefaultsQoS(),
-        [this, i, &pub](typename MsgT::ConstSharedPtr msg) {
+        [this, i, pub](typename MsgT::ConstSharedPtr msg) {
           if (mux_->on_input(i, now_ns())) {
             pub->publish(*msg);
           }
@@ -128,11 +127,7 @@ private:
     if (!get_parameter(name, param)) {
       throw std::runtime_error("could not load parameter '" + name + "'");
     }
-    try {
-      return param.get_value<T>();  // wrong type is fatal, as upstream (R14)
-    } catch (const rclcpp::ParameterTypeException & e) {
-      throw std::runtime_error("parameter '" + name + "' has the wrong type: " + e.what());
-    }
+    return param.get_value<T>();  // throws on a wrong type: fatal, as upstream (R14)
   }
 
   // Same discovery as upstream: one handle per parameter prefix under `group`.
@@ -196,10 +191,10 @@ private:
 
 int main(int argc, char * argv[])
 {
-  roslean::initialize();
   rclcpp::init(argc, argv);
   int result = EXIT_SUCCESS;
   try {
+    roslean::initialize();
     // Single-threaded: the core processes one event at a time (R16), and the
     // Lean runtime is initialised for this thread only.
     rclcpp::spin(std::make_shared<roslean_twist_mux::TwistMux>());

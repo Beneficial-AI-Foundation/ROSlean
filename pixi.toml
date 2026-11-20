@@ -15,6 +15,7 @@ ninja = "*"
 compilers = "*"
 pkg-config = "*"
 make = "*"
+ros-jazzy-twist-mux = ">=4.5.0,<5"
 
 [tasks]
 

@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Drives a twist_mux node through a fixed scenario over real ROS topics.
+"""Drives a twist_mux node through fixed scenarios over real ROS topics.
 
-Starts the node given as `<package> <executable>`, publishes commands and lock
-values, and records which commands come out on `cmd_vel_out`. Each command
-carries a unique id in `twist.linear.x`, so forwarding is observed per
-message. Prints one line per command and exits non-zero if any decision
-differs from the expectation derived from docs/SPEC.md.
+The node runs with `use_sim_time` and this script publishes `/clock`, so the
+node-clock time of every event is chosen exactly. Each command carries a
+unique id, and the script records which commands come out on `cmd_vel_out`,
+checks them against the expectation derived from docs/SPEC.md, and checks
+that a forwarded message is identical to the one sent.
 
-    scenario.py roslean_twist_mux twist_mux     # this repo's node
-    scenario.py twist_mux twist_mux             # upstream, for comparison
+    scenario.py NODE            # check NODE against the expectations
+    scenario.py NODE OTHER      # also require identical decisions from OTHER
 
-All waits are long compared with the 0.4 s / 0.5 s timeouts in scenario.yaml,
-so the outcome does not depend on scheduling jitter.
+NODE is a path to an executable, or `<package>/<executable>` (resolved with
+`ros2 pkg prefix`), e.g. `roslean_twist_mux/twist_mux` or, for upstream,
+`twist_mux/twist_mux`.
+
+The only wall-clock dependence left is that messages must be delivered within
+SETTLE seconds, and that a clock update reaches the node before the next
+message does.
 """
 
 import os
@@ -21,45 +26,173 @@ import sys
 import time
 
 import rclpy
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import Twist, TwistStamped
 from rclpy.node import Node
+from rosgraph_msgs.msg import Clock
 from std_msgs.msg import Bool
 
-CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scenario.yaml')
-SETTLE = 0.15  # s to wait for a forwarded message before deciding it was dropped
+HERE = os.path.dirname(os.path.abspath(__file__))
+SETTLE = 0.2  # s of wall time allowed for delivery
+NS = 1_000_000_000
+
+
+def s(seconds):
+    """Seconds (a binary fraction) to integer nanoseconds."""
+    ns = seconds * NS
+    assert ns == int(ns)
+    return int(ns)
+
+
+# A scenario is a list of steps:
+#   ('clock', t_ns)                    set the node clock
+#   ('lock', name, value)              publish a lock value
+#   ('cmd', name, expected, label)     publish a command; expect forwarded or not
+
+MAIN = [
+    # Clock far from 0: every never-heard handle with a timeout has expired,
+    # as on a wall clock. So the watchdog lock is locked (R5, R6).
+    ('clock', s(100)),
+    ('cmd', 'nav', False, 'nav blocked: watchdog lock (50) never heard'),
+    ('cmd', 'key', True, 'key (90) passes the watchdog lock (50)'),
+    ('clock', s(101)),
+    ('lock', 'watchdog', False),
+    ('cmd', 'nav', True, 'nav drives: watchdog fresh, key expired'),
+    ('cmd', 'key', True, 'key takes over'),
+    ('cmd', 'nav', False, 'nav suppressed by live key (watchdog fresh)'),
+    ('cmd', 'joy', True, 'joy takes over'),
+    ('cmd', 'key', False, 'key suppressed by live joy'),
+    ('lock', 'pause', True),
+    ('cmd', 'joy', True, 'pause lock (100) does not block joy (100)'),
+    ('cmd', 'key', False, 'key blocked'),
+    ('lock', 'e_stop', True),
+    ('cmd', 'joy', False, 'e_stop lock (255) blocks joy'),
+    ('cmd', 'nav', False, 'e_stop lock blocks nav'),
+    ('lock', 'e_stop', False),
+    ('cmd', 'joy', True, 'joy restored after e_stop released'),
+    ('lock', 'pause', False),
+    # joy last heard at 101, timeout 0.5; watchdog last heard at 101, timeout 0.25.
+    ('clock', s(101.25)),
+    ('lock', 'watchdog', False),
+    ('clock', s(101.5)),
+    ('cmd', 'nav', False, 'joy still live exactly at its timeout'),
+    ('lock', 'watchdog', False),
+    ('clock', s(101.5) + 1),
+    ('cmd', 'nav', True, 'joy and key expired 1 ns after their timeout'),
+    ('clock', s(101.75)),
+    ('cmd', 'nav', True, 'watchdog still fresh exactly at its timeout'),
+    ('clock', s(101.75) + 1),
+    ('cmd', 'nav', False, 'watchdog expired 1 ns after its timeout'),
+    ('lock', 'watchdog', True),
+    ('cmd', 'nav', False, 'watchdog reports true'),
+    ('lock', 'watchdog', False),
+    ('cmd', 'nav', True, 'watchdog reports false again'),
+    ('cmd', 'bogus', False, 'message on an unconfigured topic'),
+    # The clock jumps backwards (simulation reset): nothing expires (A2).
+    ('clock', s(50)),
+    ('cmd', 'nav', False, 'after a backwards jump joy (heard at 101) counts as live'),
+    ('cmd', 'joy', True, 'joy drives after the jump'),
+    ('clock', s(50.5) + 1),
+    ('cmd', 'nav', False, 'watchdog is fresh but key (heard at 101) counts as live'),
+    ('cmd', 'key', True, 'key drives: joy expired'),
+]
+
+START = [
+    # Clock near 0: never-heard handles have NOT expired yet (R3, R4).
+    ('clock', s(0.125)),
+    ('cmd', 'nav', False, 'never-heard key and joy count as live near clock 0'),
+    ('cmd', 'joy', True, 'joy drives; watchdog lock not yet expired'),
+    ('clock', s(0.375)),
+    ('cmd', 'key', False, 'key suppressed by live joy'),
+    ('clock', s(0.75)),
+    ('cmd', 'key', True, 'joy expired; key (90) passes the expired watchdog (50)'),
+    ('cmd', 'nav', False, 'nav blocked by the expired watchdog'),
+]
+
+ODD = [
+    ('clock', s(100)),
+    ('cmd', 'low', False, 'never-heard inputs without a timeout suppress low (R5)'),
+    ('cmd', 'zero', False, 'priority-0 input is never forwarded (R9)'),
+    ('cmd', 'mid', False, 'mid suppressed by never-heard sticky (timeout 0)'),
+    ('cmd', 'sticky', True, 'sticky (300, clamped to 255) drives'),
+    ('lock', 'top', True),
+    ('cmd', 'sticky', True, 'a 255 lock does not block a 255 input (R10a)'),
+    ('cmd', 'mid', False, 'mid blocked'),
+    ('clock', s(1000)),
+    ('cmd', 'sticky', True, 'still driving 900 s later'),
+    ('cmd', 'mid', False, 'sticky never expires'),
+]
+
+# name -> (config file, extra parameters, stamped?, steps)
+SCENARIOS = {
+    'main': ('scenario.yaml', [], True, MAIN),
+    'main-unstamped': ('scenario.yaml', ['use_stamped:=false'], False, MAIN),
+    'start-up': ('scenario.yaml', [], True, START),
+    'odd': ('scenario_odd.yaml', [], True, ODD),
+}
+
+INPUT_TOPICS = {
+    'nav': 'nav_vel', 'key': 'key_vel', 'joy': 'joy_vel', 'bogus': 'bogus_vel',
+    'zero': 'zero_vel', 'low': 'low_vel', 'mid': 'mid_vel', 'sticky': 'sticky_vel'}
+LOCK_TOPICS = {
+    'watchdog': 'watchdog', 'pause': 'pause_navigation', 'e_stop': 'e_stop', 'top': 'top_lock'}
+
+# A configuration that the node must refuse to start with: (description, params).
+BAD_CONFIGS = [
+    ('duplicate input priorities (D1)',
+     ['topics.a.topic:=a', 'topics.a.timeout:=0.5', 'topics.a.priority:=10',
+      'topics.b.topic:=b', 'topics.b.timeout:=0.5', 'topics.b.priority:=10']),
+    ('priorities that collide after clamping (D1)',
+     ['topics.a.topic:=a', 'topics.a.timeout:=0.5', 'topics.a.priority:=300',
+      'topics.b.topic:=b', 'topics.b.timeout:=0.5', 'topics.b.priority:=255']),
+    ('integer timeout (R14)',
+     ['topics.a.topic:=a', 'topics.a.timeout:=1', 'topics.a.priority:=10']),
+    ('missing priority (R14)',
+     ['topics.a.topic:=a', 'topics.a.timeout:=0.5']),
+    ('non-finite timeout (D5)',
+     ['topics.a.topic:=a', 'topics.a.timeout:=.nan', 'topics.a.priority:=10']),
+]
+
+
+def resolve(node):
+    if os.path.sep in node and os.path.isfile(node):
+        return node
+    package, executable = node.split('/')
+    prefix = subprocess.check_output(['ros2', 'pkg', 'prefix', package], text=True).strip()
+    return os.path.join(prefix, 'lib', package, executable)
 
 
 class Driver(Node):
 
-    def __init__(self):
+    def __init__(self, stamped):
         super().__init__('scenario_driver')
+        self.msg_type = TwistStamped if stamped else Twist
+        self.stamped = stamped
+        self.clock_pub = self.create_publisher(Clock, '/clock', 10)
         self.inputs = {
-            name: self.create_publisher(TwistStamped, topic, 10)
-            for name, topic in [('nav', 'nav_vel'), ('key', 'key_vel'), ('joy', 'joy_vel')]}
-        self.locks = {
-            name: self.create_publisher(Bool, topic, 10)
-            for name, topic in [('watchdog', 'watchdog'), ('pause', 'pause_navigation'),
-                                ('e_stop', 'e_stop')]}
-        self.received = set()
-        self.create_subscription(TwistStamped, 'cmd_vel_out', self.on_out, 10)
+            n: self.create_publisher(self.msg_type, t, 10) for n, t in INPUT_TOPICS.items()}
+        self.locks = {n: self.create_publisher(Bool, t, 10) for n, t in LOCK_TOPICS.items()}
+        self.sent = {}
+        self.received = {}  # id -> list of messages
+        self.create_subscription(self.msg_type, 'cmd_vel_out', self.on_out, 10)
         self.next_id = 1
         self.results = []  # (label, expected, forwarded)
+        self.problems = []
+
+    def twist(self, msg):
+        return msg.twist if self.stamped else msg
 
     def on_out(self, msg):
-        self.received.add(int(msg.twist.linear.x))
+        self.received.setdefault(int(self.twist(msg).linear.x), []).append(msg)
 
-    def spin_for(self, seconds, keep_watchdog=False):
+    def spin_for(self, seconds):
         end = time.monotonic() + seconds
-        last = 0.0
         while time.monotonic() < end:
-            if keep_watchdog and time.monotonic() - last > 0.1:
-                self.lock('watchdog', False, settle=0.0)
-                last = time.monotonic()
             rclpy.spin_once(self, timeout_sec=0.01)
 
-    def wait_connected(self, timeout=20.0):
+    def wait_connected(self, used_inputs, used_locks, timeout=20.0):
+        pubs = [self.inputs[n] for n in used_inputs if n != 'bogus']
+        pubs += [self.locks[n] for n in used_locks] + [self.clock_pub]
         end = time.monotonic() + timeout
-        pubs = list(self.inputs.values()) + list(self.locks.values())
         while time.monotonic() < end:
             if (all(p.get_subscription_count() > 0 for p in pubs)
                     and self.count_publishers('cmd_vel_out') > 0):
@@ -68,80 +201,120 @@ class Driver(Node):
             rclpy.spin_once(self, timeout_sec=0.05)
         raise RuntimeError('node under test did not come up')
 
-    def lock(self, name, value, settle=SETTLE):
-        self.locks[name].publish(Bool(data=value))
-        self.spin_for(settle)
-
-    def cmd(self, name, expected, label):
-        msg = TwistStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.twist.linear.x = float(self.next_id)
-        self.inputs[name].publish(msg)
+    def run(self, steps):
+        for step in steps:
+            if step[0] == 'clock':
+                msg = Clock()
+                msg.clock.sec, msg.clock.nanosec = divmod(step[1], NS)
+                self.clock_pub.publish(msg)
+                self.spin_for(SETTLE)
+            elif step[0] == 'lock':
+                self.locks[step[1]].publish(Bool(data=step[2]))
+                self.spin_for(SETTLE)
+            else:
+                _, name, expected, label = step
+                msg = self.msg_type()
+                twist = self.twist(msg)
+                # Fill every field, so that an altered message is noticed.
+                twist.linear.x = float(self.next_id)
+                twist.linear.y, twist.linear.z = 0.25 * self.next_id, -1.5
+                twist.angular.x, twist.angular.y, twist.angular.z = 0.5, -0.125, 2.0 * self.next_id
+                if self.stamped:
+                    msg.header.frame_id = f'frame_{self.next_id}'
+                    msg.header.stamp.sec, msg.header.stamp.nanosec = 7, self.next_id
+                self.sent[self.next_id] = msg
+                self.inputs[name].publish(msg)
+                self.spin_for(SETTLE)
+                self.results.append((label, expected, self.next_id in self.received))
+                self.next_id += 1
         self.spin_for(SETTLE)
-        forwarded = self.next_id in self.received
-        self.results.append((label, expected, forwarded))
-        self.next_id += 1
+        # Whatever came out must be exactly what was decided, once, unchanged.
+        forwarded = {i + 1 for i, r in enumerate(self.results) if r[2]}
+        if set(self.received) != forwarded:
+            self.problems.append(f'late or unknown messages: {set(self.received) ^ forwarded}')
+        for ident, msgs in self.received.items():
+            if len(msgs) != 1:
+                self.problems.append(f'message {ident} came out {len(msgs)} times')
+            if ident in self.sent and msgs[0] != self.sent[ident]:
+                self.problems.append(f'message {ident} was altered')
 
 
-def scenario(d):
-    # Wall clock: every stamp-0 handle has expired, so the watchdog lock
-    # (timeout 0.4, never heard) is locked at priority 50 (R5, R6).
-    d.cmd('nav', False, 'nav blocked: watchdog lock never heard')
-    d.cmd('key', True, 'key (90) passes the watchdog lock (50)')
-    d.spin_for(0.7)  # let key expire
-    d.lock('watchdog', False)
-    d.cmd('nav', True, 'nav drives once the watchdog reports false')
-    d.cmd('key', True, 'key takes over')
-    d.cmd('nav', False, 'nav suppressed while key is live')
-    d.cmd('joy', True, 'joy takes over')
-    d.cmd('key', False, 'key suppressed while joy is live')
-    d.lock('pause', True)
-    d.cmd('joy', True, 'pause lock (100) does not block joy (100)')
-    d.cmd('key', False, 'key still suppressed')
-    d.lock('e_stop', True)
-    d.cmd('joy', False, 'e_stop lock (255) blocks joy')
-    d.cmd('nav', False, 'e_stop lock blocks nav')
-    d.lock('e_stop', False)
-    d.cmd('joy', True, 'joy restored after e_stop released')
-    d.spin_for(0.7, keep_watchdog=True)  # joy and key expire
-    d.cmd('nav', False, 'nav blocked by pause lock (100) with joy and key expired')
-    d.lock('pause', False)
-    d.lock('watchdog', False)
-    d.cmd('nav', True, 'nav drives: locks released, joy and key expired')
-    d.spin_for(0.7)  # watchdog publisher silent past its timeout
-    d.cmd('nav', False, 'nav blocked: watchdog publisher went silent')
-    d.lock('watchdog', True)
-    d.lock('watchdog', False)
-    d.cmd('nav', True, 'nav drives again after watchdog reports false')
-
-
-def main():
-    if len(sys.argv) != 3:
-        sys.exit(__doc__)
-    package, executable = sys.argv[1], sys.argv[2]
-    proc = subprocess.Popen(
-        ['ros2', 'run', package, executable, '--ros-args', '--params-file', CONFIG],
-        start_new_session=True)  # own process group: `ros2 run` spawns the node as a child
-    rclpy.init()
-    d = Driver()
+def run_scenario(exe, name):
+    """Returns (decisions string, number of failures)."""
+    config, extra, stamped, steps = SCENARIOS[name]
+    args = [exe, '--ros-args', '--params-file', os.path.join(HERE, config),
+            '-p', 'use_sim_time:=true']
+    for p in extra:
+        args += ['-p', p]
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    d = Driver(stamped)
     try:
-        d.wait_connected()
-        scenario(d)
+        d.wait_connected({st[1] for st in steps if st[0] == 'cmd'},
+                         {st[1] for st in steps if st[0] == 'lock'})
+        d.run(steps)
     finally:
-        os.killpg(proc.pid, signal.SIGINT)
+        proc.send_signal(signal.SIGINT)
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-        rclpy.shutdown()
+            proc.kill()
+        d.destroy_node()
 
     bad = 0
+    print(f'--- {name} ({os.path.basename(os.path.dirname(exe))})')
     for label, expected, forwarded in d.results:
         ok = expected == forwarded
         bad += not ok
         print(f"{'ok  ' if ok else 'FAIL'}  {'forwarded' if forwarded else 'dropped  '}  {label}")
-    print(f'DECISIONS {"".join("1" if f else "0" for _, _, f in d.results)}')
-    print(f'{bad} mismatch(es) for {package}/{executable}')
+    for problem in d.problems:
+        bad += 1
+        print(f'FAIL  {problem}')
+    return ''.join('1' if f else '0' for _, _, f in d.results), bad
+
+
+def run_bad_configs(exe):
+    bad = 0
+    print('--- start-up errors')
+    for label, params in BAD_CONFIGS:
+        args = [exe, '--ros-args']
+        for p in params:
+            args += ['-p', p]
+        proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            code = proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            code = None
+        ok = code == 1
+        bad += not ok
+        print(f"{'ok  ' if ok else 'FAIL'}  refuses to start: {label} (exit code {code})")
+    return bad
+
+
+def main():
+    if len(sys.argv) not in (2, 3):
+        sys.exit(__doc__)
+    exe = resolve(sys.argv[1])
+    other = resolve(sys.argv[2]) if len(sys.argv) == 3 else None
+    rclpy.init()
+    bad = 0
+    try:
+        for name in SCENARIOS:
+            decisions, failures = run_scenario(exe, name)
+            bad += failures
+            print(f'DECISIONS {name} {decisions}')
+            if other:
+                other_decisions, _ = run_scenario(other, name)
+                same = decisions == other_decisions
+                bad += not same
+                print(f'DECISIONS {name} {other_decisions}')
+                print(f"{'ok  ' if same else 'FAIL'}  {name}: both nodes "
+                      f"{'agree' if same else 'DISAGREE'} on all {len(decisions)} decisions")
+    finally:
+        rclpy.shutdown()
+    if 'roslean' in exe:
+        bad += run_bad_configs(exe)
+    print(f'{bad} failure(s)')
     sys.exit(1 if bad else 0)
 
 
