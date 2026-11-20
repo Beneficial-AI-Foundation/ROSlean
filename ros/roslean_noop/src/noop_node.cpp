@@ -10,36 +10,12 @@
 #include <cstdlib>
 #include <memory>
 
-#include <lean/lean.h>
-
 #include "rclcpp/rclcpp.hpp"
+#include "roslean_core/mux.hpp"
 #include "std_msgs/msg/u_int64.hpp"
-
-extern "C" {
-// Lean runtime and module initialisers (see the generated .lake/build/ir/*.c).
-void lean_initialize_runtime_module();
-lean_object * initialize_ROSlean_ROSleanCore(uint8_t builtin);
-// @[export roslean_noop] def ROSleanCore.noop (seq : UInt64) : UInt64
-uint64_t roslean_noop(uint64_t seq);
-}
 
 namespace
 {
-
-// Must run once, before any Lean function is called.
-bool init_lean()
-{
-  lean_initialize_runtime_module();
-  lean_object * res = initialize_ROSlean_ROSleanCore(1 /* builtin */);
-  if (!lean_io_result_is_ok(res)) {
-    lean_io_result_show_error(res);
-    lean_dec(res);
-    return false;
-  }
-  lean_dec_ref(res);
-  lean_io_mark_end_initialization();
-  return true;
-}
 
 class NoopNode : public rclcpp::Node
 {
@@ -77,9 +53,7 @@ private:
 
 int main(int argc, char ** argv)
 {
-  if (!init_lean()) {
-    return EXIT_FAILURE;
-  }
+  roslean::initialize();
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<NoopNode>());
   rclcpp::shutdown();
