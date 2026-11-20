@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>roslean_noop</name>
+  <version>0.1.0</version>
+  <description>No-op ROS 2 node that calls a Lean-compiled function. Pipeline check for ROSlean.</description>
+  <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
