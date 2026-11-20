@@ -16,9 +16,12 @@ if [ -n "$refs" ]; then
 fi
 
 deps=$(ldd "$node")
-echo "$deps" | grep -e roslean -e 'c++' -e 'not found'
+echo "$deps" | grep -e roslean -e lean -e 'c++' -e 'not found'
 if ! echo "$deps" | grep -q "libroslean_core.so => $prefix/"; then
   echo "FAIL: the node does not load libroslean_core from the install tree"; status=1
+fi
+if ! echo "$deps" | grep -q "libleanshared.so => $prefix/"; then
+  echo "FAIL: the node does not load libleanshared from the install tree"; status=1
 fi
 if echo "$deps" | grep -q -e elan -e 'not found'; then
   echo "FAIL: unresolved or toolchain libraries"; status=1

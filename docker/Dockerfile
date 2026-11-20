@@ -10,8 +10,7 @@
 
 ARG ROS_DISTRO=jazzy
 
-FROM ros:${ROS_DISTRO}-ros-base AS builder
-ARG RUN_TESTS=1
+FROM ros:${ROS_DISTRO}-ros-base AS toolchain
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,13 +24,16 @@ RUN curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-to
 ENV PATH=/root/.elan/bin:${PATH}
 
 WORKDIR /src
-# Lake project files first: this layer (toolchain download and dependency
-# checkout) is rebuilt only when the pins change.
-COPY lean-toolchain lakefile.toml lake-manifest.json ./
-COPY ROSleanCore.lean ./
-COPY ROSleanCore ROSleanCore
-RUN lake build ROSleanCore
+# The Lean core is a package without dependencies: this layer downloads the
+# toolchain pinned in core/lean-toolchain and compiles the model to C. It is
+# rebuilt only when the Lean sources change. Mathlib is never needed here;
+# the proofs are checked separately (`lake build` in the repository root).
+COPY core core
+RUN cd core && lake build
 
+
+FROM toolchain AS builder
+ARG RUN_TESTS=1
 COPY ros ros
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
     && colcon build --base-paths ros --install-base /opt/roslean \

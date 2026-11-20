@@ -3,6 +3,8 @@
  * by CMake; compiled once per generated file). A conflicting declaration
  * fails the build. The object files are never linked. */
 
+#include <lean/lean.h>
+
 #include "roslean_core/ffi.h"
 
 #include GENERATED_C

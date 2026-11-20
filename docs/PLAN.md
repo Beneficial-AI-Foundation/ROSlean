@@ -17,10 +17,12 @@ properties, plus a reusable Lean-to-ROS shim.
 ## Architecture
 
 ```
-ROSleanCore/   Lean, no Mathlib. Executable model: Config, State, Event, step.
-               Lake compiles it to C; `ros/roslean_core` links that C with the
-               Lean runtime into one shared library, which the node loads.
-ROSlean/       Lean + Mathlib. Theorems about ROSleanCore. Never linked into a node.
+core/          A lake package with no dependencies. core/ROSleanCore is the
+               executable model: Config, State, Event, step. Lake compiles it
+               to C; `ros/roslean_core` builds that C into a shared library,
+               which the node loads.
+ROSlean/       The root lake package: Lean + Mathlib, requires `core`. Theorems
+               about ROSleanCore. Never linked into a node.
 ros/<pkg>/     ament_cmake packages. C++ shim only: subscriptions, parameters,
                clock, publishing. No decision logic.
 ```
@@ -38,8 +40,8 @@ agent; the findings and what was done about them are in
 | --- | --- | --- | --- |
 | M0 | Pipeline spike | done | `ros/roslean_noop`: an `rclcpp` node calling a Lean function. |
 | M1 | Specification from the upstream source | done | `docs/SPEC.md`: rules R1–R16, differences D1–D9. |
-| M2 | Lean model | done | `ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
-| M3 | FFI surface | done | `ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
+| M2 | Lean model | done | `core/ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
+| M3 | FFI surface | done | `core/ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
 | M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Accepts every configuration upstream accepts except non-finite or huge timeouts (D5), including its example config with two inputs at priority 100. |
 | M5 | Proofs | done | `ROSlean/Mux/{Basic,Properties,Trace,FFI}.lean`; table in the README. |
 | M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and a randomised differential test; no divergence outside D2. This replaces the recorded teleop/Nav2 session of the scope doc with scripted and random event sequences under simulated time. |
@@ -52,14 +54,15 @@ agent; the findings and what was done about them are in
   needs GitHub Pages enabled. Nothing in CI builds the ROS packages or runs
   the tests.
 - **Linux beyond the container.** The Docker build (`docker/Dockerfile`,
-  Ubuntu 24.04, apt ROS, linux/arm64) builds, passes all tests against
-  apt's upstream `twist_mux` and yields a self-contained install tree. Not
-  tried: Linux through pixi/RoboStack, and a build without network access.
+  Ubuntu 24.04, apt ROS) builds, passes all tests against apt's upstream
+  `twist_mux` and yields an install tree that needs no Lean installation.
+  Not tried: Linux through pixi/RoboStack.
 - **Packaging.** No Debian or conda package. A ROS build farm release would
-  need the generated C and the Lean runtime vendored, since the farm has
-  neither Lean nor network. The Docker build also clones Mathlib, which the
-  core does not use, because the core and the proofs share one lake package;
-  splitting them would remove that.
+  need the generated C and a Lean runtime vendored, since the farm has
+  neither Lean nor network.
+- **Size on Linux.** The install tree carries Lean's whole shared runtime
+  (190 MB stripped) for a model of a few hundred lines. A runtime built from
+  source as position-independent code would bring this down to a few MB.
 - **Gazebo / Nav2 demo.** `ros-gz-sim` exists on RoboStack for macOS arm64
   but was not tried; the demo uses turtlesim and a scripted planner.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
@@ -76,19 +79,19 @@ These changed the plan above.
    live in two `lean_lib`s. This is why the architecture splits `ROSleanCore`
    from `ROSlean`.
 2. **Lake prefixes names with the package.** The initialiser is
-   `initialize_ROSlean_ROSleanCore(uint8_t builtin)`, with one argument.
+   `initialize_ROSleanCore_ROSleanCore(uint8_t builtin)`, with one argument.
    Older tutorials show a different name and a second `world` argument. The
    generated C in `.lake/build/ir/` is the authority.
-3. **The generated C is not standalone; link the runtime statically.** A
-   library built by lake has undefined runtime symbols, and the spike made
-   the node load the 189 MB `libleanshared` from the elan toolchain through
-   an absolute rpath. That worked for development but the install tree could
+3. **The generated C is not standalone, and how to supply the runtime
+   differs by platform.** The spike made the node load `libleanshared` from
+   the elan toolchain through an absolute rpath, so the install tree could
    not be copied anywhere. Since 2026-11-20 `roslean_core` compiles the
-   generated C itself and links it with the toolchain's static `libInit`,
-   `libleanrt`, GMP, libuv and (on Linux) libc++ into `libroslean_core`
-   (4 to 6 MB), exporting only `roslean_*`, `initialize_ROSlean_*` and
-   `lean_*`. The Lean C headers are installed next to it. Lean is then a
-   build-time dependency only.
+   generated C itself into `libroslean_core` and puts the runtime in the
+   install tree: on macOS linked in statically (4 MB), on Linux as a
+   stripped copy of `libleanshared.so` (see lesson 14). Programs that use
+   the library call the Lean runtime only through four helper functions in
+   `src/runtime.c`, so they need neither Lean headers nor a link to the
+   runtime. Lean is then a build-time dependency only.
 4. **On macOS the node aborts at load unless unused dylibs are stripped.**
    ROS message targets pull in `*_rosidl_generator_py` libraries that expect
    Python symbols from the host process. `-Wl,-dead_strip_dylibs` fixes it;
@@ -110,10 +113,11 @@ These changed the plan above.
 
 - **Simulator on macOS.** Gazebo and Nav2 under RoboStack on osx-arm64 are
   unverified; the demo uses turtlesim.
-- **libc++ next to libstdc++.** On Linux `libroslean_core.so` contains a
-  static copy of Lean's libc++ while ROS uses libstdc++. Its symbols are
-  hidden and the tests pass, but this is the part most likely to need care
-  on another distribution or compiler.
+- **Lean's runtime inside a ROS process on Linux.** `libleanshared.so`
+  exports symbols that also exist elsewhere in a ROS process (an exception
+  unwinder, GMP, libuv). The unwinder clash is handled (lesson 14) and the
+  tests pass; a node that also loads the system GMP or libuv has not been
+  tried.
 - **Thin proofs.** As noted in the scope doc; the pipeline and shim are the
   main deliverable.
 
@@ -138,7 +142,20 @@ These changed the plan above.
     confounded test expectations, and one false theorem attempt of mine was
     caught by Lean itself.
 13. **"It compiles to C" is true and is not the hard part.** The generated C
-    built unchanged with gcc on Ubuntu. What deployment needed was the
-    runtime linked in statically (lesson 3), an export list so that the
-    embedded libc++, GMP and libuv stay private, and a relative rpath. With
-    those the first Linux build passed every test.
+    built unchanged with gcc on Ubuntu. The work was in supplying the Lean
+    runtime in a way that is sound inside a ROS process.
+14. **Two Linux traps, both silent on one architecture.** (a) Lean's static
+    runtime (`libleanrt.a`) is compiled for thread-local storage in
+    executables. Linking it into a shared library is an error on x86-64, but
+    on arm64 the linker accepted it and all tests passed, although such a
+    library is not valid. Only the x86-64 build exposed it. (b) Lean's shared
+    runtime exports its own `_Unwind_*` functions; when the loader finds
+    them before libgcc's, a C++ `catch` no longer catches (the FFI test
+    aborted on the first expected exception). The fix is to keep
+    `libleanshared` out of the executable's direct dependencies and to list
+    libgcc before it. Test every target architecture, and keep a test that
+    throws and catches.
+15. **Keep the compiled core in its own lake package.** While the model and
+    the proofs shared a package, building the node made lake fetch Mathlib.
+    `core/` now has no dependencies; the root package requires it by path,
+    and CMake checks that both pin the same toolchain.

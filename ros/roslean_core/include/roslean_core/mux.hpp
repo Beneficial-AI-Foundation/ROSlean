@@ -1,4 +1,4 @@
-// C++ wrapper around the Lean twist_mux core (ROSleanCore/FFI.lean).
+// C++ wrapper around the Lean twist_mux core (core/ROSleanCore/FFI.lean).
 //
 // Threading: a Mux or Builder must not be used from two threads at once (Lean
 // reference counts on these objects are not atomic). Under a multi-threaded
@@ -22,19 +22,7 @@ namespace roslean
 /// initialisation failed.
 inline void initialize()
 {
-  static const bool ok = [] {
-      lean_initialize_runtime_module();
-      lean_object * res = initialize_ROSlean_ROSleanCore(1 /* builtin */);
-      const bool success = lean_io_result_is_ok(res);
-      if (!success) {
-        lean_io_result_show_error(res);
-      }
-      lean_dec(res);
-      if (success) {
-        lean_io_mark_end_initialization();
-      }
-      return success;
-    }();
+  static const bool ok = roslean_core_initialize() != 0;
   if (!ok) {
     throw std::runtime_error("failed to initialise the Lean core library");
   }
@@ -53,9 +41,9 @@ public:
     Builder()
     {
       initialize();
-      obj_ = roslean_mux_builder_new(lean_box(0));
+      obj_ = roslean_mux_builder_new(roslean_core_unit());
     }
-    ~Builder() {if (obj_) {lean_dec(obj_);}}
+    ~Builder() {if (obj_) {roslean_core_dec(obj_);}}
     Builder(const Builder &) = delete;
     Builder & operator=(const Builder &) = delete;
 
@@ -83,7 +71,7 @@ public:
     Mux build()
     {
       lean_object * mux = roslean_mux_new(obj_);
-      obj_ = roslean_mux_builder_new(lean_box(0));
+      obj_ = roslean_mux_builder_new(roslean_core_unit());
       num_inputs_ = num_locks_ = 0;
       return Mux(mux);
     }
@@ -94,13 +82,13 @@ private:
     uint32_t num_locks_{0};
   };
 
-  ~Mux() {if (obj_) {lean_dec(obj_);}}
+  ~Mux() {if (obj_) {roslean_core_dec(obj_);}}
   Mux(Mux && other) noexcept
   : obj_(std::exchange(other.obj_, nullptr)) {}
   Mux & operator=(Mux && other) noexcept
   {
     if (this != &other) {
-      if (obj_) {lean_dec(obj_);}
+      if (obj_) {roslean_core_dec(obj_);}
       obj_ = std::exchange(other.obj_, nullptr);
     }
     return *this;
@@ -114,7 +102,7 @@ private:
   {
     require_valid();
     obj_ = roslean_mux_on_input(obj_, i, t_ns);
-    lean_inc(obj_);  // the query consumes one reference
+    roslean_core_inc(obj_);  // the query consumes one reference
     return roslean_mux_forward(obj_) != 0;
   }
 

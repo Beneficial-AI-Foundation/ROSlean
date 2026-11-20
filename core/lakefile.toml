@@ -1,0 +1,14 @@
+# The executable core: what gets compiled and linked into ROS nodes.
+# No dependencies, and in particular no Mathlib, so building it needs only the
+# Lean toolchain. The proofs about it live in the parent package, which
+# requires this one by path. Keep `lean-toolchain` here identical to the
+# parent's (the ROS build checks this).
+name = "ROSleanCore"
+version = "0.1.0"
+defaultTargets = ["ROSleanCore"]
+
+[leanOptions]
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "ROSleanCore"

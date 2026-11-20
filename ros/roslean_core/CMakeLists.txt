@@ -8,17 +8,34 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-# This package builds one self-contained shared library, libroslean_core:
-# the C code that Lean generates for ROSleanCore, linked statically with the
-# Lean runtime and Lean's standard library. Nothing in the install tree refers
-# to the Lean toolchain or to this checkout, so the tree can be copied to a
-# machine that has neither. Lean (elan) is needed at build time only.
+# This package builds the shared library libroslean_core from the C code that
+# Lean generates for ROSleanCore, and installs everything it needs at run
+# time next to it. Nothing in the install tree refers to the Lean toolchain or
+# to this checkout, so the tree can be copied to a machine that has neither.
+# Lean (elan) is needed at build time only.
+#
+# How the Lean runtime gets in differs by platform:
+#   macOS  linked statically into libroslean_core (about 4 MB).
+#   Linux  Lean's static runtime cannot go into a shared library there (it is
+#          compiled for thread-local storage in executables only), so
+#          libroslean_core links Lean's own shared runtime, libleanshared.so,
+#          and a stripped copy of that is installed alongside (about 190 MB).
 
-# Root of the lake project: this package lives in <root>/ros/roslean_core.
+# The lake package of the core: <root>/core, next to <root>/ros.
 if(NOT ROSLEAN_ROOT)
-  get_filename_component(ROSLEAN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." REALPATH)
+  get_filename_component(ROSLEAN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../core" REALPATH)
 endif()
-set(ROSLEAN_ROOT "${ROSLEAN_ROOT}" CACHE PATH "Root of the ROSlean lake project")
+set(ROSLEAN_ROOT "${ROSLEAN_ROOT}" CACHE PATH "The ROSleanCore lake package")
+
+# The proofs (parent package) must be checked with the toolchain that compiles
+# the core.
+if(EXISTS "${ROSLEAN_ROOT}/../lean-toolchain")
+  file(READ "${ROSLEAN_ROOT}/lean-toolchain" _tc_core)
+  file(READ "${ROSLEAN_ROOT}/../lean-toolchain" _tc_proofs)
+  if(NOT _tc_core STREQUAL _tc_proofs)
+    message(FATAL_ERROR "core/lean-toolchain and lean-toolchain differ")
+  endif()
+endif()
 
 # The toolchain is whatever `lean-toolchain` pins. Recompute its location on
 # every configure, and re-configure when the pin changes, so that the headers
@@ -57,64 +74,71 @@ add_custom_target(roslean_core_lake ALL
   COMMENT "lake build ROSleanCore"
   USES_TERMINAL)
 
-add_library(roslean_core SHARED ${_generated})
+add_library(roslean_core SHARED ${_generated} src/runtime.c)
 add_dependencies(roslean_core roslean_core_lake)
 set_target_properties(roslean_core PROPERTIES C_VISIBILITY_PRESET default)
 # Flags Lean itself compiles generated code with (`leanc --print-cflags`).
 target_compile_options(roslean_core PRIVATE
-  -O3 -DNDEBUG -ffp-contract=off -fdata-sections -ffunction-sections -w)
+  -O3 -DNDEBUG -ffp-contract=off -fdata-sections -ffunction-sections)
+set_source_files_properties(${_generated} PROPERTIES COMPILE_OPTIONS -w)
+target_include_directories(roslean_core PRIVATE include)
 target_include_directories(roslean_core SYSTEM PRIVATE "${LEAN_INCLUDE_DIR}")
 target_include_directories(roslean_core INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
-# lean.h is not written for -Wpedantic; dependants get it as a system header.
-target_include_directories(roslean_core SYSTEM INTERFACE
-  "$<BUILD_INTERFACE:${LEAN_INCLUDE_DIR}>"
-  "$<INSTALL_INTERFACE:include/${PROJECT_NAME}/lean_sdk>")
 
-# Static Lean libraries. Init is Lean's standard library, leanrt the runtime;
-# the rest are what those two need. Only referenced objects are linked in.
-set(_lean_static)
-foreach(_lib Init leanrt cadical gmp uv)
-  find_library(LEAN_STATIC_${_lib} NAMES "lib${_lib}.a"
-    HINTS "${LEAN_SYSROOT}/lib/lean" "${LEAN_SYSROOT}/lib" NO_DEFAULT_PATH)
-  if(LEAN_STATIC_${_lib})
-    list(APPEND _lean_static "${LEAN_STATIC_${_lib}}")
-  else()
-    message(STATUS "roslean_core: no static lib${_lib}.a in the Lean toolchain")
-  endif()
-endforeach()
-
-# Export the functions of ffi.h and the Lean runtime functions that lean.h's
-# inline code calls; keep everything else private to the library.
 if(APPLE)
+  # Static Lean libraries. Init is Lean's standard library, leanrt the
+  # runtime; the rest are what those two need. Only referenced objects are
+  # linked in.
+  set(_lean_static)
+  foreach(_lib Init leanrt cadical gmp uv)
+    find_library(LEAN_STATIC_${_lib} NAMES "lib${_lib}.a"
+      HINTS "${LEAN_SYSROOT}/lib/lean" "${LEAN_SYSROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+    list(APPEND _lean_static "${LEAN_STATIC_${_lib}}")
+  endforeach()
   target_link_libraries(roslean_core PRIVATE ${_lean_static} c++)
+  # Export the functions of ffi.h; keep everything else private.
   target_link_options(roslean_core PRIVATE
     -Wl,-dead_strip
     "-Wl,-exported_symbol,_roslean_*"
-    "-Wl,-exported_symbol,_initialize_ROSlean_*"
-    "-Wl,-exported_symbol,_lean_*")
+    "-Wl,-exported_symbol,_initialize_ROSleanCore_*")
   # ROS message targets pull in *_rosidl_generator_py libraries, which expect
   # Python symbols from the host process and abort a C++ node at load time.
   # Make dependants drop every dylib they do not actually reference.
   target_link_options(roslean_core INTERFACE "-Wl,-dead_strip_dylibs")
 else()
-  # The Lean runtime is C++ built against libc++, which the toolchain ships as
-  # static libraries; ROS uses libstdc++. Linking libc++ statically and hiding
-  # its symbols keeps the two apart.
-  set(_cxx)
-  foreach(_lib c++ c++abi)
-    find_library(LEAN_STATIC_${_lib} NAMES "lib${_lib}.a"
-      HINTS "${LEAN_SYSROOT}/lib" "${LEAN_SYSROOT}/lib/lean" NO_DEFAULT_PATH REQUIRED)
-    list(APPEND _cxx "${LEAN_STATIC_${_lib}}")
-  endforeach()
+  # libleanshared.so holds the runtime, Lean's standard library and its own
+  # private copy of libc++; it needs only the C library. Link a stripped copy
+  # that sits next to libroslean_core, found through $ORIGIN.
+  #
+  # libleanshared.so also exports an exception unwinder of its own
+  # (_Unwind_*). If the dynamic loader finds that one before the system's
+  # libgcc_s, C++ exceptions in the whole process stop being caught. Two
+  # measures keep it behind libgcc_s in the loader's search order:
+  #   - dependants never link libleanshared directly (PRIVATE below; they
+  #     call the Lean runtime only through src/runtime.c), so it is loaded
+  #     one level below everything the executable links;
+  #   - libroslean_core itself lists libgcc_s before libleanshared.
+  find_library(LEAN_SHARED_LIBRARY NAMES leanshared
+    HINTS "${LEAN_SYSROOT}/lib/lean" NO_DEFAULT_PATH REQUIRED)
+  set(_leanshared "${CMAKE_CURRENT_BINARY_DIR}/libleanshared.so")
+  add_custom_command(OUTPUT "${_leanshared}"
+    COMMAND "${CMAKE_STRIP}" --strip-unneeded -o "${_leanshared}" "${LEAN_SHARED_LIBRARY}"
+    DEPENDS "${LEAN_SHARED_LIBRARY}"
+    COMMENT "Copying and stripping libleanshared.so")
+  add_custom_target(roslean_core_leanshared DEPENDS "${_leanshared}")
+  add_dependencies(roslean_core roslean_core_leanshared)
   target_link_libraries(roslean_core PRIVATE
-    -Wl,--start-group ${_lean_static} ${_cxx} -Wl,--end-group m dl pthread)
+    -Wl,--no-as-needed gcc_s -Wl,--as-needed "${_leanshared}")
   target_link_options(roslean_core PRIVATE
-    -Wl,--gc-sections
+    -Wl,--no-undefined
     "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map")
-  set_property(TARGET roslean_core APPEND PROPERTY
-    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map")
+  set_target_properties(roslean_core PROPERTIES
+    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/exports.map"
+    BUILD_RPATH "${CMAKE_CURRENT_BINARY_DIR}"
+    INSTALL_RPATH "$ORIGIN")
+  install(FILES "${_leanshared}" DESTINATION lib)
 endif()
 
 # Fails the build if include/roslean_core/ffi.h disagrees with the Lean
@@ -132,10 +156,6 @@ endforeach()
 install(TARGETS roslean_core EXPORT export_roslean_core
   LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
-# The Lean C headers that ffi.h includes, so that dependants can be built
-# against the install tree alone.
-install(DIRECTORY "${LEAN_INCLUDE_DIR}/lean"
-  DESTINATION include/${PROJECT_NAME}/lean_sdk)
 # Licences of Lean and of the libraries linked into libroslean_core.
 foreach(_lic LICENSE LICENSES)
   if(IS_DIRECTORY "${LEAN_SYSROOT}/${_lic}")

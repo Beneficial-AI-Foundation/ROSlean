@@ -15,10 +15,11 @@ name = "mathlib"
 scope = "leanprover-community"
 rev = "v4.37.0-rc1"
 
+# The executable core (model and C interface) is a package of its own, so that
+# building a ROS node never needs Mathlib.
+[[require]]
+name = "ROSleanCore"
+path = "core"
+
 [[lean_lib]]
 name = "ROSlean"
-
-# Executable core. Lake compiles it to C (.lake/build/ir); the ROS package
-# `roslean_core` compiles and links that C. Must not import Mathlib.
-[[lean_lib]]
-name = "ROSleanCore"

@@ -1,10 +1,8 @@
-/* Linux: symbols exported by libroslean_core.so. Everything else, including
- * the statically linked libc++, GMP and libuv, stays private. */
+/* Linux: symbols exported by libroslean_core.so. */
 {
   global:
     roslean_*;
-    initialize_ROSlean_*;
-    lean_*;
+    initialize_ROSleanCore_*;
   local:
     *;
 };
