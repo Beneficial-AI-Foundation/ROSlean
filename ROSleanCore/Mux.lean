@@ -11,18 +11,15 @@ This file must not import Mathlib. Theorems about it live in `ROSlean.Mux`.
 
 namespace ROSleanCore.Mux
 
-/-- Node-clock time in nanoseconds (D2). -/
-abbrev Time := Nat
-
-/-- Priority; higher wins. -/
-abbrev Priority := Nat
+/-! Times are node-clock readings in nanoseconds (D2) and priorities are
+natural numbers, higher wins. Both are plain `Nat`. -/
 
 /-- Largest priority; larger values are clamped to it (R1). -/
-def maxPriority : Priority := 255
+def maxPriority : Nat := 255
 
 /-- Static configuration of one input or one lock (R1). -/
 structure Handle where
-  priority : Priority
+  priority : Nat
   /-- Timeout in nanoseconds; `0` disables expiry (R2). -/
   timeout : Nat
   deriving Repr, DecidableEq
@@ -62,9 +59,9 @@ the initial value, and writes extend the list (`setPad`), so no update is ever
 lost. -/
 structure State where
   /-- Arrival time of the last message on each input. -/
-  inputStamps : List Time
+  inputStamps : List Nat
   /-- Arrival time of the last message on each lock. -/
-  lockStamps : List Time
+  lockStamps : List Nat
   /-- Last value received on each lock. -/
   lockValues : List Bool
   deriving Repr, DecidableEq
@@ -80,61 +77,61 @@ short. Together with `List.getD · · d` this behaves as a total map. -/
 def setPad {α : Type} (l : List α) (i : Nat) (v d : α) : List α :=
   if i < l.length then l.set i v else l ++ List.replicate (i - l.length) d ++ [v]
 
-def State.inputStamp (st : State) (i : Nat) : Time := st.inputStamps.getD i 0
-def State.lockStamp (st : State) (j : Nat) : Time := st.lockStamps.getD j 0
+def State.inputStamp (st : State) (i : Nat) : Nat := st.inputStamps.getD i 0
+def State.lockStamp (st : State) (j : Nat) : Nat := st.lockStamps.getD j 0
 def State.lockValue (st : State) (j : Nat) : Bool := st.lockValues.getD j false
 
 /-- R4: a handle has expired iff its timeout is enabled and strictly more than
 `timeout` has elapsed since `stamp`. Upstream computes `now - stamp > timeout`
 over the reals, which is `now > stamp + timeout`; in particular a clock that
 jumped backwards never expires anything (A2). -/
-def expired (timeout : Nat) (stamp now : Time) : Bool :=
+def expired (timeout : Nat) (stamp now : Nat) : Bool :=
   0 < timeout && stamp + timeout < now
 
 /-- R6: lock `j` is locked iff it has expired or its last value is `true`. -/
-def lockActive (cfg : Config) (st : State) (now : Time) (j : Nat) : Bool :=
+def lockActive (cfg : Config) (st : State) (now : Nat) (j : Nat) : Bool :=
   match cfg.locks[j]? with
   | some h => expired h.timeout (st.lockStamp j) now || st.lockValue j
   | none => false
 
 /-- R7: the maximum priority over locked locks, or 0 if none is locked. -/
-def lockPriority (cfg : Config) (st : State) (now : Time) : Priority :=
+def lockPriority (cfg : Config) (st : State) (now : Nat) : Nat :=
   cfg.locks.zipIdx.foldl
     (fun acc (h, j) => if lockActive cfg st now j then max acc h.priority else acc) 0
 
 /-- Input `k` has not expired. -/
-def inputLive (cfg : Config) (st : State) (now : Time) (k : Nat) : Bool :=
+def inputLive (cfg : Config) (st : State) (now : Nat) (k : Nat) : Bool :=
   match cfg.inputs[k]? with
   | some h => !expired h.timeout (st.inputStamp k) now
   | none => false
 
 /-- R8, negated: input `k` is live and its priority is not below the lock
 priority `lp`. -/
-def unmasked (cfg : Config) (st : State) (now : Time) (lp : Priority) (k : Nat) : Bool :=
+def unmasked (cfg : Config) (st : State) (now : Nat) (lp : Nat) (k : Nat) : Bool :=
   match cfg.inputs[k]? with
   | some h => inputLive cfg st now k && lp ≤ h.priority
   | none => false
 
 /-- One iteration of upstream's selection loop: keep the best `(priority,
 index)` seen so far, replacing it only on a strictly greater priority. -/
-def selectStep (cfg : Config) (st : State) (now : Time) (lp : Priority)
-    (best : Priority × Option Nat) (hk : Handle × Nat) : Priority × Option Nat :=
+def selectStep (cfg : Config) (st : State) (now : Nat) (lp : Nat)
+    (best : Nat × Option Nat) (hk : Handle × Nat) : Nat × Option Nat :=
   if unmasked cfg st now lp hk.2 && best.1 < hk.1.priority then (hk.1.priority, some hk.2)
   else best
 
 /-- R9: the index of the selected input, if any. A literal transcription of
 the loop in upstream `TwistMux::hasPriority`: start from priority 0 and no
 selection, and scan the inputs in order. -/
-def select (cfg : Config) (st : State) (now : Time) : Option Nat :=
+def select (cfg : Config) (st : State) (now : Nat) : Option Nat :=
   let lp := lockPriority cfg st now
   (cfg.inputs.zipIdx.foldl (selectStep cfg st now lp) (0, none)).2
 
 /-- What the node reacts to. -/
 inductive Event where
   /-- A velocity command arrived on input `i` at time `t`. -/
-  | input (i : Nat) (t : Time)
+  | input (i : Nat) (t : Nat)
   /-- A lock message with the given value arrived on lock `j` at time `t`. -/
-  | lock (j : Nat) (value : Bool) (t : Time)
+  | lock (j : Nat) (value : Bool) (t : Nat)
   deriving Repr, DecidableEq
 
 /-- R11, R12: process one event. The boolean says whether to forward the
