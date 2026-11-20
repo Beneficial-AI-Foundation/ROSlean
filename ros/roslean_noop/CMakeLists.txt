@@ -19,11 +19,16 @@ target_link_libraries(noop_node
   rclcpp::rclcpp
   ${std_msgs_TARGETS}
   roslean_core::roslean_core)
-# The Lean libraries live outside the install tree, so bake their location in.
+# Find libroslean_core relative to the executable, so that the install tree
+# works wherever it is copied, with or without the environment set up
+# (isolated and merged colcon layouts).
+if(APPLE)
+  set(_origin "@loader_path")
+else()
+  set(_origin "$ORIGIN")
+endif()
 set_target_properties(noop_node PROPERTIES
-  BUILD_RPATH "${ROSLEAN_RPATH}"
-  INSTALL_RPATH "${ROSLEAN_RPATH}"
-  INSTALL_RPATH_USE_LINK_PATH TRUE)
+  INSTALL_RPATH "${_origin}/../../../roslean_core/lib;${_origin}/..")
 
 install(TARGETS noop_node DESTINATION lib/${PROJECT_NAME})
 

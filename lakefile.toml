@@ -18,8 +18,7 @@ rev = "v4.37.0-rc1"
 [[lean_lib]]
 name = "ROSlean"
 
-# Executable core: compiled to native code and linked into ROS nodes.
-# Must not import Mathlib.
+# Executable core. Lake compiles it to C (.lake/build/ir); the ROS package
+# `roslean_core` compiles and links that C. Must not import Mathlib.
 [[lean_lib]]
 name = "ROSleanCore"
-defaultFacets = ["shared"]
