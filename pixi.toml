@@ -1,0 +1,22 @@
+[workspace]
+name = "roslean"
+version = "0.1.0"
+description = "Lean-verified ROS 2 nodes (twist_mux first)"
+channels = ["robostack-jazzy", "conda-forge"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+
+[dependencies]
+ros-jazzy-ros-base = "*"
+ros-jazzy-geometry-msgs = "*"
+ros-jazzy-std-msgs = "*"
+colcon-common-extensions = "*"
+cmake = "*"
+ninja = "*"
+compilers = "*"
+pkg-config = "*"
+make = "*"
+
+[tasks]
+lean-build = "lake build ROSleanCore:shared"
+build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G Ninja", depends-on = ["lean-build"] }
+noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }

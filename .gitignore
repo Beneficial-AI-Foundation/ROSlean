@@ -1,1 +1,5 @@
 /.lake
+/.pixi
+/build
+/install
+/log
