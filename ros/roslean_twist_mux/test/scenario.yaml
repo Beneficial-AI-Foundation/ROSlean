@@ -1,5 +1,5 @@
 # Configuration for the main scenarios in test/scenario.py. Valid for both
-# this package and upstream twist_mux (input priorities are distinct).
+# this package and upstream twist_mux.
 # Timeouts are binary fractions so that upstream's floating-point arithmetic
 # is exact at the boundaries the scenarios probe.
 twist_mux:

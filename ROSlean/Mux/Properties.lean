@@ -12,7 +12,8 @@ it is `true` exactly when
 
 * `i` is a configured input with positive priority,
 * no locked lock has a priority above `i`'s, and
-* every other live input has strictly lower priority.
+* every other live input has strictly lower priority, or the same priority
+  and a later position in the input list (upstream's tie-break, R10).
 
 Everything else is a corollary or lifts this to event sequences.
 
@@ -115,15 +116,16 @@ private theorem inputLive_recvInput_of_ne (cfg : Config) (st : State) (i t now k
 
 /-- **Decision.** A message arriving on input `i` at time `t` is forwarded iff
 `i` is a configured input with positive priority, no locked lock outranks it,
-and every other live input has strictly lower priority. Locks and liveness are
-those of the state before the message (R4–R11). -/
+and every other live input has strictly lower priority, or equal priority and
+a later position in the input list. Locks and liveness are those of the state
+before the message (R4–R11). -/
 theorem forward_iff (cfg : Config) (st : State) (i t : Nat) :
     (step cfg st (.input i t)).2 = true ↔
     ∃ hi, cfg.inputs[i]? = some hi ∧ 0 < hi.priority ∧
       (∀ j hj, cfg.locks[j]? = some hj → lockActive cfg st t j = true →
         hj.priority ≤ hi.priority) ∧
       (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i → inputLive cfg st t k = true →
-        hk.priority < hi.priority) := by
+        hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k)) := by
   by_cases hlen : i < cfg.inputs.length
   · rw [step_input _ _ _ _ hlen]
     simp only [beq_iff_eq]
@@ -155,17 +157,33 @@ theorem forward_configured (cfg : Config) (st : State) (i t : Nat)
   obtain ⟨hi, hget, hpos, -⟩ := (forward_iff ..).mp hfwd
   exact ⟨hi, hget, hpos⟩
 
-/-- **Priority.** A message on input `i` is forwarded only if no other live
-input has priority greater than or equal to `i`'s (R8, R9). -/
+/-- **Priority.** A message on input `i` is forwarded only if no live input
+has higher priority (R8, R9). -/
 theorem forward_priority (cfg : Config) (st : State) (i t : Nat)
     (hfwd : (step cfg st (.input i t)).2 = true)
     (hi : Handle) (hgi : cfg.inputs[i]? = some hi)
-    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk) (hne : k ≠ i)
+    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk)
     (hlive : inputLive cfg st t k = true) :
-    hk.priority < hi.priority := by
+    hk.priority ≤ hi.priority := by
   obtain ⟨hi', hgi', -, -, hothers⟩ := (forward_iff ..).mp hfwd
   rw [hgi] at hgi'; cases hgi'
-  exact hothers k hk hgk hne hlive
+  by_cases hne : k = i
+  · subst hne; rw [hgi] at hgk; cases hgk; exact Nat.le_refl _
+  · rcases hothers k hk hgk hne hlive with h | h <;> omega
+
+/-- **Tie-break.** Among live inputs of equal priority only the first in list
+order is forwarded (R10). -/
+theorem forward_first_of_equal (cfg : Config) (st : State) (i t : Nat)
+    (hfwd : (step cfg st (.input i t)).2 = true)
+    (hi : Handle) (hgi : cfg.inputs[i]? = some hi)
+    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk)
+    (hlive : inputLive cfg st t k = true) (heq : hk.priority = hi.priority) :
+    i ≤ k := by
+  obtain ⟨hi', hgi', -, -, hothers⟩ := (forward_iff ..).mp hfwd
+  rw [hgi] at hgi'; cases hgi'
+  by_cases hne : k = i
+  · omega
+  · rcases hothers k hk hgk hne hlive with h | h <;> omega
 
 /-- **Lock.** A message on input `i` is forwarded only if no locked lock has
 priority greater than `i`'s (R6–R8). -/
@@ -207,31 +225,34 @@ theorem not_forward_of_silent_lock (cfg : Config) (st : State) (i t : Nat)
   omega
 
 /-- **Liveness.** If input `i` has positive priority, no locked lock outranks
-it, and every other live input has lower priority, then its message is
-forwarded (R9, R11). -/
+it, and every other live input has lower priority, or equal priority and a
+later position in the list, then its message is forwarded (R9–R11). -/
 theorem forward_of_highest_live (cfg : Config) (st : State) (i t : Nat)
     (hi : Handle) (hgi : cfg.inputs[i]? = some hi) (hpos : 0 < hi.priority)
     (hlocks : ∀ j hj, cfg.locks[j]? = some hj → lockActive cfg st t j = true →
       hj.priority ≤ hi.priority)
     (hothers : ∀ k hk, cfg.inputs[k]? = some hk → k ≠ i → inputLive cfg st t k = true →
-      hk.priority < hi.priority) :
+      hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k)) :
     (step cfg st (.input i t)).2 = true :=
   (forward_iff ..).mpr ⟨hi, hgi, hpos, hlocks, hothers⟩
 
 /-- **Expiry.** An input that has timed out never suppresses another input:
-if every other input either has lower priority or has expired, and no locked
-lock outranks `i`, then `i`'s message is forwarded (R4, R8). -/
+if every other input has lower priority, or loses the tie-break, or has
+expired, and no locked lock outranks `i`, then `i`'s message is forwarded
+(R4, R8). -/
 theorem forward_of_others_expired (cfg : Config) (st : State) (i t : Nat)
     (hi : Handle) (hgi : cfg.inputs[i]? = some hi) (hpos : 0 < hi.priority)
     (hlocks : ∀ j hj, cfg.locks[j]? = some hj → lockActive cfg st t j = true →
       hj.priority ≤ hi.priority)
     (hothers : ∀ k hk, cfg.inputs[k]? = some hk → k ≠ i →
-      hk.priority < hi.priority ∨ (0 < hk.timeout ∧ st.inputStamp k + hk.timeout < t)) :
+      hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k) ∨
+        (0 < hk.timeout ∧ st.inputStamp k + hk.timeout < t)) :
     (step cfg st (.input i t)).2 = true := by
   apply forward_of_highest_live cfg st i t hi hgi hpos hlocks
   intro k hk hgk hne hlive
-  rcases hothers k hk hgk hne with h | h
-  · exact h
+  rcases hothers k hk hgk hne with h | h | h
+  · exact Or.inl h
+  · exact Or.inr h
   · obtain ⟨hk', hgk', hnot⟩ := (inputLive_iff ..).mp hlive
     rw [hgk] at hgk'; cases hgk'
     exact absurd h hnot

@@ -30,7 +30,6 @@ lean_object * roslean_mux_builder_new(lean_object * unit);
  * tell the two apart, so cast from int64_t at the call site. */
 lean_object * roslean_mux_builder_add_input(lean_object * b, uint64_t priority, uint64_t timeout_ns);
 lean_object * roslean_mux_builder_add_lock(lean_object * b, uint64_t priority, uint64_t timeout_ns);
-uint8_t roslean_mux_builder_check(lean_object * b);
 lean_object * roslean_mux_new(lean_object * b);
 lean_object * roslean_mux_on_input(lean_object * m, uint32_t i, uint64_t t_ns);
 lean_object * roslean_mux_on_lock(lean_object * m, uint32_t j, uint8_t value, uint64_t t_ns);

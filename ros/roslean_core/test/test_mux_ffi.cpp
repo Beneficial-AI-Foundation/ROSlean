@@ -87,17 +87,18 @@ int main()
     check(m.on_input(0, t0 + 5000000001ULL), "low input resumes after 5 s + 1 ns");
   }
   {
+    // Equal priorities: the input added first wins while it is live (R10).
     roslean::Mux::Builder b;
-    b.add_input(10, 0);
-    b.add_input(10, 5);
-    bool threw = false;
-    try {
-      b.build();
-    } catch (const roslean::ConfigError & e) {
-      threw = true;
-      std::printf("      (message: %s)\n", e.what());
-    }
-    check(threw, "duplicate input priorities are rejected");
+    b.add_input(100, 500);
+    b.add_input(100, 500);
+    b.add_input(10, 500);
+    auto m = b.build();
+    check(m.on_input(1, 1000), "second of a tied pair drives while the first is expired");
+    check(m.on_input(0, 1100), "first of a tied pair takes over at once");
+    check(!m.on_input(1, 1200), "second is dropped while the first is live");
+    check(!m.on_input(2, 1300), "lower input is dropped");
+    check(!m.on_input(1, 1600), "second still dropped exactly at the first's timeout");
+    check(m.on_input(1, 1601), "second drives 1 after the first's timeout");
   }
   {
     roslean::Mux::Builder b;
@@ -138,26 +139,20 @@ int main()
     check(!m.on_input(0, t0 + 2003), "lock 1 true blocks");
   }
   {
-    // Priorities are clamped to 255 inside Lean, which can create duplicates.
+    // Priorities are clamped to 255 inside Lean, which can create ties.
     roslean::Mux::Builder b;
     b.add_input(255, 0);
     b.add_input(1LL << 40, 0);
-    bool threw = false;
-    try {
-      b.build();
-    } catch (const roslean::ConfigError &) {
-      threw = true;
-    }
-    check(threw, "priorities clamped to 255 collide");
-    // A failed build leaves the builder unchanged...
-    check(b.add_input(7, 0) == 2, "builder keeps its inputs after a failed build");
+    auto m = b.build();
+    check(!m.on_input(1, 1000), "2^40 clamps to 255 and loses the tie to the earlier 255");
+    check(m.on_input(0, 1000), "the earlier 255 drives");
   }
   {
-    // ...and a successful build empties it.
+    // A build empties the builder.
     roslean::Mux::Builder b;
     b.add_input(5, 0);
     auto m1 = b.build();
-    check(b.add_input(5, 0) == 0, "builder is empty after a successful build");
+    check(b.add_input(5, 0) == 0, "builder is empty after a build");
     auto m2 = b.build();
     check(m1.on_input(0, 1) && m2.on_input(0, 1), "two muxes from one builder are independent");
 
@@ -191,29 +186,22 @@ int main()
     roslean::Mux::Builder b;
     b.add_input(-1, 0);
     b.add_input(INT64_MIN, 0);
-    bool threw = false;
-    try {
-      b.build();
-    } catch (const roslean::ConfigError &) {
-      threw = true;
-    }
-    check(threw, "two negative priorities collide at 0");
+    auto m = b.build();
+    check(!m.on_input(0, 1) && !m.on_input(1, 2), "two negative priorities: neither is selected");
   }
   {
-    // Repeated build / reject / step cycles: reference counting on every path.
+    // Repeated build / step cycles: reference counting on every path.
     bool all = true;
     for (int n = 0; n < 20000; ++n) {
       roslean::Mux::Builder b;
       b.add_input(10, 500);
       b.add_input(10 + (n % 2), 500);
-      try {
-        auto m = b.build();
-        all = m.on_input(1, 1000) && all;
-      } catch (const roslean::ConfigError &) {
-        all = (n % 2 == 0) && all;
-      }
+      auto m = b.build();
+      // Tied (n even): the first is live at time 0 and wins. Otherwise the
+      // second has the higher priority.
+      all = (m.on_input(1, 400) == (n % 2 == 1)) && all;
     }
-    check(all, "20000 build cycles, half of them rejected");
+    check(all, "20000 build cycles, half of them with tied priorities");
   }
   {
     // Long run: catches reference-count mistakes (leak or double free).

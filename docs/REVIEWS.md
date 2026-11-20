@@ -100,4 +100,14 @@ README exists and matches its row.
 | `pixi run prove` would build Mathlib from source on a fresh clone | Fixed: fetches the cache first |
 | CI is the Lean template and covers none of the ROS side | Open; listed under "Not done" |
 | No LICENSE file although `package.xml` declares Apache-2.0 | Open: needs a decision by the owner |
-| `twist_mux.md` still shows the two decisions as open and links to private pages | Open: left untouched as the original scope document |
+| `twist_mux.md` still shows the two decisions as open and links to private pages | Decisions recorded and a reader's guide added on 2026-11-20; the links to private pages remain |
+
+## After the reviews: equal priorities restored (2026-11-20)
+
+At the user's request the node again accepts equal input priorities and
+resolves them as upstream does (SPEC R10; D1 withdrawn). Entries above that
+mention the distinctness check, `Config.validate`, `validate_ok_iff` or
+`builderCheck` describe the code as it was when reviewed: `Config.validate`
+is now the total `Config.ofRaw`, the start-up check and `roslean::ConfigError`
+are gone, and `forward_iff` carries the tie-break. This change has not had an
+independent review.

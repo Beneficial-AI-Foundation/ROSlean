@@ -52,10 +52,14 @@ theorems.
 - R9. The *selected* input is the unmasked input of maximum priority, where
   the maximum must be strictly greater than 0. An input with priority 0 is
   never selected. If no input qualifies, nothing is selected.
-- R10. On equal priorities upstream keeps the first unmasked one in its
-  handle list. That order comes from `list_parameters`; it is not a
-  documented contract, but in practice it is lexicographic by name, so in the
-  upstream example config `joystick` beats `tablet` while both are live.
+- R10. On equal priorities the first unmasked input in the handle list is
+  selected: the loop replaces its candidate only on a strictly greater
+  priority. A later input of the same priority is forwarded only while every
+  earlier one is expired. The list order comes from `list_parameters`; it is
+  not a documented contract, but in `rclcpp` it is the byte order of the full
+  parameter names (`topics.<name>.…`), i.e. alphabetical by handle name, not
+  the order in the YAML file. In the upstream example config `joystick`
+  beats `tablet` while both are live.
 - R10a. An input at priority 255 can never be masked by a lock (R8 is
   strict).
 
@@ -88,7 +92,7 @@ theorems.
 
 | Question | Answer |
 | --- | --- |
-| Equal input priorities | First live one in list order wins; the order is lexicographic by name in practice (R10). |
+| Equal input priorities | First live one in list order wins; the order is alphabetical by handle name in practice (R10). ROSlean reproduces this. |
 | Does a lock block inputs of equal priority? | No, only strictly lower (R8). |
 | Dead lock publisher | Counts as locked (R6), including before the first message once the clock has passed the timeout. |
 | Clock | Node clock at arrival; header stamps are ignored (R3). |
@@ -106,7 +110,7 @@ theorems.
 
 | # | Upstream | ROSlean | Why |
 | --- | --- | --- | --- |
-| D1 | Equal input priorities allowed (R10) | Rejected at start-up | Makes selection independent of list order. The check runs on clamped priorities, so two inputs above 255, or two at 0 or below, are also rejected. Note: the upstream *example* `twist_mux_topics.yaml` has two inputs at priority 100 and is therefore rejected. Equal priorities between a lock and an input, or between locks, stay legal. |
+| D1 | — | — | Withdrawn. ROSlean used to reject equal input priorities at start-up; it now reproduces R10, and the node obtains the handle order from the same `list_parameters` call as upstream. The number is kept so that D2–D9 stay stable. |
 | D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout; see "Extent of D2" below. |
 | D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
 | D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). Differs only for timeouts of the order of the callback's own run time: upstream can find an input expired inside its own callback; ROSlean cannot. |
@@ -116,7 +120,7 @@ theorems.
 | D8 | — | Negative node time would be treated as 0 | Not observable: `rclcpp` aborts both nodes on a negative `/clock` value before either sees it. The clamp in the shim is defensive only. |
 | D9 | Ships a launch file | None; run the executable with `--ros-args --params-file` | Out of scope. |
 
-Everything else, including R5, R9, R13 and the fatal errors in R14, is
+Everything else, including R5, R9, R10, R13 and the fatal errors in R14, is
 reproduced as is.
 
 ### Extent of D2

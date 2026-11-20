@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Randomised differential test of two twist_mux nodes.
 
-For each seed, generates a random valid configuration and a random sequence of
+For each seed, generates a random configuration and a random sequence of
 events (clock updates including backward jumps, lock values, commands), runs
 both nodes side by side on the very same messages and the same `/clock`, and
 requires both to make the decisions predicted by an independent integer-ns
@@ -12,7 +12,8 @@ Python model of docs/SPEC.md.
 NODE and OTHER are executable paths or `<package>/<executable>`.
 
 Coverage per case: 1-6 inputs and 0-4 locks; priorities including negative,
-0, 255 and above; lock priorities equal to input priorities; zero, negative,
+0, 255 and above; equal input priorities (ties go to the first handle in the
+nodes' order, by parameter name); lock priorities equal to input priorities; zero, negative,
 sub-nanosecond and decimal timeouts; handle names whose lexicographic order
 differs from priority order; clock bases of 0, 100 s and Unix-scale; events
 before any clock message; 25 % of cases unstamped.
@@ -52,6 +53,9 @@ def tns(timeout):
 class Model:
     def __init__(self, cfg, float_mode=False):
         self.inp = [(clamp(p), tns(t)) for (_, _, t, p) in cfg['inputs']]
+        # Order in which the nodes scan the inputs: that of list_parameters,
+        # which sorts full parameter names ("topics.<name>.<field>").
+        self.order = sorted(range(len(self.inp)), key=lambda k: cfg['inputs'][k][0] + '.')
         self.lck = [(clamp(p), tns(t)) for (_, _, t, p) in cfg['locks']]
         self.istamp = [0] * len(self.inp)
         self.lstamp = [0] * len(self.lck)
@@ -81,7 +85,8 @@ class Model:
             if self.expired(t, self.lstamp[j]) or self.lval[j]:
                 lp = max(lp, p)
         best, sel = 0, None
-        for k, (p, t) in enumerate(self.inp):
+        for k in self.order:
+            p, t = self.inp[k]
             if not self.expired(t, self.istamp[k]) and p >= lp and p > best:
                 best, sel = p, k
         return sel == i
@@ -252,11 +257,10 @@ def gen(seed):
     r = random.Random(seed)
     tag = f'c{seed}'
     n_in = r.randint(1, 6)
-    prios = []
-    while len(prios) < n_in:
-        p = r.choice(PRIOS)
-        if clamp(p) not in [clamp(q) for q in prios]:
-            prios.append(p)
+    prios = [r.choice(PRIOS) for _ in range(n_in)]
+    if n_in > 1 and r.random() < 0.5:  # force a tie in half of the cases
+        a, b = r.sample(range(n_in), 2)
+        prios[a] = prios[b]
     names = r.sample(NAMES, len(NAMES))
     inputs = [(names[i], f'{tag}_in_{i}', r.choice(TIMEOUTS), prios[i]) for i in range(n_in)]
     n_lk = r.randint(0, 4)

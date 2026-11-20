@@ -60,7 +60,8 @@ theorem run_forward_iff (cfg : Config) (st : State) (es : List Event) (n : Nat) 
         (∀ j hj, cfg.locks[j]? = some hj →
           lockActive cfg (run cfg st (es.take n)).1 t j = true → hj.priority ≤ hi.priority) ∧
         (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i →
-          inputLive cfg (run cfg st (es.take n)).1 t k = true → hk.priority < hi.priority) := by
+          inputLive cfg (run cfg st (es.take n)).1 t k = true →
+          hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k)) := by
   rw [run_getElem?]
   cases he : es[n]? with
   | none => simp
@@ -213,9 +214,10 @@ from start-up, a message on input `i` at time `t` is forwarded iff
   locked if its last message carried `true`, or it has a timeout and its last
   message (or start-up, time 0, if there was none) is more than the timeout
   before `t`;
-* every other input that is *live* has priority strictly below `i`'s, where
-  an input is live if it never expires or its last message (or time 0) is at
-  most its timeout before `t`.
+* every other input that is *live* has priority strictly below `i`'s, or the
+  same priority and a later position in the input list, where an input is
+  live if it never expires or its last message (or time 0) is at most its
+  timeout before `t`.
 
 Nothing here refers to internal state. "Before `t`" is arithmetic on the
 recorded clock readings; no monotonicity of the clock is assumed (A2). -/
@@ -228,7 +230,7 @@ theorem run_forward_iff_history (cfg : Config) (es : List Event) (i t : Nat) :
         hj.priority ≤ hi.priority) ∧
       (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i →
         (hk.timeout = 0 ∨ t ≤ lastInputStamp k es 0 + hk.timeout) →
-        hk.priority < hi.priority) := by
+        hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k)) := by
   rw [forward_iff]
   refine exists_congr fun hi => and_congr_right fun _ => and_congr_right fun _ => and_congr ?_ ?_
   · refine forall_congr' fun j => forall_congr' fun hj => forall_congr' fun hg => ?_
@@ -274,13 +276,13 @@ theorem run_not_forward_of_lock_true (cfg : Config) (es : List Event) (i t : Nat
   have := forward_lock cfg _ i t hfwd' hi hgi j hj hgj hact
   omega
 
-/-- **Priority, over a run from start-up.** If some other input `k` of higher
+/-- **Priority, over a run from start-up.** If some input `k` of higher
 priority never expires, or its last message (or start-up, time 0, if it has
 never spoken) is at most its timeout before `t`, a message on input `i` at
 time `t` is not forwarded. -/
 theorem run_not_forward_of_higher_live (cfg : Config) (es : List Event) (i t : Nat)
     (hi : Handle) (hgi : cfg.inputs[i]? = some hi)
-    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk) (hne : k ≠ i)
+    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk)
     (hfresh : hk.timeout = 0 ∨ t ≤ lastInputStamp k es 0 + hk.timeout)
     (hhigh : hi.priority < hk.priority) :
     (step cfg (run cfg (State.init cfg) es).1 (.input i t)).2 = false := by
@@ -291,7 +293,26 @@ theorem run_not_forward_of_higher_live (cfg : Config) (es : List Event) (i t : N
     refine (inputLive_iff ..).mpr ⟨hk, hgk, ?_⟩
     rw [run_inputStamp _ _ _ _ (List.getElem?_eq_some_iff.mp hgk).1, (init_reads cfg k).1]
     omega
-  have := forward_priority cfg _ i t hfwd' hi hgi k hk hgk hne hlive
+  have := forward_priority cfg _ i t hfwd' hi hgi k hk hgk hlive
+  omega
+
+/-- **Tie-break, over a run from start-up.** If an *earlier* input `k` of the
+same priority never expires, or its last message (or time 0) is at most its
+timeout before `t`, a message on input `i` at time `t` is not forwarded. -/
+theorem run_not_forward_of_earlier_equal_live (cfg : Config) (es : List Event) (i t : Nat)
+    (hi : Handle) (hgi : cfg.inputs[i]? = some hi)
+    (k : Nat) (hk : Handle) (hgk : cfg.inputs[k]? = some hk) (hlt : k < i)
+    (hfresh : hk.timeout = 0 ∨ t ≤ lastInputStamp k es 0 + hk.timeout)
+    (heq : hk.priority = hi.priority) :
+    (step cfg (run cfg (State.init cfg) es).1 (.input i t)).2 = false := by
+  by_contra hfwd
+  have hfwd' : (step cfg (run cfg (State.init cfg) es).1 (.input i t)).2 = true := by
+    simpa using hfwd
+  have hlive : inputLive cfg (run cfg (State.init cfg) es).1 t k = true := by
+    refine (inputLive_iff ..).mpr ⟨hk, hgk, ?_⟩
+    rw [run_inputStamp _ _ _ _ (List.getElem?_eq_some_iff.mp hgk).1, (init_reads cfg k).1]
+    omega
+  have := forward_first_of_equal cfg _ i t hfwd' hi hgi k hk hgk hlive heq
   omega
 
 end ROSlean.Mux

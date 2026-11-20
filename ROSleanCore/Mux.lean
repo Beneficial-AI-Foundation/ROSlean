@@ -24,36 +24,22 @@ structure Handle where
   timeout : Nat
   deriving Repr, DecidableEq
 
-/-- Node configuration. Input priorities are pairwise distinct (D1), so
-selection cannot depend on list order: `ROSlean.Mux.select_eq_some_iff`
-characterises the selected input without reference to it. Use
-`Config.validate` to build one from raw handles; it also clamps priorities. -/
+/-- Node configuration. The order of `inputs` matters only when two inputs
+share a priority: the earlier one wins (R10). Use `Config.ofRaw` to build one
+from raw handles; it clamps priorities. -/
 structure Config where
   inputs : List Handle
   locks : List Handle
-  inputs_distinct : (inputs.map (·.priority)).Nodup
-
-/-- Why a proposed configuration was rejected. -/
-inductive ConfigError where
-  | duplicateInputPriority
   deriving Repr, DecidableEq
 
 /-- R1: clamps the priority to `maxPriority`. (Negative priorities cannot be
 represented; the shim maps them to 0.) -/
 def Handle.clamp (h : Handle) : Handle := { h with priority := min h.priority maxPriority }
 
-/-- Builds a configuration from raw handles: clamps priorities (R1), then
-rejects duplicate input priorities (D1). -/
-def Config.validate (inputs locks : List Handle) : Except ConfigError Config :=
-  let inputs := inputs.map Handle.clamp
-  let locks := locks.map Handle.clamp
-  if h : (inputs.map (·.priority)).Nodup then
-    .ok { inputs, locks, inputs_distinct := h }
-  else
-    .error .duplicateInputPriority
-
-/-- The configuration with no inputs and no locks. -/
-def Config.empty : Config := { inputs := [], locks := [], inputs_distinct := .nil }
+/-- Builds a configuration from raw handles, keeping their order and clamping
+priorities (R1). Every configuration is accepted, as upstream. -/
+def Config.ofRaw (inputs locks : List Handle) : Config :=
+  { inputs := inputs.map Handle.clamp, locks := locks.map Handle.clamp }
 
 /-- Dynamic state (R3). Handles are addressed by their index in the config.
 The lists need not have the config's length: an index with no entry reads as
@@ -115,7 +101,9 @@ def unmasked (cfg : Config) (st : State) (now : Nat) (lp : Nat) (k : Nat) : Bool
   | none => false
 
 /-- One iteration of upstream's selection loop: keep the best `(priority,
-index)` seen so far, replacing it only on a strictly greater priority. -/
+index)` seen so far, replacing it only on a strictly greater priority. Among
+unmasked inputs of equal priority the first in list order is therefore kept
+(R10). -/
 def selectStep (cfg : Config) (st : State) (now : Nat) (lp : Nat)
     (best : Nat × Option Nat) (hk : Handle × Nat) : Nat × Option Nat :=
   if unmasked cfg st now lp hk.2 && best.1 < hk.1.priority then (hk.1.priority, some hk.2)

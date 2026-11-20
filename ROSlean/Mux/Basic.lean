@@ -128,19 +128,38 @@ theorem lockPriority_le_iff (cfg : Config) (st : State) (now : Nat) (p : Nat) :
 
 /-! ## Selection (R8, R9) -/
 
+private theorem pairwise_zipIdx {α : Type} (l : List α) (n : Nat) :
+    (l.zipIdx n).Pairwise (fun a b => a.2 < b.2) := by
+  induction l generalizing n with
+  | nil => simp
+  | cons x xs ih =>
+    rw [List.zipIdx_cons, List.pairwise_cons]
+    refine ⟨?_, ih (n + 1)⟩
+    rintro ⟨y, m⟩ hmem
+    have := (List.mem_zipIdx hmem).1
+    simp only
+    omega
+
+/-- The selection loop returns either its starting value or the *first*
+unmasked element of maximal priority. -/
 private theorem foldl_selectStep_spec (cfg : Config) (st : State) (now : Nat) (lp : Nat)
-    (l : List (Handle × Nat)) (acc : Nat × Option Nat) :
+    (l : List (Handle × Nat)) (hsorted : l.Pairwise (fun a b => a.2 < b.2))
+    (acc : Nat × Option Nat) :
     acc.1 ≤ (l.foldl (selectStep cfg st now lp) acc).1 ∧
     (∀ hk ∈ l, unmasked cfg st now lp hk.2 = true →
       hk.1.priority ≤ (l.foldl (selectStep cfg st now lp) acc).1) ∧
     (l.foldl (selectStep cfg st now lp) acc = acc ∨
       ∃ hk ∈ l, unmasked cfg st now lp hk.2 = true ∧ acc.1 < hk.1.priority ∧
-        l.foldl (selectStep cfg st now lp) acc = (hk.1.priority, some hk.2)) := by
+        l.foldl (selectStep cfg st now lp) acc = (hk.1.priority, some hk.2) ∧
+        ∀ x ∈ l, unmasked cfg st now lp x.2 = true → x.2 < hk.2 →
+          x.1.priority < hk.1.priority) := by
   induction l generalizing acc with
   | nil => simp
   | cons x xs ih =>
     simp only [List.foldl_cons, List.mem_cons]
-    obtain ⟨h1, h2, h3⟩ := ih (selectStep cfg st now lp acc x)
+    rw [List.pairwise_cons] at hsorted
+    obtain ⟨hx_lt, hxs⟩ := hsorted
+    obtain ⟨h1, h2, h3⟩ := ih hxs (selectStep cfg st now lp acc x)
     by_cases hx : unmasked cfg st now lp x.2 = true ∧ acc.1 < x.1.priority
     · have hs : selectStep cfg st now lp acc x = (x.1.priority, some x.2) := by
         simp [selectStep, hx.1, hx.2]
@@ -151,10 +170,16 @@ private theorem foldl_selectStep_spec (cfg : Config) (st : State) (now : Nat) (l
         · exact h1
         · exact h2 hk hmem hun
       · right
-        rcases h3 with h3 | ⟨hk, hmem, hun, hlt, heq⟩
-        · exact ⟨x, Or.inl rfl, hx.1, hx.2, h3⟩
+        rcases h3 with h3 | ⟨hk, hmem, hun, hlt, heq, hfirst⟩
+        · refine ⟨x, Or.inl rfl, hx.1, hx.2, h3, ?_⟩
+          rintro y (rfl | hy) - hlt
+          · omega
+          · have := hx_lt y hy; omega
         · simp only at hlt
-          exact ⟨hk, Or.inr hmem, hun, by omega, heq⟩
+          refine ⟨hk, Or.inr hmem, hun, by omega, heq, ?_⟩
+          rintro y (rfl | hy) hyun hylt
+          · exact hlt
+          · exact hfirst y hy hyun hylt
     · have hs : selectStep cfg st now lp acc x = acc := by
         unfold selectStep
         rw [ite_eq_right]
@@ -165,21 +190,14 @@ private theorem foldl_selectStep_spec (cfg : Config) (st : State) (now : Nat) (l
         · have : ¬ acc.1 < hk.1.priority := fun hlt => hx ⟨hun, hlt⟩
           omega
         · exact h2 hk hmem hun
-      · rcases h3 with h3 | ⟨hk, hmem, hun, hlt, heq⟩
+      · rcases h3 with h3 | ⟨hk, hmem, hun, hlt, heq, hfirst⟩
         · left; exact h3
-        · right; exact ⟨hk, Or.inr hmem, hun, hlt, heq⟩
-
-/-- Distinct inputs have distinct priorities (D1). -/
-theorem priority_ne (cfg : Config) {i k : Nat} {hi hk : Handle}
-    (hgi : cfg.inputs[i]? = some hi) (hgk : cfg.inputs[k]? = some hk) (hne : k ≠ i) :
-    hk.priority ≠ hi.priority := by
-  intro heq
-  obtain ⟨hil, rfl⟩ := List.getElem?_eq_some_iff.mp hgi
-  obtain ⟨hkl, rfl⟩ := List.getElem?_eq_some_iff.mp hgk
-  have hnd := cfg.inputs_distinct
-  have := (List.Nodup.getElem_inj_iff hnd (i := k) (j := i)
-    (hi := by simpa using hkl) (hj := by simpa using hil)).mp (by simpa using heq)
-  exact hne this
+        · right
+          refine ⟨hk, Or.inr hmem, hun, hlt, heq, ?_⟩
+          rintro y (rfl | hy) hyun hylt
+          · have : ¬ acc.1 < y.1.priority := fun h => hx ⟨hyun, h⟩
+            omega
+          · exact hfirst y hy hyun hylt
 
 theorem unmasked_iff (cfg : Config) (st : State) (now : Nat) (lp : Nat) (k : Nat) :
     unmasked cfg st now lp k = true ↔
@@ -191,21 +209,22 @@ theorem unmasked_iff (cfg : Config) (st : State) (now : Nat) (lp : Nat) (k : Nat
 
 /-- **Selection.** Input `i` is selected iff it is configured with a positive
 priority, is live, is not outranked by the lock priority, and every other live
-input has strictly lower priority. -/
+input either has strictly lower priority or has the same priority and comes
+later in the list (R9, R10). -/
 theorem select_eq_some_iff (cfg : Config) (st : State) (now : Nat) (i : Nat) :
     select cfg st now = some i ↔
     ∃ hi, cfg.inputs[i]? = some hi ∧ 0 < hi.priority ∧ inputLive cfg st now i = true ∧
       lockPriority cfg st now ≤ hi.priority ∧
       ∀ k hk, cfg.inputs[k]? = some hk → k ≠ i → inputLive cfg st now k = true →
-        hk.priority < hi.priority := by
+        hk.priority < hi.priority ∨ (hk.priority = hi.priority ∧ i < k) := by
   have hsel : select cfg st now =
       (cfg.inputs.zipIdx.foldl (selectStep cfg st now (lockPriority cfg st now)) (0, none)).2 := rfl
   obtain ⟨-, h2, h3⟩ := foldl_selectStep_spec cfg st now (lockPriority cfg st now)
-    cfg.inputs.zipIdx (0, none)
+    cfg.inputs.zipIdx (pairwise_zipIdx ..) (0, none)
   constructor
   · intro h
     rw [hsel] at h
-    rcases h3 with h3 | ⟨⟨hi, i'⟩, hmem, hun, hlt, heq⟩
+    rcases h3 with h3 | ⟨⟨hi, i'⟩, hmem, hun, hlt, heq, hfirst⟩
     · rw [h3] at h; simp at h
     · rw [heq] at h
       simp only [Option.some.injEq] at h
@@ -216,18 +235,22 @@ theorem select_eq_some_iff (cfg : Config) (st : State) (now : Nat) (i : Nat) :
       refine ⟨hi, hgi, hlt, hlive, hlp, ?_⟩
       intro k hk hgk hne hklive
       by_cases hmask : lockPriority cfg st now ≤ hk.priority
-      · have hle := h2 (hk, k) (List.mem_zipIdx_iff_getElem?.mpr hgk)
-          ((unmasked_iff ..).mpr ⟨hk, hgk, hklive, hmask⟩)
+      · have hkun := (unmasked_iff ..).mpr ⟨hk, hgk, hklive, hmask⟩
+        have hkmem : (hk, k) ∈ cfg.inputs.zipIdx := List.mem_zipIdx_iff_getElem?.mpr hgk
+        have hle := h2 (hk, k) hkmem hkun
         rw [heq] at hle
         simp only at hle
-        exact lt_of_le_of_ne hle (priority_ne cfg hgi hgk hne)
-      · exact lt_of_lt_of_le (not_le.mp hmask) hlp
+        by_cases hki : k < i'
+        · left; exact hfirst (hk, k) hkmem hkun hki
+        · omega
+      · left; exact lt_of_lt_of_le (not_le.mp hmask) hlp
   · rintro ⟨hi, hgi, hpos, hlive, hlp, hothers⟩
     have hun : unmasked cfg st now (lockPriority cfg st now) i = true :=
       (unmasked_iff ..).mpr ⟨hi, hgi, hlive, hlp⟩
-    have hle := h2 (hi, i) (List.mem_zipIdx_iff_getElem?.mpr hgi) hun
+    have himem : (hi, i) ∈ cfg.inputs.zipIdx := List.mem_zipIdx_iff_getElem?.mpr hgi
+    have hle := h2 (hi, i) himem hun
     rw [hsel]
-    rcases h3 with h3 | ⟨⟨hk, k⟩, hmem, hunk, -, heq⟩
+    rcases h3 with h3 | ⟨⟨hk, k⟩, hmem, hunk, -, heq, hfirst⟩
     · rw [h3] at hle; simp only at hle; omega
     · rw [heq]
       rw [heq] at hle
@@ -237,7 +260,10 @@ theorem select_eq_some_iff (cfg : Config) (st : State) (now : Nat) (i : Nat) :
       have hgk := List.mem_zipIdx_iff_getElem?.mp hmem
       obtain ⟨hk', hgk', hklive, -⟩ := (unmasked_iff ..).mp hunk
       rw [hgk] at hgk'; cases hgk'
-      have := hothers k hk hgk hne' hklive
-      omega
+      rcases hothers k hk hgk hne' hklive with h | ⟨heq', hik⟩
+      · omega
+      · have := hfirst (hi, i) himem hun hik
+        simp only at this
+        omega
 
 end ROSlean.Mux

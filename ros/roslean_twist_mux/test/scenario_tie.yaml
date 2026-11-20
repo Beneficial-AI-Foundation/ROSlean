@@ -1,0 +1,23 @@
+# Equal input priorities, as in upstream's own example config (joystick and
+# tablet at 100). Listed here in the opposite order to the one the nodes use:
+# handles are ordered by parameter name, so joystick comes before tablet.
+twist_mux:
+  ros__parameters:
+    topics:
+      tablet:
+        topic   : tab_vel
+        timeout : 0.5
+        priority: 100
+      navigation:
+        topic   : nav_vel
+        timeout : 0.5
+        priority: 10
+      joystick:
+        topic   : joy_vel
+        timeout : 0.5
+        priority: 100
+    locks:
+      pause:
+        topic   : pause_navigation
+        timeout : 0.0
+        priority: 100

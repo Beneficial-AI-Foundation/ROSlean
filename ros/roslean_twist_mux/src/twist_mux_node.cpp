@@ -54,6 +54,8 @@ public:
     const auto locks = read_handles("locks");
 
     // Indices are assigned in list order, separately for inputs and locks.
+    // The order of inputs decides ties between equal priorities (R10); it is
+    // the order upstream uses, that of list_parameters.
     roslean::Mux::Builder builder;
     for (const auto & h : inputs) {
       builder.add_input(h.priority, h.timeout_ns);
@@ -61,7 +63,7 @@ public:
     for (const auto & h : locks) {
       builder.add_lock(h.priority, h.timeout_ns);
     }
-    mux_.emplace(builder.build());  // throws roslean::ConfigError
+    mux_.emplace(builder.build());
 
     const auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
     if (use_stamped) {

@@ -10,9 +10,8 @@ properties proved about `step` and `run` are properties of what the node
 executes:
 
 * the configuration the node runs with is exactly the handles it added, in
-  order, with priorities clamped (`validate_ok_iff`, `builderAddInput_inputs`);
-* a mux is only ever created from a configuration that passed validation
-  (`builderCheck_eq_zero_iff`, `muxNew_of_ok`);
+  order, with priorities clamped (`ofRaw_inputs`, `builderAddInput_inputs`,
+  `muxNew_eq`); the order is what decides ties between equal priorities;
 * the decision returned for an input message is `step`'s, and the state after
   any sequence of calls is `run`'s (`muxForward_onInput`, `foldl_apply`).
 
@@ -26,49 +25,24 @@ open ROSleanCore.Mux ROSleanCore.FFI
 
 /-! ## Configuration -/
 
-/-- Validation neither reorders nor drops handles: the resulting config is the
-given lists with priorities clamped. -/
-theorem validate_ok_iff (ins locks : List Handle) (c : Config) :
-    Config.validate ins locks = .ok c ↔
-      c.inputs = ins.map Handle.clamp ∧ c.locks = locks.map Handle.clamp := by
-  simp only [Config.validate]
-  constructor
-  · intro h
-    split at h
-    · cases h; exact ⟨rfl, rfl⟩
-    · cases h
-  · rintro ⟨h1, h2⟩
-    have hn := c.inputs_distinct
-    rw [h1] at hn
-    rw [dif_pos hn]
-    cases c; simp_all
+/-- Building a config neither reorders nor drops handles: it is the given
+lists with priorities clamped. -/
+theorem ofRaw_inputs (ins locks : List Handle) :
+    (Config.ofRaw ins locks).inputs = ins.map Handle.clamp ∧
+    (Config.ofRaw ins locks).locks = locks.map Handle.clamp := ⟨rfl, rfl⟩
 
 /-- Clamping leaves priorities up to 255 unchanged. -/
 theorem clamp_of_le (h : Handle) (hp : h.priority ≤ maxPriority) : h.clamp = h := by
   cases h; simp_all [Handle.clamp]
 
-/-- Every priority in a validated config is at most 255 (R1). -/
-theorem validate_priority_le (ins locks : List Handle) (c : Config)
-    (h : Config.validate ins locks = .ok c) :
-    (∀ hi ∈ c.inputs, hi.priority ≤ maxPriority) ∧ (∀ hj ∈ c.locks, hj.priority ≤ maxPriority) := by
-  obtain ⟨h1, h2⟩ := (validate_ok_iff ..).mp h
-  rw [h1, h2]
+/-- Every priority in a built config is at most 255 (R1). -/
+theorem ofRaw_priority_le (ins locks : List Handle) :
+    (∀ hi ∈ (Config.ofRaw ins locks).inputs, hi.priority ≤ maxPriority) ∧
+    (∀ hj ∈ (Config.ofRaw ins locks).locks, hj.priority ≤ maxPriority) := by
   constructor <;>
   · intro x hx
     obtain ⟨y, -, rfl⟩ := List.mem_map.mp hx
     exact Nat.min_le_right ..
-
-/-- Validation fails exactly when two inputs have the same clamped priority (D1). -/
-theorem validate_isOk_iff (ins locks : List Handle) :
-    (∃ c, Config.validate ins locks = .ok c) ↔ (ins.map (·.clamp.priority)).Nodup := by
-  simp only [Config.validate, List.map_map]
-  constructor
-  · rintro ⟨c, h⟩
-    split at h
-    · assumption
-    · cases h
-  · intro h
-    exact ⟨_, dif_pos h⟩
 
 /-- A raw priority that is zero or negative becomes 0, so the input is never
 selected (R1, R9). -/
@@ -94,20 +68,10 @@ theorem builderAddLock_locks (b : Builder) (p t : Int64) :
     (builderAddLock b p t).locks = b.locks ++ [handleOfRaw p t] ∧
     (builderAddLock b p t).inputs = b.inputs := ⟨rfl, rfl⟩
 
-/-- The check the shim performs before creating a mux succeeds exactly when
-validation does. -/
-theorem builderCheck_eq_zero_iff (b : Builder) :
-    builderCheck b = 0 ↔ ∃ c, Config.validate b.inputs b.locks = .ok c := by
-  unfold builderCheck
-  cases h : Config.validate b.inputs b.locks with
-  | ok c => simp [errorCode]
-  | error e => cases e; simp [errorCode]
-
-/-- A mux created from a builder that passed the check starts in the initial
-state of the validated config. -/
-theorem muxNew_of_ok (b : Builder) (c : Config) (h : Config.validate b.inputs b.locks = .ok c) :
-    muxNew b = { cfg := c, st := State.init c, forward := false } := by
-  simp [muxNew, h]
+/-- A mux starts in the initial state of the config built from its handles. -/
+theorem muxNew_eq (b : Builder) :
+    muxNew b = { cfg := Config.ofRaw b.inputs b.locks,
+                 st := State.init (Config.ofRaw b.inputs b.locks), forward := false } := rfl
 
 /-! ## Events -/
 
@@ -136,14 +100,15 @@ theorem foldl_apply (m : Mux) (es : List Event) :
     simp only [List.foldl_cons, h1, h2, run_cons]
     exact ⟨rfl, rfl⟩
 
-/-- **End to end.** Create a mux from a builder that passed the check, feed it
-any sequence of events, then deliver a message on input `i` at time `t`. The
-decision the node reads is the one characterised by
-`run_forward_iff_history` for the validated config. -/
-theorem muxForward_after (b : Builder) (c : Config)
-    (h : Config.validate b.inputs b.locks = .ok c) (es : List Event) (i : UInt32) (t : UInt64) :
+/-- **End to end.** Create a mux from a builder, feed it any sequence of
+events, then deliver a message on input `i` at time `t`. The decision the node
+reads is the one characterised by `run_forward_iff_history` for the config
+built from the builder's handles. -/
+theorem muxForward_after (b : Builder) (es : List Event) (i : UInt32) (t : UInt64) :
     muxForward (muxOnInput (es.foldl Mux.apply (muxNew b)) i t) =
-      (step c (run c (State.init c) es).1 (.input i.toNat t.toNat)).2 := by
-  rw [muxForward_onInput, (foldl_apply ..).1, (foldl_apply ..).2, muxNew_of_ok b c h]
+      (step (Config.ofRaw b.inputs b.locks)
+        (run (Config.ofRaw b.inputs b.locks) (State.init (Config.ofRaw b.inputs b.locks)) es).1
+        (.input i.toNat t.toNat)).2 := by
+  rw [muxForward_onInput, (foldl_apply ..).1, (foldl_apply ..).2, muxNew_eq]
 
 end ROSlean.Mux

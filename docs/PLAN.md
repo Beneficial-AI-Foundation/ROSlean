@@ -11,7 +11,7 @@ properties, plus a reusable Lean-to-ROS shim.
 | ROS environment | pixi + RoboStack, project-local (`pixi.toml`), native on macOS arm64 |
 | ROS distribution | Jazzy |
 | All inputs silent | Match upstream: publish nothing, state the base-driver watchdog as an assumption. Timer plus proved "silence leads to zero" is a stretch goal. |
-| Equal input priorities | Rejected at start-up; the Lean `Config` carries a distinctness proof |
+| Equal input priorities | As upstream: the first live input in handle order wins (SPEC R10). Initially rejected at start-up; changed back on 2026-11-20 at the user's request |
 | Shim language | C++ (`rclcpp`), calling Lean through the C ABI |
 
 ## Architecture
@@ -39,7 +39,7 @@ agent; the findings and what was done about them are in
 | M1 | Specification from the upstream source | done | `docs/SPEC.md`: rules R1–R16, differences D1–D9. |
 | M2 | Lean model | done | `ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
 | M3 | FFI surface | done | `ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
-| M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Not a strict drop-in: equal input priorities are rejected (D1), which includes upstream's own example config. |
+| M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Accepts every configuration upstream accepts, including its example config with two inputs at priority 100. |
 | M5 | Proofs | done | `ROSlean/Mux/{Basic,Properties,Trace,FFI}.lean`; table in the README. |
 | M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and a randomised differential test; no divergence outside D2. This replaces the recorded teleop/Nav2 session of the scope doc with scripted and random event sequences under simulated time. |
 | M7 | Demo | done | turtlesim: planner, teleop, e-stop lock, with a narrator naming theorems. |

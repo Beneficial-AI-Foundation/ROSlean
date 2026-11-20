@@ -10,7 +10,6 @@
 
 #include <cstdint>
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 #include "roslean_core/ffi.h"
@@ -40,13 +39,6 @@ inline void initialize()
     throw std::runtime_error("failed to initialise the Lean core library");
   }
 }
-
-/// Thrown when the Lean core rejects a configuration.
-class ConfigError : public std::runtime_error
-{
-public:
-  using std::runtime_error::runtime_error;
-};
 
 /// The arbitration core of twist_mux. All decisions are made in Lean; this
 /// class only owns the Lean object.
@@ -85,16 +77,11 @@ public:
       return num_locks_++;
     }
 
-    /// Validates the configuration and creates the mux in its initial state.
-    /// On success the builder is left empty. Throws ConfigError if Lean
-    /// rejects the configuration; the builder is then unchanged.
+    /// Creates the mux in its initial state and leaves the builder empty.
+    /// Every configuration is accepted; inputs of equal priority are ranked
+    /// by the order in which they were added (earlier wins).
     Mux build()
     {
-      lean_inc(obj_);  // check consumes one reference
-      const uint8_t code = roslean_mux_builder_check(obj_);
-      if (code != 0) {
-        throw ConfigError(describe(code));
-      }
       lean_object * mux = roslean_mux_new(obj_);
       obj_ = roslean_mux_builder_new(lean_box(0));
       num_inputs_ = num_locks_ = 0;
@@ -102,16 +89,6 @@ public:
     }
 
 private:
-    static std::string describe(uint8_t code)
-    {
-      switch (code) {
-        case 1:
-          return "two inputs have the same priority";
-        default:
-          return "configuration rejected by the Lean core (code " + std::to_string(code) + ")";
-      }
-    }
-
     lean_object * obj_;
     uint32_t num_inputs_{0};
     uint32_t num_locks_{0};

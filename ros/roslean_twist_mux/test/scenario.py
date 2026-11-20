@@ -122,28 +122,42 @@ ODD = [
     ('cmd', 'mid', False, 'sticky never expires'),
 ]
 
+TIE = [
+    ('clock', s(100)),
+    ('cmd', 'tab', True, 'tablet (100) drives alone: joystick never heard, expired'),
+    ('cmd', 'joy', True, 'joystick (100) takes over at once: it is first by name (R10)'),
+    ('cmd', 'tab', False, 'tablet dropped while the equal-priority joystick is live'),
+    ('cmd', 'nav', False, 'nav suppressed'),
+    ('lock', 'pause', True),
+    ('cmd', 'joy', True, 'pause lock (100) blocks neither of the tied pair'),
+    ('cmd', 'tab', False, 'tie-break unchanged under the lock'),
+    ('lock', 'pause', False),
+    ('clock', s(100.5)),
+    ('cmd', 'tab', False, 'joystick still live exactly at its timeout'),
+    ('clock', s(100.5) + 1),
+    ('cmd', 'tab', True, 'tablet drives 1 ns after the joystick timeout'),
+    ('cmd', 'nav', False, 'nav suppressed by tablet'),
+    ('cmd', 'joy', True, 'joystick takes over again'),
+]
+
 # name -> (config file, extra parameters, stamped?, steps)
 SCENARIOS = {
     'main': ('scenario.yaml', [], True, MAIN),
     'main-unstamped': ('scenario.yaml', ['use_stamped:=false'], False, MAIN),
     'start-up': ('scenario.yaml', [], True, START),
     'odd': ('scenario_odd.yaml', [], True, ODD),
+    'tie': ('scenario_tie.yaml', [], True, TIE),
 }
 
 INPUT_TOPICS = {
     'nav': 'nav_vel', 'key': 'key_vel', 'joy': 'joy_vel', 'bogus': 'bogus_vel',
+    'tab': 'tab_vel',
     'zero': 'zero_vel', 'low': 'low_vel', 'mid': 'mid_vel', 'sticky': 'sticky_vel'}
 LOCK_TOPICS = {
     'watchdog': 'watchdog', 'pause': 'pause_navigation', 'e_stop': 'e_stop', 'top': 'top_lock'}
 
 # A configuration that the node must refuse to start with: (description, params).
 BAD_CONFIGS = [
-    ('duplicate input priorities (D1)',
-     ['topics.a.topic:=a', 'topics.a.timeout:=0.5', 'topics.a.priority:=10',
-      'topics.b.topic:=b', 'topics.b.timeout:=0.5', 'topics.b.priority:=10']),
-    ('priorities that collide after clamping (D1)',
-     ['topics.a.topic:=a', 'topics.a.timeout:=0.5', 'topics.a.priority:=300',
-      'topics.b.topic:=b', 'topics.b.timeout:=0.5', 'topics.b.priority:=255']),
     ('integer timeout (R14)',
      ['topics.a.topic:=a', 'topics.a.timeout:=1', 'topics.a.priority:=10']),
     ('missing priority (R14)',
