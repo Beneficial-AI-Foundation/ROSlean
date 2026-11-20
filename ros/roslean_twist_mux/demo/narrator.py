@@ -13,6 +13,7 @@ from std_msgs.msg import Bool
 
 INPUTS = {'planner': 'nav_vel', 'teleop': 'key_vel'}
 SILENCE = 0.4  # s without output before reporting that nothing is forwarded
+GRACE = 0.3    # s after a lock change during which in-flight outputs are ignored
 
 EXPLANATION = {
     # (driver, e-stop locked) -> text
@@ -44,6 +45,7 @@ class Narrator(Node):
         self.locked = False
         self.driver = 'unknown'
         self.last_out = self.get_clock().now()
+        self.lock_changed = self.get_clock().now()
         for name, topic in INPUTS.items():
             self.create_subscription(Twist, topic, lambda msg, name=name: self.on_in(name, msg), 10)
         self.create_subscription(Bool, 'e_stop', self.on_lock, 10)
@@ -53,7 +55,9 @@ class Narrator(Node):
     def report(self, driver):
         if driver != self.driver:
             self.driver = driver
-            text = EXPLANATION.get((driver, self.locked), f'{driver} drives')
+            text = EXPLANATION.get(
+                (driver, self.locked),
+                f'UNEXPECTED: {driver} is forwarded while the e-stop lock is engaged')
             print(f'\n>>> {text}', flush=True)
 
     def on_in(self, name, msg):
@@ -69,10 +73,14 @@ class Narrator(Node):
             self.locked = msg.data
             print(f"\n>>> e-stop lock {'ENGAGED' if msg.data else 'released'}", flush=True)
             self.driver = 'unknown'
-            self.last_out = self.get_clock().now()  # give the new situation time to show
+            self.last_out = self.lock_changed = self.get_clock().now()
 
     def on_out(self, msg):
         self.last_out = self.get_clock().now()
+        # The narrator may hear a lock message before the mux does, and a
+        # message forwarded just before the lock may still be in flight.
+        if (self.last_out - self.lock_changed).nanoseconds < GRACE * 1e9:
+            return
         # Prefer the highest-priority match if both inputs sent equal messages.
         for name in ('teleop', 'planner'):
             if self.latest.get(name) == msg:

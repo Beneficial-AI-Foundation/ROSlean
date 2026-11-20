@@ -24,7 +24,7 @@ ros-jazzy-teleop-twist-keyboard = ">=2.4.1,<3"
 build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G Ninja" }
 noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
-prove = "lake build ROSlean"
+prove = "lake exe cache get && lake build ROSlean"
 demo = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_twist_mux demo_launch.py'", depends-on = ["build"] }
 # Run these in other terminals while the demo is up:
 demo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=key_vel'"

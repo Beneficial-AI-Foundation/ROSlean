@@ -55,7 +55,7 @@ No behavioural bug in the shim.
 | Scenario not registered as a test | Fixed |
 | Two expectations confounded by an expired watchdog lock | Fixed: scenario rewritten under simulated time |
 | Wall-clock timing fragility | Fixed: simulated time |
-| Clamping and timeout normalisation lived in C++, outside the proofs | Fixed: moved to Lean (`handleOfRaw`), with theorems |
+| Clamping and timeout normalisation lived in C++, outside the proofs | Fixed: moved to Lean (`handleOfRaw`, `Handle.clamp`), characterised by `handleOfRaw_*` and `validate_ok_iff`. The seconds-to-nanoseconds truncation stays in C++ |
 | Publisher captured by reference before assignment | Fixed |
 | Start-up failure mode differs (exit 1 vs abort) | Documented as D7 |
 | No launch file | Documented as D9 |
@@ -84,3 +84,20 @@ No statement wrong or vacuous; only standard axioms.
 | D8 unobservable: `rclcpp` aborts on a negative clock | Fixed in SPEC |
 | Second node's own failures were discarded | Fixed |
 | Bad configs are checked for our node only | Open |
+
+## M7 — demo, documentation, reproducibility
+
+Build, tests, proofs and demo all reproduced; every theorem named in the
+README exists and matches its row.
+
+| Finding | Outcome |
+| --- | --- |
+| Narrator could print "planner drives" just after an e-stop (message in flight) | Fixed: grace period after a lock change; unexpected cases are labelled |
+| README had no demo instructions | Fixed |
+| README "not proved" list incomplete | Fixed |
+| No theorem characterised `handleOfRaw` | Fixed |
+| Stale statements in PLAN.md | Fixed |
+| `pixi run prove` would build Mathlib from source on a fresh clone | Fixed: fetches the cache first |
+| CI is the Lean template and covers none of the ROS side | Open; listed under "Not done" |
+| No LICENSE file although `package.xml` declares Apache-2.0 | Open: needs a decision by the owner |
+| `twist_mux.md` still shows the two decisions as open and links to private pages | Open: left untouched as the original scope document |

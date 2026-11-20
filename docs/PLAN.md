@@ -29,8 +29,9 @@ timestamp in ns) and gets back a forward / drop decision.
 
 ## Milestones
 
-Each milestone was followed by an independent review by a separate agent; the
-findings and what was done about them are in [REVIEWS.md](REVIEWS.md).
+Milestones M1 to M7 were each followed by an independent review by a separate
+agent; the findings and what was done about them are in
+[REVIEWS.md](REVIEWS.md).
 
 | | Milestone | Status | Result |
 | --- | --- | --- | --- |
@@ -38,13 +39,17 @@ findings and what was done about them are in [REVIEWS.md](REVIEWS.md).
 | M1 | Specification from the upstream source | done | `docs/SPEC.md`: rules R1–R16, differences D1–D9. |
 | M2 | Lean model | done | `ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
 | M3 | FFI surface | done | `ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
-| M4 | `roslean_twist_mux` node | done | Same parameters, topics and QoS as upstream. |
+| M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Not a strict drop-in: equal input priorities are rejected (D1), which includes upstream's own example config. |
 | M5 | Proofs | done | `ROSlean/Mux/{Basic,Properties,Trace,FFI}.lean`; table in the README. |
-| M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and randomised differential test; no divergence outside D2. |
+| M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and a randomised differential test; no divergence outside D2. This replaces the recorded teleop/Nav2 session of the scope doc with scripted and random event sequences under simulated time. |
 | M7 | Demo | done | turtlesim: planner, teleop, e-stop lock, with a narrator naming theorems. |
 
 ### Not done
 
+- **CI for the ROS side.** The GitHub workflows are the Lean project
+  template: they run `lake build` (the proofs) and a docs deployment that
+  needs GitHub Pages enabled. Nothing in CI builds the ROS packages or runs
+  the tests.
 - **Linux.** Nothing has been built or run on Linux. The CMake rpath handling
   for Linux is a guess (marked UNVERIFIED in `lean_core.cmake`).
 - **Deployment.** The node loads the Lean runtime from the elan toolchain and
@@ -75,13 +80,12 @@ These changed the plan above.
    and carry an rpath to the elan toolchain. This works for development but
    the binary is not relocatable. Deploying to a robot needs either static
    linking of `libleanrt` / `libInit` or shipping the toolchain libraries;
-   this is new work, placed after M6.
+   this is new work and has not been done.
 4. **On macOS the node aborts at load unless unused dylibs are stripped.**
    ROS message targets pull in `*_rosidl_generator_py` libraries that expect
    Python symbols from the host process. `-Wl,-dead_strip_dylibs` fixes it.
-   The CMake logic for this and for finding Lean is in
-   `ros/roslean_noop/cmake/FindLeanCore.cmake` and should move to a shared
-   location when the second package appears.
+   The CMake logic for this and for finding Lean lives in
+   `ros/roslean_core/cmake/lean_core.cmake`.
 5. **colcon does not know about Lean.** `roslean_core`'s CMake now runs
    `lake build ROSleanCore:shared` on every build. A changed `@[export]`
    signature used to go unnoticed by C++; `roslean_core` now compiles
@@ -101,7 +105,7 @@ These changed the plan above.
   unverified; the demo uses turtlesim.
 - **Linux parity.** Everything so far is verified on macOS arm64 only.
   `pixi.toml` lists Linux platforms, but the rpath and dylib handling in
-  CMake has not been exercised there. Add a Linux CI job with M4.
+  CMake has not been exercised there.
 - **Thin proofs.** As noted in the scope doc; the pipeline and shim are the
   main deliverable.
 

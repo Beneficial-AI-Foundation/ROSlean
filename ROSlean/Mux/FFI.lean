@@ -70,6 +70,20 @@ theorem validate_isOk_iff (ins locks : List Handle) :
   · intro h
     exact ⟨_, dif_pos h⟩
 
+/-- A raw priority that is zero or negative becomes 0, so the input is never
+selected (R1, R9). -/
+theorem handleOfRaw_priority_of_nonpos (p t : Int64) (h : p.toInt ≤ 0) :
+    (handleOfRaw p t).priority = 0 := Int.toNat_of_nonpos h
+
+/-- A raw timeout that is zero or negative becomes 0: expiry is disabled (R2). -/
+theorem handleOfRaw_timeout_of_nonpos (p t : Int64) (h : t.toInt ≤ 0) :
+    (handleOfRaw p t).timeout = 0 := Int.toNat_of_nonpos h
+
+/-- Non-negative raw values are passed through unchanged. -/
+theorem handleOfRaw_of_nonneg (p t : Int64) (hp : 0 ≤ p.toInt) (ht : 0 ≤ t.toInt) :
+    ((handleOfRaw p t).priority : Int) = p.toInt ∧ ((handleOfRaw p t).timeout : Int) = t.toInt :=
+  ⟨Int.toNat_of_nonneg hp, Int.toNat_of_nonneg ht⟩
+
 /-- Inputs are indexed in the order they are added. -/
 theorem builderAddInput_inputs (b : Builder) (p t : Int64) :
     (builderAddInput b p t).inputs = b.inputs ++ [handleOfRaw p t] ∧

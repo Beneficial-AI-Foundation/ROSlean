@@ -3,7 +3,7 @@
 
 The smallest possible Lean "core" for a ROS node: a function exported to C that
 returns its argument unchanged. It exists only to prove out the Lean → C → ROS
-build and link pipeline; the real `step` function replaces it.
+build and link pipeline (`ros/roslean_noop`). The real logic is in `Mux.lean`.
 
 This library must stay free of Mathlib (and of anything else that is expensive
 to link): it is compiled to native code and loaded into the ROS node. Proofs

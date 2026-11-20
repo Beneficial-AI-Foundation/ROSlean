@@ -22,8 +22,9 @@ velocity command sources by priority, freshness and locks.
 ## Quick start
 
 Requires [elan](https://github.com/leanprover/elan) and
-[pixi](https://pixi.sh). The ROS 2 Jazzy environment (RoboStack) is installed
-into `.pixi/` on first use. Verified on macOS arm64 only.
+[pixi](https://pixi.sh), both on `PATH`. The ROS 2 Jazzy environment
+(RoboStack, about 1 GB) is installed into `.pixi/` on first use, and the first
+build also downloads Mathlib. Verified on macOS arm64 only.
 
 ```sh
 pixi run build     # lake build of the core + colcon build of the ROS packages
@@ -38,6 +39,36 @@ Run the node the same way as upstream:
 pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_mux \
   --ros-args --params-file ros/roslean_twist_mux/config/example.yaml'
 ```
+
+## Demo
+
+A turtlesim turtle driven through the mux by three sources: a scripted
+planner (priority 10), keyboard teleop (priority 100) and an e-stop lock
+(priority 255).
+
+```sh
+pixi run demo            # terminal 1: turtlesim, mux, planner, narrator
+pixi run demo-teleop     # terminal 2: keyboard teleop; hold a key to keep driving
+pixi run demo-estop      # terminal 3: engage the e-stop lock
+pixi run demo-release    #             release it
+```
+
+The turtle circles under the planner. Holding a teleop key takes over; half
+a second after the key is released the planner resumes. Engaging the e-stop
+freezes the turtle whatever else is publishing. The narrator in terminal 1
+prints each change together with the theorem that explains it, for example:
+
+```
+>>> teleop drives; planner messages are dropped while teleop is live
+    theorems forward_of_highest_live, run_not_forward_of_higher_live
+>>> e-stop lock ENGAGED
+>>> nothing is forwarded: the e-stop lock (255) is above every input
+    theorem not_forward_of_top_lock
+```
+
+To see the same demo on upstream's node, pass `mux_package:=twist_mux` to the
+launch file (the theorem names then describe behaviour that upstream shares,
+not something proved about it).
 
 ## What is proved
 
@@ -55,10 +86,25 @@ All in `ROSlean/Mux/`, with no `sorry` and only Lean's three standard axioms.
 | Trace invariant | `run_forward_iff`, `run_forward_iff_history` | The above holds at every point of every event sequence; the decision is characterised by the event history alone. |
 | Code that runs | `muxForward_after` (in `FFI.lean`) | The decision the node reads from the C interface is the model's, on exactly the handles the node configured. |
 
-What is **not** proved: the C++ shim (mapping subscriptions to indices, reading
-the clock, publishing on a `true` decision), the Lean compiler and runtime,
-and ROS itself. The shim is covered by tests instead, including a comparison
-with upstream `twist_mux` over the same event sequences.
+What is **not** proved, and is trusted or only tested:
+
+- **That the model matches upstream `twist_mux`.** The model is a reading of
+  the C++ source, checked by running both nodes on the same event sequences
+  (fixed scenarios and a randomised differential test). The one known
+  difference in decisions is at exact timeout boundaries (SPEC, D2).
+- **The C++ shim** (`twist_mux_node.cpp`, `roslean_core/mux.hpp`): mapping
+  subscriptions to indices, reading the clock, converting timeouts from
+  seconds to nanoseconds, reference counting of Lean objects, calling the
+  core once per message in order, and publishing on a `true` decision.
+- **The declared C signatures.** They are checked against Lean's generated C
+  at build time, except that Lean passes `Int64` as `uint64_t`, so signedness
+  is not checked.
+- **One event at a time.** The node uses a single-threaded executor; the
+  theorems say nothing about concurrent callbacks.
+- **The clock.** Theorems are about recorded clock readings. If the clock
+  jumps backwards (a simulation reset), expired inputs and dead lock
+  publishers count as fresh again until the clock catches up, as in upstream.
+- The Lean compiler and runtime, and ROS itself.
 
 Two things the theorems make precise that are easy to get wrong:
 
