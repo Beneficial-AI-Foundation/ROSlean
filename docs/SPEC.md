@@ -10,9 +10,12 @@ theorems.
 **Configuration**
 
 - R1. An input ("topic") and a lock each have a name, a topic, a timeout in
-  seconds (floating point) and an integer priority. Priorities are clamped to
-  0..255 with a warning.
-- R2. A timeout ≤ 0 disables expiry for that handle.
+  seconds (floating point) and an integer priority. The name is the full
+  parameter prefix, e.g. `topics.navigation`. Priorities are clamped to
+  0..255 with a warning; negative priorities become 0. The timeout is
+  converted once to integer nanoseconds by truncation.
+- R2. A timeout ≤ 0 disables expiry for that handle. Because of the
+  truncation in R1, so does a positive timeout below 1 ns.
 
 **State**
 
@@ -33,9 +36,11 @@ theorems.
 **Locks**
 
 - R6. A lock *is locked* iff it has expired or its last value is `true`.
-  So a lock whose publisher has gone silent past its timeout is locked, and a
-  lock with a positive timeout is locked from start-up until its first
-  `false` message. This confirms the "dead lock publisher" rule.
+  So a lock whose publisher has gone silent past its timeout is locked. A
+  lock with a positive timeout that has never received a message is locked
+  once the clock exceeds the timeout; under simulation time, while the clock
+  is still below the timeout, it is *not* locked. This confirms the "dead
+  lock publisher" rule.
 - R7. The *lock priority* is the maximum priority over locked locks, or 0 if
   none is locked.
 
@@ -47,16 +52,20 @@ theorems.
 - R9. The *selected* input is the unmasked input of maximum priority, where
   the maximum must be strictly greater than 0. An input with priority 0 is
   never selected. If no input qualifies, nothing is selected.
-- R10. On equal priorities upstream keeps the first one in its handle list.
-  That order comes from `list_parameters` and is not documented, so the
-  winner is unspecified.
+- R10. On equal priorities upstream keeps the first unmasked one in its
+  handle list. That order comes from `list_parameters`; it is not a
+  documented contract, but in practice it is lexicographic by name, so in the
+  upstream example config `joystick` beats `tablet` while both are live.
+- R10a. An input at priority 255 can never be masked by a lock (R8 is
+  strict).
 
 **Decision**
 
 - R11. When a message arrives on input *i* at time `now`: set
   `stamp_i := now`, then forward the message unchanged iff *i* is the
-  selected input at `now`. Because the stamp was just refreshed, *i* itself
-  is never expired at that moment.
+  selected input. Upstream re-reads the clock for every expiry check inside
+  the callback, so the checks happen a few hundred nanoseconds after the
+  stamp and at slightly different times per handle (see D4).
 - R12. When a message arrives on lock *j* at time `now`: set
   `stamp_j := now` and store its value. Nothing is published.
 - R13. There is no other trigger. A 1 Hz timer exists but only publishes
@@ -66,18 +75,22 @@ theorems.
 
 - R14. Parameters: `topics.<name>.{topic,timeout,priority}`,
   `locks.<name>.{topic,timeout,priority}`, `use_stamped` (default `true`).
-  A missing field is a fatal error.
+  A missing field is a fatal error, and so is a field of the wrong YAML
+  type: `timeout: 0` (integer) or `priority: 10.0` terminates the node.
+  Parameters are read once at start-up. Empty or absent `topics` / `locks`
+  is legal; the node then never publishes.
 - R15. Output topic `cmd_vel_out`, QoS keep-last 1. Subscriptions use system
-  default QoS. Message type is `TwistStamped` if `use_stamped`, else `Twist`.
+  default QoS. Inputs and output are all `TwistStamped` if `use_stamped`,
+  else all `Twist`; the two cannot be mixed.
 - R16. Single-threaded executor: events are processed one at a time.
 
 ## Answers to the open questions in the scope doc
 
 | Question | Answer |
 | --- | --- |
-| Equal input priorities | First in an unspecified list order wins (R10). |
+| Equal input priorities | First live one in list order wins; the order is lexicographic by name in practice (R10). |
 | Does a lock block inputs of equal priority? | No, only strictly lower (R8). |
-| Dead lock publisher | Counts as locked (R6), including before the first message. |
+| Dead lock publisher | Counts as locked (R6), including before the first message once the clock has passed the timeout. |
 | Clock | Node clock at arrival; header stamps are ignored (R3). |
 
 ## Things the documentation does not say
@@ -93,18 +106,32 @@ theorems.
 
 | # | Upstream | ROSlean | Why |
 | --- | --- | --- | --- |
-| D1 | Equal input priorities allowed, winner unspecified (R10) | Rejected at start-up | Makes selection a function of the config. Note: the upstream *example* `twist_mux_topics.yaml` has two inputs at priority 100 and is therefore rejected. Equal priorities between a lock and an input, or between locks, stay legal. |
-| D2 | Times compared as floating-point seconds | Integer nanoseconds; timeouts rounded to the nearest ns | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout (a `double` holding a Unix time resolves ~0.24 µs). |
+| D1 | Equal input priorities allowed (R10) | Rejected at start-up | Makes selection independent of list order. The check runs on clamped priorities, so two inputs above 255, or two at 0 or below, are also rejected. Note: the upstream *example* `twist_mux_topics.yaml` has two inputs at priority 100 and is therefore rejected. Equal priorities between a lock and an input, or between locks, stay legal. |
+| D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout (a `double` holding a Unix time resolves ~0.24 µs). |
 | D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
+| D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). Differs only for timeouts of the order of the callback's own run time: upstream can find an input expired inside its own callback; ROSlean cannot. |
+| D5 | NaN, infinite or very large timeouts are undefined behaviour | Non-finite timeouts and timeouts above 2⁶³ ns are rejected at start-up | Avoids undefined behaviour. |
+| D6 | Priority read as 32-bit `int` before clamping | Clamped from the 64-bit parameter value | Differs only for priorities beyond ±2³¹. |
 
-Everything else, including R5, R9 and R13, is reproduced as is.
+Everything else, including R5, R9, R13 and the fatal errors in R14, is
+reproduced as is.
 
 ## Model assumptions
 
 - A1. Events are delivered one at a time with the node-clock reading taken at
   delivery (R16).
 - A2. Nothing is assumed about time being monotonic for the safety
-  properties. If the clock jumps backwards, `now − stamp` is negative and the
-  handle is not expired, as upstream.
+  properties. If the clock jumps backwards (e.g. a simulation reset),
+  `now − stamp` is negative and the handle is not expired, as upstream. The
+  consequence is fail-open: a dead high-priority input stays live and a dead
+  lock publisher reads as unlocked until the clock again exceeds
+  `stamp + timeout`.
 - A3. Stopping the robot when all inputs are silent is the base driver's job
   (R13).
+
+## Note on upstream tests
+
+Upstream's own tests do not pin the arbitration rules: only
+`test_joystick_relay.py` is registered with CMake, and the priority test in
+`system.test.py` is commented out. The comparison in M6 therefore has to
+supply its own scenarios.
