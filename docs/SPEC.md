@@ -107,17 +107,37 @@ theorems.
 | # | Upstream | ROSlean | Why |
 | --- | --- | --- | --- |
 | D1 | Equal input priorities allowed (R10) | Rejected at start-up | Makes selection independent of list order. The check runs on clamped priorities, so two inputs above 255, or two at 0 or below, are also rejected. Note: the upstream *example* `twist_mux_topics.yaml` has two inputs at priority 100 and is therefore rejected. Equal priorities between a lock and an input, or between locks, stay legal. |
-| D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout (a `double` holding a Unix time resolves ~0.24 µs). |
+| D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout; see "Extent of D2" below. |
 | D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
 | D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). Differs only for timeouts of the order of the callback's own run time: upstream can find an input expired inside its own callback; ROSlean cannot. |
-| D5 | NaN, infinite or very large timeouts are undefined behaviour | Non-finite timeouts and timeouts of magnitude 9.2e9 s or more are rejected at start-up | Avoids undefined behaviour. |
+| D5 | NaN, infinite or very large timeouts are accepted; beyond ±2⁶³ ns the conversion is undefined behaviour | Non-finite timeouts and timeouts of magnitude 9.2e9 s or more are rejected at start-up | Avoids undefined behaviour. (Slightly conservative: 9.2e9 s to 9.22e9 s is still well defined upstream.) |
 | D6 | Priority read as 32-bit `int` before clamping | Clamped from the 64-bit parameter value | Differs only for priorities beyond ±2³¹. |
 | D7 | A start-up error escapes `main` and aborts the process (SIGABRT) | Logged as FATAL, exit code 1 | Clean failure. Visible to launch files that inspect exit codes. |
-| D8 | A negative node time is stored as is | Negative node time is treated as 0 | The core takes unsigned time. Needs a negative simulation clock to observe. |
+| D8 | — | Negative node time would be treated as 0 | Not observable: `rclcpp` aborts both nodes on a negative `/clock` value before either sees it. The clamp in the shim is defensive only. |
 | D9 | Ships a launch file | None; run the executable with `--ros-args --params-file` | Out of scope. |
 
 Everything else, including R5, R9, R13 and the fatal errors in R14, is
 reproduced as is.
+
+### Extent of D2
+
+Measured against upstream by the M6 review, and reproduced bit for bit by
+emulating upstream's arithmetic (`double(ns) / 1e9`):
+
+- The two nodes agree whenever `now − stamp` is more than 400 ns from the
+  timeout at today's Unix time, and always under simulated time except
+  *exactly* at the boundary.
+- Exactly at `now − stamp = timeout` with a decimal timeout such as 0.1, 0.3
+  or 0.7 s, upstream's rounding makes its strict `>` behave as `≥` for a
+  fraction of (stamp, timeout) pairs, so it expires the handle one tick
+  early; ROSlean never does. Under simulated time with a ticking clock,
+  exact-boundary hits are an ordinary case, not a rare one.
+- At Unix-scale clock values both directions occur: upstream may expire a
+  handle up to a few hundred nanoseconds early or late.
+- Timeouts that are binary fractions (0.25, 0.5, …) show no difference under
+  simulated time.
+
+ROSlean's behaviour is the documented rule (R4) applied exactly.
 
 ## Model assumptions
 
@@ -136,5 +156,7 @@ reproduced as is.
 
 Upstream's own tests do not pin the arbitration rules: only
 `test_joystick_relay.py` is registered with CMake, and the priority test in
-`system.test.py` is commented out. The comparison in M6 therefore has to
-supply its own scenarios.
+`system.test.py` is commented out. The comparison therefore supplies its own:
+fixed scenarios with exact boundaries (`test/scenario.py`) and randomised
+configurations and event sequences (`test/random_diff.py`), both run against
+upstream and ROSlean on the same messages.

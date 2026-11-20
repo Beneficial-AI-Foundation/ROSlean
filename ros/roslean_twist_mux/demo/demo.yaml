@@ -1,0 +1,19 @@
+# Demo configuration: a planner at low priority, keyboard teleop above it,
+# and an e-stop lock above both. turtlesim takes plain Twist messages.
+twist_mux:
+  ros__parameters:
+    use_stamped: false
+    topics:
+      planner:
+        topic   : nav_vel
+        timeout : 0.5
+        priority: 10
+      teleop:
+        topic   : key_vel
+        timeout : 0.5
+        priority: 100
+    locks:
+      e_stop:
+        topic   : e_stop
+        timeout : 0.0
+        priority: 255

@@ -304,9 +304,9 @@ def main():
             bad += failures
             print(f'DECISIONS {name} {decisions}')
             if other:
-                other_decisions, _ = run_scenario(other, name)
+                other_decisions, other_failures = run_scenario(other, name)
                 same = decisions == other_decisions
-                bad += not same
+                bad += (not same) + other_failures
                 print(f'DECISIONS {name} {other_decisions}')
                 print(f"{'ok  ' if same else 'FAIL'}  {name}: both nodes "
                       f"{'agree' if same else 'DISAGREE'} on all {len(decisions)} decisions")

@@ -28,7 +28,7 @@ set_target_properties(twist_mux PROPERTIES
   INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 install(TARGETS twist_mux DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config demo DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   # End-to-end scenarios over real topics under simulated time. If upstream
@@ -45,6 +45,13 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/scenario.py" ${_scenario_args})
   # A domain of its own, so that other ROS traffic on the machine cannot interfere.
   set_tests_properties(scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=87" TIMEOUT 600)
+  if(twist_mux_FOUND)
+    # Random configurations and event sequences, both nodes against a model.
+    add_test(NAME random_diff
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/random_diff.py"
+        "$<TARGET_FILE:twist_mux>" "twist_mux/twist_mux" 0 20)
+    set_tests_properties(random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=88" TIMEOUT 900)
+  endif()
 endif()
 
 ament_package()
