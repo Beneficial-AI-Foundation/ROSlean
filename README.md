@@ -8,14 +8,16 @@ velocity command sources by priority, freshness and locks.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
   and every deliberate difference.
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
+- [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
+  turtlesim experiment, step by step.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `ROSleanCore/` | Lean, no Mathlib. The executable model (`Mux.lean`) and its C interface (`FFI.lean`). Compiled to C and linked into the library that the node loads. |
-| `ROSlean/` | Lean + Mathlib. Theorems about `ROSleanCore`. Never linked into a node. |
-| `ros/roslean_core` | Compiles the C that Lean generates and links it with the Lean runtime into one self-contained library, `libroslean_core`; C++ wrapper, FFI tests. |
+| `core/` | A Lean package with no dependencies. `core/ROSleanCore/` holds the executable model (`Mux.lean`) and its C interface (`FFI.lean`). Compiled to C and linked into the library that the node loads. |
+| `ROSlean/` | Lean + Mathlib (the root package, which requires `core`). Theorems about `ROSleanCore`. Never linked into a node. |
+| `ros/roslean_core` | Compiles the C that Lean generates into `libroslean_core` and installs the Lean runtime it needs with it; C++ wrapper, FFI tests. |
 | `docker/` | Linux build and run-time image. |
 | `ros/roslean_twist_mux` | The node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
@@ -44,12 +46,17 @@ pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_
 
 ## Linux and deployment
 
-Lean is needed to build, not to run. `roslean_core` installs a single
-library, `libroslean_core` (about 6 MB on Linux), that contains the compiled
-model, the Lean runtime and Lean's standard library and depends only on the
-C library. The install tree does not refer to the Lean toolchain or to this
-checkout, so it can be copied to another machine of the same OS and
-architecture that has ROS 2 Jazzy.
+A Lean installation is needed to build, not to run, and building the node
+never needs Mathlib. `roslean_core` installs `libroslean_core` together with
+the Lean runtime it uses, so the install tree does not refer to the Lean
+toolchain or to this checkout. Built normally (without `--symlink-install`,
+which `pixi run build` uses for development), it can be copied to another
+machine of the same OS and architecture that has ROS 2 Jazzy.
+
+- **macOS:** the runtime is linked statically into `libroslean_core` (4 MB).
+- **Linux:** Lean's static runtime cannot be put in a shared library, so a
+  stripped copy of Lean's shared runtime, `libleanshared.so` (about 190 MB),
+  is installed next to `libroslean_core.so`.
 
 ```sh
 docker build -f docker/Dockerfile -t roslean-twist-mux .
@@ -63,7 +70,7 @@ The image is built in two stages on the official `ros:jazzy-ros-base`
 runs all tests including the comparison with apt's `ros-jazzy-twist-mux`, and
 checks that the install tree is self-contained; the build fails if any of
 that fails. The final image holds ROS and the install tree only.
-`--build-arg RUN_TESTS=0` skips the tests. Verified on linux/arm64.
+`--build-arg RUN_TESTS=0` skips the tests.
 
 Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
 `colcon build --base-paths ros` in this directory, which is what the

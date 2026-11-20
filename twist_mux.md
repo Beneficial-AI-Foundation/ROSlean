@@ -20,7 +20,7 @@ rule. The node accepts the same configurations as upstream `twist_mux` 4.5 (exce
 non-finite or absurdly large timeouts, SPEC D5) and
 makes the same decisions in every comparison run so far; the one known
 exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
-Built and tested on macOS arm64 (pixi) and on Linux arm64 (Docker, Ubuntu 24.04 with ROS from apt).
+Built and tested on macOS arm64 (pixi) and on Linux (Docker, Ubuntu 24.04 with ROS from apt).
 
 **Set-up.** Install [elan](https://github.com/leanprover/elan) (Lean) and
 [pixi](https://pixi.sh) (ROS 2 Jazzy from RoboStack) and put both on `PATH`.
@@ -33,16 +33,17 @@ pixi run prove     # check every theorem (first run fetches Mathlib)
 pixi run demo      # turtlesim: planner, keyboard teleop and an e-stop lock
 ```
 
-On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean at run time (see the README).
+On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean installation at run time (see the README).
 
 **Reading order.**
 
+0. [docs/TUTORIAL.md](docs/TUTORIAL.md) if you want to run it first: from an empty machine to the turtlesim experiment.
 1. The rest of this file: why `twist_mux`, what the package does, what was to
    be proved.
 2. [docs/SPEC.md](docs/SPEC.md): the rules R1–R16 as read from the upstream
    C++ source, and each place where this node deliberately differs (D2–D9).
    The Lean code and the tests cite these numbers.
-3. [`ROSleanCore/Mux.lean`](ROSleanCore/Mux.lean): the model, about 150
+3. [`core/ROSleanCore/Mux.lean`](core/ROSleanCore/Mux.lean): the model, about 150
    lines. `step` is the whole node. Then
    [`ROSlean/Mux/Examples.lean`](ROSlean/Mux/Examples.lean) for worked
    scenarios.
@@ -61,7 +62,7 @@ On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfi
 
 | Path | Contents |
 | --- | --- |
-| `ROSleanCore/` | Lean without Mathlib: the model and its C interface. This is what gets compiled and linked into the node. |
+| `core/` | A Lean package of its own, without Mathlib: the model and its C interface (`core/ROSleanCore/`). This is what gets compiled and linked into the node. |
 | `ROSlean/` | Lean with Mathlib: theorems about `ROSleanCore`. Never linked into a node. |
 | `ros/roslean_core` | ROS package that builds the Lean library and wraps it for C++ (`mux.hpp`). |
 | `ros/roslean_twist_mux` | The node, its tests against upstream, and the demo. |
@@ -69,11 +70,11 @@ On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfi
 
 **Changing something.**
 
-- *A rule:* edit `step` or its helpers in `ROSleanCore/Mux.lean`, then run
+- *A rule:* edit `step` or its helpers in `core/ROSleanCore/Mux.lean`, then run
   `pixi run prove` (the theorems that no longer hold will fail) and
   `pixi run test` (the comparison with upstream will show the difference).
   Record a deliberate difference in `docs/SPEC.md`.
-- *The C interface:* an `@[export]` in `ROSleanCore/FFI.lean` must be mirrored
+- *The C interface:* an `@[export]` in `core/ROSleanCore/FFI.lean` must be mirrored
   by hand in `ros/roslean_core/include/roslean_core/ffi.h` and `mux.hpp`. The
   build fails if the C prototypes disagree with what Lean generated.
 - *A new verified node:* copy the pattern of `roslean_noop`: a Lean function
