@@ -110,8 +110,11 @@ theorems.
 | D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout (a `double` holding a Unix time resolves ~0.24 µs). |
 | D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
 | D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). Differs only for timeouts of the order of the callback's own run time: upstream can find an input expired inside its own callback; ROSlean cannot. |
-| D5 | NaN, infinite or very large timeouts are undefined behaviour | Non-finite timeouts and timeouts above 2⁶³ ns are rejected at start-up | Avoids undefined behaviour. |
+| D5 | NaN, infinite or very large timeouts are undefined behaviour | Non-finite timeouts and timeouts of magnitude 9.2e9 s or more are rejected at start-up | Avoids undefined behaviour. |
 | D6 | Priority read as 32-bit `int` before clamping | Clamped from the 64-bit parameter value | Differs only for priorities beyond ±2³¹. |
+| D7 | A start-up error escapes `main` and aborts the process (SIGABRT) | Logged as FATAL, exit code 1 | Clean failure. Visible to launch files that inspect exit codes. |
+| D8 | A negative node time is stored as is | Negative node time is treated as 0 | The core takes unsigned time. Needs a negative simulation clock to observe. |
+| D9 | Ships a launch file | None; run the executable with `--ros-args --params-file` | Out of scope. |
 
 Everything else, including R5, R9, R13 and the fatal errors in R14, is
 reproduced as is.

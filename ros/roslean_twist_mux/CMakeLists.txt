@@ -30,4 +30,21 @@ set_target_properties(twist_mux PROPERTIES
 install(TARGETS twist_mux DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
+if(BUILD_TESTING)
+  # End-to-end scenarios over real topics under simulated time. If upstream
+  # twist_mux is installed, also require identical decisions from it.
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  find_package(twist_mux QUIET)
+  set(_scenario_args "$<TARGET_FILE:twist_mux>")
+  if(twist_mux_FOUND)
+    list(APPEND _scenario_args "twist_mux/twist_mux")
+  else()
+    message(WARNING "upstream twist_mux not found: scenarios run without the comparison")
+  endif()
+  add_test(NAME scenario
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/scenario.py" ${_scenario_args})
+  # A domain of its own, so that other ROS traffic on the machine cannot interfere.
+  set_tests_properties(scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=87" TIMEOUT 600)
+endif()
+
 ament_package()

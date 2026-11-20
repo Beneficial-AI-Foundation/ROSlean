@@ -108,7 +108,7 @@ int main()
     // Values at and above 2^63 take Lean's big-number path, and
     // stamp + timeout must not wrap at 2^64.
     roslean::Mux::Builder b;
-    b.add_input(1, UINT64_MAX);
+    b.add_input(1, INT64_MAX);
     b.add_input(2, 10);
     auto m = b.build();
     const uint64_t big = (1ULL << 63) + 5;
@@ -141,7 +141,7 @@ int main()
     // Priorities are clamped to 255 inside Lean, which can create duplicates.
     roslean::Mux::Builder b;
     b.add_input(255, 0);
-    b.add_input(1ULL << 40, 0);
+    b.add_input(1LL << 40, 0);
     bool threw = false;
     try {
       b.build();
@@ -173,6 +173,31 @@ int main()
       threw = true;
     }
     check(threw, "moved-from mux throws instead of crashing");
+  }
+  {
+    // Raw values are normalised in Lean: a negative priority is 0 (never
+    // selected), and a negative timeout never expires.
+    roslean::Mux::Builder b;
+    b.add_input(-5, 500);
+    b.add_input(10, 500);
+    b.add_input(20, -1);
+    auto m = b.build();
+    check(!m.on_input(0, 1000000), "negative priority is never forwarded");
+    check(!m.on_input(1, 1000000), "never-heard input with a negative timeout stays live");
+    check(m.on_input(2, 1000000), "input with a negative timeout drives");
+    check(!m.on_input(1, UINT64_MAX), "and never expires");
+  }
+  {
+    roslean::Mux::Builder b;
+    b.add_input(-1, 0);
+    b.add_input(INT64_MIN, 0);
+    bool threw = false;
+    try {
+      b.build();
+    } catch (const roslean::ConfigError &) {
+      threw = true;
+    }
+    check(threw, "two negative priorities collide at 0");
   }
   {
     // Repeated build / reject / step cycles: reference counting on every path.

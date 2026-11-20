@@ -29,8 +29,8 @@ struct HandleParams
 {
   std::string name;   // full parameter prefix, e.g. "topics.navigation"
   std::string topic;
-  uint64_t timeout_ns;  // 0 = never expires
-  uint64_t priority;    // clamped to 0..255
+  int64_t timeout_ns;  // as configured, truncated to ns; <= 0 = never expires
+  int64_t priority;    // as configured; the Lean core clamps it to 0..255
 };
 
 class TwistMux : public rclcpp::Node
@@ -72,10 +72,16 @@ public:
 
     for (uint32_t i = 0; i < inputs.size(); ++i) {
       log_handle("Topic", inputs[i]);
-      if (inputs[i].priority == 0) {
+      // Advisory only: the behaviour described is implemented and proved in Lean.
+      if (inputs[i].priority <= 0) {
         RCLCPP_WARN(
-          get_logger(), "Topic handler '%s' with priority 0 will never be selected. "
+          get_logger(), "Topic handler '%s' with priority <= 0 will never be selected. "
           "Increase the priority to at least 1.", inputs[i].name.c_str());
+      }
+      if (inputs[i].priority >= 255) {
+        RCLCPP_WARN(
+          get_logger(), "Topic handler '%s' has the maximum priority 255: no lock can "
+          "block it.", inputs[i].name.c_str());
       }
       if (use_stamped) {
         subscribe_input<geometry_msgs::msg::TwistStamped>(i, inputs[i].topic, pub_stamped_);
@@ -85,9 +91,9 @@ public:
     }
     for (uint32_t j = 0; j < locks.size(); ++j) {
       log_handle("Lock", locks[j]);
-      if (locks[j].priority == 0) {
+      if (locks[j].priority <= 0) {
         RCLCPP_WARN(
-          get_logger(), "Lock '%s' with priority 0 is redundant.", locks[j].name.c_str());
+          get_logger(), "Lock '%s' with priority <= 0 is redundant.", locks[j].name.c_str());
       }
       subs_.push_back(
         create_subscription<std_msgs::msg::Bool>(
@@ -139,46 +145,36 @@ private:
       h.name = prefix;
       h.topic = fetch<std::string>(prefix + ".topic");
       h.timeout_ns = timeout_to_ns(prefix, fetch<double>(prefix + ".timeout"));
-      h.priority = clamp_priority(prefix, fetch<int64_t>(prefix + ".priority"));
+      h.priority = fetch<int64_t>(prefix + ".priority");
+      if (h.priority < 0 || h.priority > 255) {
+        RCLCPP_WARN(
+          get_logger(), "The priority of '%s' (%lld) will be clamped to 0..255.",
+          prefix.c_str(), static_cast<long long>(h.priority));
+      }
       handles.push_back(h);
     }
     return handles;
   }
 
-  // R1, R2: truncate to integer ns as upstream; <= 0 disables expiry.
+  // R1: the same conversion as upstream, which truncates to integer ns. What
+  // a zero or negative result means (R2) is decided in Lean.
   // D5: non-finite and out-of-range values are rejected.
-  static uint64_t timeout_to_ns(const std::string & name, double seconds)
+  static int64_t timeout_to_ns(const std::string & name, double seconds)
   {
-    if (!std::isfinite(seconds) || seconds >= 9.2e9) {
+    if (!std::isfinite(seconds) || std::abs(seconds) >= 9.2e9) {
       throw std::runtime_error(
-              "timeout of '" + name + "' must be finite and below 9.2e9 s");
+              "timeout of '" + name + "' must be finite and below 9.2e9 s in magnitude");
     }
-    if (seconds <= 0.0) {
-      return 0;
-    }
-    const auto ns = rclcpp::Duration(std::chrono::duration<double>(seconds)).nanoseconds();
-    return ns > 0 ? static_cast<uint64_t>(ns) : 0;
-  }
-
-  // R1: clamp to 0..255 with a warning.
-  uint64_t clamp_priority(const std::string & name, int64_t priority)
-  {
-    const int64_t clamped = std::clamp<int64_t>(priority, 0, 255);
-    if (clamped != priority) {
-      RCLCPP_WARN(
-        get_logger(), "The priority of '%s' has been clamped from %lld to %lld.",
-        name.c_str(), static_cast<long long>(priority), static_cast<long long>(clamped));
-    }
-    return static_cast<uint64_t>(clamped);
+    return rclcpp::Duration(std::chrono::duration<double>(seconds)).nanoseconds();
   }
 
   void log_handle(const char * kind, const HandleParams & h)
   {
     RCLCPP_INFO(
-      get_logger(), "%s handler '%s' subscribed to topic '%s': timeout = %s, priority = %llu.",
+      get_logger(), "%s handler '%s' subscribed to topic '%s': timeout = %s, priority = %lld.",
       kind, h.name.c_str(), h.topic.c_str(),
       h.timeout_ns > 0 ? (std::to_string(h.timeout_ns * 1e-9) + "s").c_str() : "None",
-      static_cast<unsigned long long>(h.priority));
+      static_cast<long long>(std::clamp<int64_t>(h.priority, 0, 255)));
   }
 
   std::optional<roslean::Mux> mux_;

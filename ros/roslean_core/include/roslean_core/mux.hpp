@@ -67,17 +67,21 @@ public:
     Builder(const Builder &) = delete;
     Builder & operator=(const Builder &) = delete;
 
-    /// @param timeout_ns 0 disables expiry.
-    uint32_t add_input(uint64_t priority, uint64_t timeout_ns)
+    /// Both arguments are the raw parameter values; Lean normalises them.
+    /// @param priority clamped to 0..255.
+    /// @param timeout_ns zero or negative disables expiry.
+    uint32_t add_input(int64_t priority, int64_t timeout_ns)
     {
-      obj_ = roslean_mux_builder_add_input(obj_, priority, timeout_ns);
+      obj_ = roslean_mux_builder_add_input(
+        obj_, static_cast<uint64_t>(priority), static_cast<uint64_t>(timeout_ns));
       return num_inputs_++;
     }
 
-    /// @param timeout_ns 0 disables expiry.
-    uint32_t add_lock(uint64_t priority, uint64_t timeout_ns)
+    /// See add_input.
+    uint32_t add_lock(int64_t priority, int64_t timeout_ns)
     {
-      obj_ = roslean_mux_builder_add_lock(obj_, priority, timeout_ns);
+      obj_ = roslean_mux_builder_add_lock(
+        obj_, static_cast<uint64_t>(priority), static_cast<uint64_t>(timeout_ns));
       return num_locks_++;
     }
 

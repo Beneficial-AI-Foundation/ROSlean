@@ -25,6 +25,9 @@ lean_object * initialize_ROSlean_ROSleanCore(uint8_t builtin);
 uint64_t roslean_noop(uint64_t seq);
 
 lean_object * roslean_mux_builder_new(lean_object * unit);
+/* `priority` and `timeout_ns` are Lean `Int64`, which Lean passes as the
+ * two's-complement bit pattern in a uint64_t. The compile-time check cannot
+ * tell the two apart, so cast from int64_t at the call site. */
 lean_object * roslean_mux_builder_add_input(lean_object * b, uint64_t priority, uint64_t timeout_ns);
 lean_object * roslean_mux_builder_add_lock(lean_object * b, uint64_t priority, uint64_t timeout_ns);
 uint8_t roslean_mux_builder_check(lean_object * b);

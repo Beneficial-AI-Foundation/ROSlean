@@ -14,6 +14,11 @@
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
 
+  <test_depend>rclpy</test_depend>
+  <test_depend>rosgraph_msgs</test_depend>
+  <test_depend>ros2pkg</test_depend>
+  <test_depend>twist_mux</test_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
