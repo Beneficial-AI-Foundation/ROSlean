@@ -29,66 +29,33 @@ timestamp in ns) and gets back a forward / drop decision.
 
 ## Milestones
 
-### M0. Pipeline spike — done
+Each milestone was followed by an independent review by a separate agent; the
+findings and what was done about them are in [REVIEWS.md](REVIEWS.md).
 
-`ros/roslean_noop`: an `rclcpp` node that initialises the Lean runtime and
-calls `ROSleanCore.noop` once per second. Verified with `ros2 node list` and
-`ros2 topic echo` from a second process. Run it with `pixi run noop`.
+| | Milestone | Status | Result |
+| --- | --- | --- | --- |
+| M0 | Pipeline spike | done | `ros/roslean_noop`: an `rclcpp` node calling a Lean function. |
+| M1 | Specification from the upstream source | done | `docs/SPEC.md`: rules R1–R16, differences D1–D9. |
+| M2 | Lean model | done | `ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
+| M3 | FFI surface | done | `ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
+| M4 | `roslean_twist_mux` node | done | Same parameters, topics and QoS as upstream. |
+| M5 | Proofs | done | `ROSlean/Mux/{Basic,Properties,Trace,FFI}.lean`; table in the README. |
+| M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and randomised differential test; no divergence outside D2. |
+| M7 | Demo | done | turtlesim: planner, teleop, e-stop lock, with a narrator naming theorems. |
 
-### M1. Pin the specification from the upstream source
+### Not done
 
-Read `twist_mux` 4.5.1 (Jazzy branch) and write down as plain sentences:
-
-- whether a lock blocks inputs of equal priority, or only lower;
-- what happens when a lock publisher goes silent past its timeout;
-- what upstream does on equal input priorities (we reject, but the difference
-  must be documented);
-- which clock the timeouts use, and whether stamped messages use header time.
-
-Output: `docs/SPEC.md`. Everything after this depends on it.
-
-### M2. Lean model
-
-In `ROSleanCore`: `Config`, `State`, `Event`, `step : Config → State → Event → State × Bool`,
-and config validation that returns either a valid `Config` or an error string.
-Unit examples as `#guard` / `example ... := by decide`.
-
-### M3. FFI surface
-
-A small, flat C API, since the shim should not build Lean structures by hand:
-
-- `roslean_mux_new(priorities, timeouts, ...)` → opaque handle or error;
-- `roslean_mux_on_input(handle, index, t_ns)` → `bool` forward;
-- `roslean_mux_on_lock(handle, index, value, t_ns)`.
-
-State lives on the Lean side behind the handle. Scalars and arrays of `UInt64`
-only. A hand-written header `roslean_core.h` mirrors the `@[export]`
-signatures, and a C++ test without ROS exercises it, because nothing checks
-that the header and the Lean signatures agree.
-
-### M4. `roslean_twist_mux` node
-
-One subscription per configured input and lock, the upstream parameter file
-format, `TwistStamped` first (the Jazzy default) with plain `Twist` behind the
-upstream `use_stamped` parameter. Start-up fails with a clear message on
-invalid config.
-
-### M5. Proofs
-
-In `ROSlean`: priority, lock, dead lock publisher, expiry, liveness, then the
-trace invariant by induction. Provenance holds by construction. M4 and M5 can
-run in parallel once M2 is stable, which suits two people.
-
-### M6. Compare with upstream
-
-Install upstream `ros-jazzy-twist-mux` from RoboStack, record a bag with three
-inputs and a lock, replay it through both nodes, and diff the forwarded
-messages. Scripted publishers are enough; Nav2 is not needed for this.
-
-### M7. Demo
-
-Three inputs (planner, teleop, lock) driving a simulated robot; each
-transition named after its theorem. See the simulator risk below.
+- **Linux.** Nothing has been built or run on Linux. The CMake rpath handling
+  for Linux is a guess (marked UNVERIFIED in `lean_core.cmake`).
+- **Deployment.** The node loads the Lean runtime from the elan toolchain and
+  the core library from `.lake/build`; the install tree is not relocatable.
+  Static linking is the intended fix.
+- **Gazebo / Nav2 demo.** `ros-gz-sim` exists on RoboStack for macOS arm64
+  but was not tried; the demo uses turtlesim and a scripted planner.
+- **Stretch: silence leads to zero.** A timer and a proved stop command, as a
+  deliberate difference from upstream.
+- **Upstream extras.** Diagnostics, `twist_marker`, `joystick_relay`, launch
+  file (D3, D9).
 
 ## Lessons from the spike (M0)
 
@@ -115,9 +82,12 @@ These changed the plan above.
    The CMake logic for this and for finding Lean is in
    `ros/roslean_noop/cmake/FindLeanCore.cmake` and should move to a shared
    location when the second package appears.
-5. **colcon does not know about Lean.** `pixi run build` runs
-   `lake build ROSleanCore:shared` first. A changed `@[export]` signature is
-   not detected by the C++ build, which motivates the header and test in M3.
+5. **colcon does not know about Lean.** `roslean_core`'s CMake now runs
+   `lake build ROSleanCore:shared` on every build. A changed `@[export]`
+   signature used to go unnoticed by C++; `roslean_core` now compiles
+   `ffi.h` against the Lean-generated C, so a mismatch fails the build.
+   One blind spot remains: Lean passes `Int64` as `uint64_t`, so signedness
+   is not checked.
 6. **Lean is only initialised for the main thread.** The spike uses the
    default single-threaded executor. A multi-threaded executor would need
    `lean_initialize_thread` per thread; M4 stays single-threaded, which also
@@ -128,10 +98,30 @@ These changed the plan above.
 ## Risks
 
 - **Simulator on macOS.** Gazebo and Nav2 under RoboStack on osx-arm64 are
-  unverified. Check early in M7; the fallback is `turtlesim` or an RViz-only
-  demo, and M6 does not depend on it.
+  unverified; the demo uses turtlesim.
 - **Linux parity.** Everything so far is verified on macOS arm64 only.
   `pixi.toml` lists Linux platforms, but the rpath and dylib handling in
   CMake has not been exercised there. Add a Linux CI job with M4.
 - **Thin proofs.** As noted in the scope doc; the pipeline and shim are the
   main deliverable.
+
+## Later lessons
+
+8. **Exported Lean functions cannot borrow.** `@&` on an `@[export]`
+   parameter is a compile error in this Lean version; every object argument
+   is consumed, so the C++ wrapper takes an extra reference before queries.
+9. **`omega` does not see through type aliases.** `abbrev Priority := Nat`
+   made arithmetic goals fail; the model uses plain `Nat`.
+10. **Read the source, then test against the binary.** The documentation
+    misses several behaviours (never-expiring inputs live from start-up,
+    priority 0 never selected, 255 never lockable), and the source alone
+    would not have shown how often floating-point rounding flips the
+    comparison exactly at a timeout boundary (D2).
+11. **Simulated time makes ROS tests deterministic.** Publishing `/clock`
+    from the test fixes the time of every event, which made 1 ns boundary
+    checks and a randomised differential test against upstream practical.
+12. **Independent review after each milestone paid off.** It found, among
+    others: state updates that could be silently dropped, missing clamping
+    in the model, no theorems tying the C interface to the model, two
+    confounded test expectations, and one false theorem attempt of mine was
+    caught by Lean itself.

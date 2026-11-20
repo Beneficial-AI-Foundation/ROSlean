@@ -28,6 +28,10 @@ EXPLANATION = {
     (None, False):
         'nothing is forwarded: no input is publishing (the mux sends no stop command;\n'
         '    stopping is left to the base, see docs/SPEC.md R13)',
+    ('waiting', False):
+        'nothing is forwarded: teleop went silent but counts as live until its 0.5 s\n'
+        '    timeout has passed, so the planner is still suppressed\n'
+        '    theorem inputLive_iff_le',
 }
 
 
@@ -36,12 +40,12 @@ class Narrator(Node):
     def __init__(self):
         super().__init__('demo_narrator')
         self.latest = {}
+        self.heard = {}
         self.locked = False
         self.driver = 'unknown'
         self.last_out = self.get_clock().now()
         for name, topic in INPUTS.items():
-            self.create_subscription(
-                Twist, topic, lambda msg, name=name: self.latest.__setitem__(name, msg), 10)
+            self.create_subscription(Twist, topic, lambda msg, name=name: self.on_in(name, msg), 10)
         self.create_subscription(Bool, 'e_stop', self.on_lock, 10)
         self.create_subscription(Twist, 'cmd_vel_out', self.on_out, 10)
         self.create_timer(0.1, self.on_timer)
@@ -52,11 +56,20 @@ class Narrator(Node):
             text = EXPLANATION.get((driver, self.locked), f'{driver} drives')
             print(f'\n>>> {text}', flush=True)
 
+    def on_in(self, name, msg):
+        self.latest[name] = msg
+        self.heard[name] = self.get_clock().now()
+
+    def recently(self, name, seconds):
+        t = self.heard.get(name)
+        return t is not None and (self.get_clock().now() - t).nanoseconds < seconds * 1e9
+
     def on_lock(self, msg):
         if msg.data != self.locked:
             self.locked = msg.data
             print(f"\n>>> e-stop lock {'ENGAGED' if msg.data else 'released'}", flush=True)
             self.driver = 'unknown'
+            self.last_out = self.get_clock().now()  # give the new situation time to show
 
     def on_out(self, msg):
         self.last_out = self.get_clock().now()
@@ -67,7 +80,13 @@ class Narrator(Node):
                 return
 
     def on_timer(self):
-        if (self.get_clock().now() - self.last_out).nanoseconds > SILENCE * 1e9:
+        if (self.get_clock().now() - self.last_out).nanoseconds < SILENCE * 1e9:
+            return
+        if self.locked:
+            self.report(None)
+        elif self.recently('teleop', 1.0) and self.recently('planner', 0.3):
+            self.report('waiting')
+        elif not self.recently('planner', 0.3) and not self.recently('teleop', 0.3):
             self.report(None)
 
 
