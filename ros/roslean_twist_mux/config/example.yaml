@@ -1,5 +1,5 @@
 # Example configuration, in the format of upstream twist_mux. Inputs may share
-# a priority; the one whose name sorts first then wins while it is live
+# a priority; the one whose name sorts first (ASCII order) then wins while it is live
 # (docs/SPEC.md, R10).
 # Timeouts are in seconds and must be written as floating point (0.0, not 0).
 twist_mux:

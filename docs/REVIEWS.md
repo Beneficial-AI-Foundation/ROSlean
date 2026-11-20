@@ -109,5 +109,14 @@ resolves them as upstream does (SPEC R10; D1 withdrawn). Entries above that
 mention the distinctness check, `Config.validate`, `validate_ok_iff` or
 `builderCheck` describe the code as it was when reviewed: `Config.validate`
 is now the total `Config.ofRaw`, the start-up check and `roslean::ConfigError`
-are gone, and `forward_iff` carries the tie-break. This change has not had an
-independent review.
+are gone, and `forward_iff` carries the tie-break. An independent review of
+this change found no error in the model, proofs, C interface or tests:
+
+| Finding | Outcome |
+| --- | --- |
+| "Alphabetical by name" is looser than the real order (byte order of parameter names) | Fixed in SPEC, README, `twist_mux.md`, example config |
+| "Accepts the same configurations as upstream" ignores D5 | Fixed |
+| That `list_parameters` returns prefixes in map order is not verified against the `rclcpp` source (not in the pixi env); both nodes make the same call, and the tie scenario and random test agree with it | Open, noted |
+| No test name contains a byte below `.`, where the order differs from a plain name sort | Open |
+| No fixed ROS-level scenario for a tie created by clamping (300 vs 255); covered in the FFI test and by chance in the random test | Open |
+| `forward_priority` is now `≤`; the strict fact for an earlier input needs `forward_first_of_equal` too | By design; `forward_iff` carries both |

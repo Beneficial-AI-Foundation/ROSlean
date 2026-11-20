@@ -57,7 +57,7 @@ theorems.
   priority. A later input of the same priority is forwarded only while every
   earlier one is expired. The list order comes from `list_parameters`; it is
   not a documented contract, but in `rclcpp` it is the byte order of the full
-  parameter names (`topics.<name>.…`), i.e. alphabetical by handle name, not
+  parameter names (`topics.<name>.…`), i.e. ASCII order of the handle names (upper case before lower case), not
   the order in the YAML file. In the upstream example config `joystick`
   beats `tablet` while both are live.
 - R10a. An input at priority 255 can never be masked by a lock (R8 is
@@ -92,7 +92,7 @@ theorems.
 
 | Question | Answer |
 | --- | --- |
-| Equal input priorities | First live one in list order wins; the order is alphabetical by handle name in practice (R10). ROSlean reproduces this. |
+| Equal input priorities | First live one in list order wins; the order is the ASCII order of the handle names in practice (R10). ROSlean reproduces this. |
 | Does a lock block inputs of equal priority? | No, only strictly lower (R8). |
 | Dead lock publisher | Counts as locked (R6), including before the first message once the clock has passed the timeout. |
 | Clock | Node clock at arrival; header stamps are ignored (R3). |

@@ -16,7 +16,8 @@ only reads parameters, subscribes, reads the clock and publishes.
 
 **Status (2026-11-20).** Everything in the build plan below is done except the
 Gazebo/Nav2 demo (turtlesim is used) and the optional "silence leads to zero"
-rule. The node accepts the same configurations as upstream `twist_mux` 4.5 and
+rule. The node accepts the same configurations as upstream `twist_mux` 4.5 (except
+non-finite or absurdly large timeouts, SPEC D5) and
 makes the same decisions in every comparison run so far; the one known
 exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
 Built and tested on macOS arm64 only; Linux is untested.
@@ -104,7 +105,7 @@ It is also the right first build regardless of ranking, as set out in the [main 
 
 Three things are left open by the documentation and were settled from the C++ source ([docs/SPEC.md](docs/SPEC.md)):
 
-- **Equal priorities.** The first live input in the node's handle list wins. That list is alphabetical by handle name, not the order in the YAML file.
+- **Equal priorities.** The first live input in the node's handle list wins. That list is in ASCII order of the handle names (upper case before lower case), not the order in the YAML file.
 - **Lock against an input of equal priority.** Not blocked; a lock blocks only strictly lower priorities.
 - **Dead lock publisher.** A lock with a timeout whose publisher is silent past it counts as locked, including one that has never published.
  Version 4.4.0 added stamped messages; current releases are 4.5.1 on Jazzy, Kilted and Lyrical.

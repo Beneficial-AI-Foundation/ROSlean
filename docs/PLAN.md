@@ -39,7 +39,7 @@ agent; the findings and what was done about them are in
 | M1 | Specification from the upstream source | done | `docs/SPEC.md`: rules R1–R16, differences D1–D9. |
 | M2 | Lean model | done | `ROSleanCore/Mux.lean`, examples in `ROSlean/Mux/Examples.lean`. |
 | M3 | FFI surface | done | `ROSleanCore/FFI.lean`, `ros/roslean_core` (C++ wrapper, build-time signature check, tests). |
-| M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Accepts every configuration upstream accepts, including its example config with two inputs at priority 100. |
+| M4 | `roslean_twist_mux` node | done | Same parameter format, topics and QoS as upstream. Accepts every configuration upstream accepts except non-finite or huge timeouts (D5), including its example config with two inputs at priority 100. |
 | M5 | Proofs | done | `ROSlean/Mux/{Basic,Properties,Trace,FFI}.lean`; table in the README. |
 | M6 | Comparison with upstream | done | Fixed scenarios with exact boundaries and a randomised differential test; no divergence outside D2. This replaces the recorded teleop/Nav2 session of the scope doc with scripted and random event sequences under simulated time. |
 | M7 | Demo | done | turtlesim: planner, teleop, e-stop lock, with a narrator naming theorems. |

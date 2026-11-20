@@ -106,7 +106,7 @@ What is **not** proved, and is trusted or only tested:
   publishers count as fresh again until the clock catches up, as in upstream.
 - **The order of inputs.** Ties between equal priorities go to the earlier
   input. The theorems take the order as given; the shim gets it from
-  `list_parameters` (alphabetical by handle name), as upstream does.
+  `list_parameters` (ASCII order of the handle names), as upstream does.
 - The Lean compiler and runtime, and ROS itself.
 
 Two things the theorems make precise that are easy to get wrong:
