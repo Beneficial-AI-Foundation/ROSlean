@@ -4,7 +4,7 @@ ROS 2 nodes whose decision logic is written and proved in Lean. First target:
 [`twist_mux`](https://index.ros.org/p/twist_mux/), which picks one of several
 velocity command sources by priority, freshness and locks.
 
-- [twist_mux.md](twist_mux.md): scope.
+- [twist_mux.md](twist_mux.md): scope, and where to start as a new reader.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
   and every deliberate difference.
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
@@ -76,9 +76,9 @@ All in `ROSlean/Mux/`, with no `sorry` and only Lean's three standard axioms.
 
 | Property | Theorem | Statement |
 | --- | --- | --- |
-| Decision | `forward_iff` | A message on input *i* is forwarded iff *i* is configured with positive priority, no locked lock has higher priority, and every other live input has strictly lower priority. |
+| Decision | `forward_iff` | A message on input *i* is forwarded iff *i* is configured with positive priority, no locked lock has higher priority, and every other live input has strictly lower priority, or the same priority and a later position in the input list. |
 | Provenance | `forward_configured` | Only messages on configured inputs are forwarded. The message body never enters Lean, so it cannot be altered there. |
-| Priority | `forward_priority` | A forwarded input outranks every other live input. |
+| Priority | `forward_priority`, `forward_first_of_equal` | No live input has higher priority than a forwarded one; among live inputs of equal priority only the first in list order is forwarded. |
 | Lock | `forward_lock`, `not_forward_of_top_lock` | A forwarded input is not outranked by a locked lock; a lock strictly above all inputs freezes everything. |
 | Dead lock publisher | `not_forward_of_silent_lock` | A lock whose publisher is silent past its timeout blocks lower inputs. |
 | Expiry | `forward_of_others_expired`, `inputLive_iff_le` | An expired input never suppresses another; an input is live up to and including `stamp + timeout`. |
@@ -104,6 +104,9 @@ What is **not** proved, and is trusted or only tested:
 - **The clock.** Theorems are about recorded clock readings. If the clock
   jumps backwards (a simulation reset), expired inputs and dead lock
   publishers count as fresh again until the clock catches up, as in upstream.
+- **The order of inputs.** Ties between equal priorities go to the earlier
+  input. The theorems take the order as given; the shim gets it from
+  `list_parameters` (alphabetical by handle name), as upstream does.
 - The Lean compiler and runtime, and ROS itself.
 
 Two things the theorems make precise that are easy to get wrong:
