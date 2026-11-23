@@ -1,0 +1,8 @@
+{
+  "name": "roslean-video",
+  "private": true,
+  "description": "Dependencies of the demo video pages",
+  "dependencies": {
+    "three": "0.170.0"
+  }
+}

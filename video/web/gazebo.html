@@ -1,0 +1,123 @@
+<!doctype html>
+<!-- Video 1: the Gazebo footage with captions and the panel on top.
+     The footage is a fixed, high-resolution camera; this page pans and zooms
+     inside it to follow the robot, and draws the robot's trail and a ring
+     around it in the colour of whoever is driving. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="common.css">
+<style>
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  #world img, #world svg { position: absolute; left: 0; top: 0; display: block; }
+  #tag { position: absolute; transform: translate(-50%, -100%); padding: 7px 14px; border-radius: 999px;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.12em; color: #0b0f17; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="world"><img id="frame"><svg id="marks"></svg></div>
+  <div id="tag"></div>
+</div>
+<script src="data.js"></script>
+<script src="story.js"></script>
+<script>
+const D = window.DATA, [W, H] = D.size, FPS = 30;
+const update = buildStory({ footer: 'Lean 4 · ROS 2 Jazzy · Gazebo' });
+document.getElementById('brand').insertAdjacentHTML('beforeend', '<div class="where">GAZEBO SIMULATION · TURTLEBOT3</div>');
+const world = document.getElementById('world'), frame = document.getElementById('frame');
+const marks = document.getElementById('marks'), tag = document.getElementById('tag');
+world.style.width = frame.style.width = W + 'px'; world.style.height = frame.style.height = H + 'px';
+marks.setAttribute('width', W); marks.setAttribute('height', H); marks.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+// World point -> pixel of the footage. The camera looks along its own x axis.
+const cam = D.camera, fx = W / 2 / Math.tan(cam.hfov / 2);
+function project(x, y, z) {
+  const dx = x - cam.pos[0], dy = y - cam.pos[1], dz = z - cam.pos[2];
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const hx = cy * dx + sy * dy, hy = -sy * dx + cy * dy;      // undo yaw
+  const fwd = cp * hx - sp * dz, up = sp * hx + cp * dz;      // undo pitch
+  return [W / 2 - fx * hy / fwd, H / 2 - fx * up / fwd];
+}
+
+function poseAt(t) {
+  const P = D.pose;
+  let lo = 0, hi = P.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= t) lo = m; else hi = m; }
+  const a = P[lo], b = P[hi], k = clamp((t - a[0]) / Math.max(1e-6, b[0] - a[0]));
+  let dyaw = b[3] - a[3]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+  return [a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + dyaw * k];
+}
+
+// Trail: the path so far, each piece in the colour of whoever drove it.
+const TRAIL = [];
+for (let t = 0; t < LENGTH; t += 1 / 15) {
+  const [x, y] = poseAt(t), s = muxState(t);
+  TRAIL.push({ t, w: [x, y], p: project(x, y, 0.01), color: s.forwarded ? COLORS[s.forwarded] : null });
+}
+
+// Virtual camera: wide at the start and the end, close on the robot between.
+const TIGHT = 3200, AIM = [0.54, 0.56];
+const N = Math.round(LENGTH * FPS);
+const raw = [];
+for (let k = 0; k < N; k++) { const [x, y] = poseAt(k / FPS); raw.push(project(x, y, 0.08)); }
+function blur(a, r) {
+  return a.map((_, i) => { let sx = 0, sy = 0, n = 0;
+    for (let j = Math.max(0, i - r); j <= Math.min(a.length - 1, i + r); j++) { sx += a[j][0]; sy += a[j][1]; n++; }
+    return [sx / n, sy / n]; });
+}
+const soft = blur(blur(raw, 30), 30);
+function crop(k) {
+  const t = k / FPS;
+  const w = smooth((t - 3.2) / 3.4) * (1 - smooth((t - (CARD.endStart - 1.0)) / 3.0));
+  const ch = TIGHT * 9 / 16;
+  const left = clamp(soft[k][0] - AIM[0] * TIGHT, 0, W - TIGHT), top = clamp(soft[k][1] - AIM[1] * ch, 0, H - ch);
+  return { left: left * w, top: top * w, cw: W + (TIGHT - W) * w };
+}
+
+function nearestFrame(t) {
+  let lo = 0, hi = D.frames.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D.frames[m] <= t) lo = m; else hi = m; }
+  return t - D.frames[lo] <= D.frames[hi] - t ? lo : hi;
+}
+
+window.totalFrames = N;
+window.renderFrame = async function (k) {
+  const t = k / FPS;
+  frame.src = `frames/${String(nearestFrame(t)).padStart(6, '0')}.jpg`;
+  await frame.decode();
+  const { state, body, color } = update(t);
+  const c = crop(k), scale = 1920 / c.cw;
+  world.style.transform = `scale(${scale}) translate(${-c.left}px, ${-c.top}px)`;
+
+  const [x, y, yaw] = poseAt(t);
+  let svg = '';
+  const px = 1 / scale;                                   // one screen pixel, in footage pixels
+  for (let i = 1; i < TRAIL.length && TRAIL[i].t <= t; i++) {
+    const a = TRAIL[i - 1], b = TRAIL[i], age = t - b.t;
+    if (!b.color || age > 16) continue;
+    if (Math.hypot(b.w[0] - x, b.w[1] - y) < 0.25) continue;      // not across the robot itself
+    svg += `<line x1="${a.p[0]}" y1="${a.p[1]}" x2="${b.p[0]}" y2="${b.p[1]}" stroke="${b.color}" ` +
+           `stroke-width="${5 * px}" stroke-linecap="round" opacity="${0.85 * (1 - age / 16)}"/>`;
+  }
+  const ring = [];
+  for (let i = 0; i < 48; i++) {
+    const a = i / 48 * 2 * Math.PI; ring.push(project(x + 0.24 * Math.cos(a), y + 0.24 * Math.sin(a), 0.01).join(','));
+  }
+  svg += `<polygon points="${ring.join(' ')}" fill="none" stroke="${color}" stroke-width="${12 * px}" opacity="0.22"/>` +
+         `<polygon points="${ring.join(' ')}" fill="none" stroke="${color}" stroke-width="${4 * px}"/>`;
+  marks.innerHTML = svg;
+  marks.style.opacity = body;
+
+  const top = project(x, y, 0.34);
+  tag.style.left = (top[0] - c.left) * scale + 'px';
+  tag.style.top = (top[1] - c.top) * scale - 12 + 'px';
+  tag.style.background = color;
+  tag.textContent = state.forwarded ? (state.forwarded === 'teleop' ? 'OPERATOR' : 'PLANNER')
+    : (state.locked ? 'E-STOP' : 'NO COMMAND');
+  tag.style.opacity = body;
+};
+</script>
+</body>
+</html>
