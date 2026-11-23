@@ -280,6 +280,50 @@ What differs from turtlesim:
 
 The narrator output and the theorems are the same as in step 6.
 
+### With a real planner: Nav2
+
+```sh
+pixi run gazebo-nav2       # terminal 1, in place of `pixi run gazebo`
+```
+
+Here the low-priority input is Nav2, the standard ROS 2 navigation stack. It
+localises the robot with the lidar on a map of the apartment, plans a path
+around the furniture, and publishes velocity commands on `nav_vel`, which is
+just another input to the mux. A small tour script sends it from place to
+place (desk, kitchen, sofa, bedroom door, bookshelf), so the robot keeps
+moving by itself. Allow about half a minute after the window appears for
+Nav2 to start.
+
+Teleop and the e-stop work as before, with one new effect worth watching:
+hold the robot with either for more than a few seconds and Nav2 notices that
+it is making no progress and gives up on its goal (`did not reach ...; trying
+again` in terminal 1). The mux does not tell Nav2 that it is being
+overridden; Nav2 only sees that the robot is not doing what it asked.
+
+To send goals yourself, start with `tour:=false` and use
+`pixi run gazebo-goal X Y` (map coordinates in metres; the room spans
+x from -4.5 to 4.5 and y from -3.5 to 3.5, and the robot starts at 0 0):
+
+```sh
+pixi run bash -c 'source install/setup.bash && ros2 launch \
+  $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py \
+  planner:=nav2 tour:=false'
+pixi run gazebo-goal -2.3 -2.3
+```
+
+Known limits of the Nav2 variant:
+
+- **RViz is off by default.** On macOS it crashes at start with a graphics
+  shader error, so there is no view of the map and the planned path. On
+  Linux, add `rviz:=true` to the launch command (untested).
+- **Some goals fail and are retried.** In a four-minute test the tour went
+  round the whole apartment, with about one goal in three needing a second
+  or third attempt.
+- **The map marks the sofa, armchair, bed and dining set as solid.** The
+  lidar sits 17 cm above the floor and sees only their legs; without this,
+  Nav2 drove under the dining table and got stuck between the chair legs.
+  `demo/gazebo/make_map.py` regenerates the map if you move furniture.
+
 ## 9. Without pixi: the Docker build (Linux)
 
 This builds the node on Ubuntu 24.04 with ROS from apt, runs the same tests,

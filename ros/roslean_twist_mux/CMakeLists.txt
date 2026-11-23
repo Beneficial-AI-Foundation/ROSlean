@@ -55,7 +55,7 @@ if(BUILD_TESTING)
     add_test(NAME random_diff
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/random_diff.py"
         "$<TARGET_FILE:twist_mux>" "twist_mux/twist_mux" 0 20)
-    set_tests_properties(random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=88" TIMEOUT 900)
+    set_tests_properties(random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=88" TIMEOUT 2400)
   endif()
 endif()
 

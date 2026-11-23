@@ -104,10 +104,10 @@ prints each change together with the theorem that explains it, for example:
     theorem not_forward_of_top_lock
 ```
 
-There is also a Gazebo version: a TurtleBot3 in a furnished apartment, with a
-patrol script as the planner (`pixi run gazebo`, `pixi run gazebo-teleop`,
-and the same e-stop commands). See step 8 of
-[docs/TUTORIAL.md](docs/TUTORIAL.md).
+There is also a Gazebo version: a TurtleBot3 in a furnished apartment, with
+either a patrol script (`pixi run gazebo`) or Nav2 (`pixi run gazebo-nav2`)
+as the planner, `pixi run gazebo-teleop` for the keyboard, and the same
+e-stop commands. See step 8 of [docs/TUTORIAL.md](docs/TUTORIAL.md).
 
 To see the same demo on upstream's node, pass `mux_package:=twist_mux` to the
 launch file (the theorem names then describe behaviour that upstream shares,

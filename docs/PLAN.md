@@ -63,8 +63,10 @@ agent; the findings and what was done about them are in
 - **Size on Linux.** The install tree carries Lean's whole shared runtime
   (190 MB stripped) for a model of a few hundred lines. A runtime built from
   source as position-independent code would bring this down to a few MB.
-- **Gazebo / Nav2 demo.** `ros-gz-sim` exists on RoboStack for macOS arm64
-  but was not tried; the demo uses turtlesim and a scripted planner.
+- **Gazebo / Nav2 demo: done on macOS, with gaps.** A TurtleBot3 in a
+  furnished apartment, with a patrol script or Nav2 as the planner
+  (`demo/gazebo/`). Not done: RViz (crashes on macOS), any Linux run, and an
+  automated test; it was checked by scripts that are not in the repository.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
   deliberate difference from upstream.
 - **Upstream extras.** Diagnostics, `twist_marker`, `joystick_relay`, launch
@@ -111,8 +113,6 @@ These changed the plan above.
 
 ## Risks
 
-- **Simulator on macOS.** Gazebo and Nav2 under RoboStack on osx-arm64 are
-  unverified; the demo uses turtlesim.
 - **Lean's runtime inside a ROS process on Linux.** `libleanshared.so`
   exports symbols that also exist elsewhere in a ROS process (an exception
   unwinder, GMP, libuv). The unwinder clash is handled (lesson 14) and the
@@ -159,3 +159,14 @@ These changed the plan above.
     the proofs shared a package, building the node made lake fetch Mathlib.
     `core/` now has no dependencies; the root package requires it by path,
     and CMake checks that both pin the same toolchain.
+16. **A physics simulator shows what the proofs leave to others.** In
+    turtlesim the e-stop "worked". In Gazebo the robot kept rolling with the
+    e-stop engaged: the mux correctly forwarded nothing, and the simulated
+    drive kept executing its last command. The proofs say when a message is
+    forwarded; that the robot stops when none is, is the base's job (SPEC,
+    A3). The Gazebo demo needs a base watchdog for this, which is what the
+    "silence leads to zero" stretch goal would replace with a proved rule.
+17. **Wheel odometry is not a position.** The patrol script first steered
+    by odometry and ended up in the wrong room within one lap (wheel slip in
+    turns). It now uses the simulator's ground truth; Nav2 uses lidar
+    localisation.
