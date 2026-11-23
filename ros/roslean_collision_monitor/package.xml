@@ -15,7 +15,13 @@
   <depend>sensor_msgs</depend>
 
   <test_depend>rclpy</test_depend>
+  <test_depend>ament_index_python</test_depend>
   <test_depend>rosgraph_msgs</test_depend>
+  <test_depend>tf2_msgs</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <test_depend>nav2_collision_monitor</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
