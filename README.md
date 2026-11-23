@@ -8,6 +8,8 @@ velocity command sources by priority, freshness and locks.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
   and every deliberate difference.
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
+- [docs/THEOREMS.md](docs/THEOREMS.md): the main theorems in plain words,
+  with links to the statements.
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
   turtlesim experiment, step by step.
 
