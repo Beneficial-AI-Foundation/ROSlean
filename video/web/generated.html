@@ -1,0 +1,306 @@
+<!doctype html>
+<!-- Video 2: the same run, drawn instead of filmed. The robot follows the
+     poses recorded in Gazebo, and the colours, the trail and the panel come
+     from the messages the Lean-backed mux actually forwarded (data.js).
+     Nothing here re-computes a mux decision. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="common.css">
+<style>
+  canvas { position: absolute; left: 0; top: 0; }
+  #tag { position: absolute; transform: translate(-50%, -100%); padding: 7px 14px; border-radius: 999px;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.12em; color: #0b0f17; white-space: nowrap;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); }
+</style>
+<script type="importmap">
+{ "imports": { "three": "../node_modules/three/build/three.module.js",
+               "three/addons/": "../node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="stage"><div id="tag"></div></div>
+<script src="data.js"></script>
+<script src="story.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const D = window.DATA, FPS = 30, N = Math.round(LENGTH * FPS), WIDTH = 1920, HEIGHT = 1080;
+const update = buildStory({
+  footer: 'Lean 4 · ROS 2 Jazzy',
+  beats: { lean: {
+    title: 'This is its Lean implementation at work.',
+    sub: 'A replay of a recorded run. Every forward-or-drop decision was made by a Lean 4 function with machine-checked rules.' } },
+});
+document.getElementById('brand').insertAdjacentHTML('beforeend', '<div class="where">REPLAY OF A RECORDED RUN</div>');
+const tag = document.getElementById('tag');
+
+// The planner's route (WAYPOINTS in demo/gazebo/patrol.py).
+const ROUTE = [[0.4, 0.2], [0.4, -2.5], [-2.0, -2.5], [-2.0, 0.2]];
+const SCALE = 1.7;                 // the robot is drawn larger than a TurtleBot3
+const WHEEL_R = 0.066, TRACK = 0.384;
+
+// ---- Recorded motion ----
+const P = D.pose;
+function poseAt(t) {
+  let lo = 0, hi = P.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= t) lo = m; else hi = m; }
+  const a = P[lo], b = P[hi], k = clamp((t - a[0]) / Math.max(1e-6, b[0] - a[0]));
+  let dyaw = b[3] - a[3]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+  return { x: a[1] + (b[1] - a[1]) * k, y: a[2] + (b[2] - a[2]) * k, yaw: a[3] + dyaw * k, i: lo, k };
+}
+// Wheel angles, from the distance each wheel has rolled.
+const wheel = [[0, 0]];
+for (let i = 1; i < P.length; i++) {
+  const a = P[i - 1], b = P[i];
+  const ds = (b[1] - a[1]) * Math.cos(a[3]) + (b[2] - a[2]) * Math.sin(a[3]);
+  let dyaw = b[3] - a[3]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+  const half = dyaw * TRACK / 2 / SCALE;
+  wheel.push([wheel[i - 1][0] + (ds - half) / WHEEL_R / SCALE, wheel[i - 1][1] + (ds + half) / WHEEL_R / SCALE]);
+}
+
+// ---- Scene (z up, metres, the same coordinates as the simulation) ----
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(WIDTH, HEIGHT);
+renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.82;
+document.getElementById('stage').prepend(renderer.domElement);
+
+const BG = new THREE.Color('#0a0e16');
+const scene = new THREE.Scene();
+scene.background = BG;
+scene.fog = new THREE.Fog(BG, 7, 19);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.30;
+
+const camera = new THREE.PerspectiveCamera(30, WIDTH / HEIGHT, 0.1, 80);
+camera.up.set(0, 0, 1);
+camera.setViewOffset(WIDTH, HEIGHT, -90, -70, WIDTH, HEIGHT);   // robot right of and below centre
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x10131a, 0.30));
+const sun = new THREE.DirectionalLight(0xfff4e6, 2.3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.radius = 5;
+sun.shadow.bias = -0.0004;
+Object.assign(sun.shadow.camera, { left: -2.2, right: 2.2, top: 2.2, bottom: -2.2, near: 1, far: 30 });
+scene.add(sun, sun.target);
+
+// Floor with a faint grid: bold lines every metre, light ones every 25 cm.
+function gridTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const g = c.getContext('2d');
+  g.fillStyle = '#10151f'; g.fillRect(0, 0, 1024, 1024);
+  for (let i = 0; i <= 4; i++) {
+    g.fillStyle = i % 4 === 0 ? 'rgba(150,180,230,0.16)' : 'rgba(150,180,230,0.05)';
+    const w = i % 4 === 0 ? 6 : 3, p = i * 256 - w / 2;
+    g.fillRect(p, 0, w, 1024); g.fillRect(0, p, 1024, w);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(80, 80);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy(); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80),
+  new THREE.MeshStandardMaterial({ map: gridTexture(), roughness: 0.78, metalness: 0.0, envMapIntensity: 0.25 }));
+floor.receiveShadow = true;
+scene.add(floor);
+
+const flat = (color, opacity = 1) => new THREE.MeshBasicMaterial({
+  color, transparent: true, opacity, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+
+// The planner's route: dashes and a disc at each waypoint.
+const route = new THREE.Group();
+const dash = new THREE.PlaneGeometry(0.11, 0.022);
+ROUTE.forEach((a, i) => {
+  const b = ROUTE[(i + 1) % ROUTE.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  for (let s = 0.2; s < len - 0.15; s += 0.2) {
+    const m = new THREE.Mesh(dash, flat(COLORS.planner, 0.42));
+    m.position.set(a[0] + (b[0] - a[0]) * s / len, a[1] + (b[1] - a[1]) * s / len, 0.004);
+    m.rotation.z = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    route.add(m);
+  }
+  const disc = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.085, 48), flat(COLORS.planner, 0.6));
+  disc.position.set(a[0], a[1], 0.004);
+  route.add(disc);
+});
+scene.add(route);
+
+// ---- The robot ----
+function zCylinder(r1, r2, h, seg = 64, open = false, start = 0, len = Math.PI * 2) {
+  return new THREE.CylinderGeometry(r1, r2, h, seg, 1, open, start, len).rotateX(Math.PI / 2);
+}
+function lathe(points) {
+  const curve = new THREE.SplineCurve(points.map(([r, z]) => new THREE.Vector2(r, z)));
+  return new THREE.LatheGeometry(curve.getPoints(40), 96).rotateX(Math.PI / 2);
+}
+const shellMat = new THREE.MeshPhysicalMaterial({ color: 0xdfe3ea, roughness: 0.36, clearcoat: 0.6, clearcoatRoughness: 0.25 });
+const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1e27, roughness: 0.45, metalness: 0.5 });
+const rubber = new THREE.MeshStandardMaterial({ color: 0x0c0e12, roughness: 0.92 });
+const glass = new THREE.MeshPhysicalMaterial({ color: 0x06080c, roughness: 0.12, metalness: 0.7, clearcoat: 1, side: THREE.DoubleSide });
+const ledMat = new THREE.MeshBasicMaterial({ color: COLORS.planner, toneMapped: false });
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0xdff6ff, toneMapped: false });
+
+const robot = new THREE.Group(), wheels = [];
+{
+  const add = (geometry, material, x = 0, y = 0, z = 0) => {
+    const m = new THREE.Mesh(geometry, material); m.position.set(x, y, z);
+    m.castShadow = true; m.receiveShadow = true; robot.add(m); return m;
+  };
+  add(lathe([[0, 0.030], [0.13, 0.030], [0.162, 0.040], [0.172, 0.060], [0.172, 0.100]]), darkMat);
+  add(lathe([[0.172, 0.108], [0.173, 0.150], [0.166, 0.180], [0.146, 0.200], [0.105, 0.212], [0.05, 0.216], [0, 0.217]]), shellMat);
+  add(new THREE.TorusGeometry(0.1725, 0.0055, 16, 128), ledMat, 0, 0, 0.104).castShadow = false;
+  // Visor with two lights, at the front.
+  add(zCylinder(0.1742, 0.1742, 0.046, 64, true, Math.PI / 2 - 0.78, 1.56), glass, 0, 0, 0.142).castShadow = false;
+  for (const a of [-0.27, 0.27]) {
+    const eye = add(new THREE.SphereGeometry(0.011, 24, 16), eyeMat, 0.1750 * Math.cos(a), 0.1750 * Math.sin(a), 0.142);
+    eye.scale.set(0.5, 1.5, 1); eye.rotation.z = a; eye.castShadow = false;
+  }
+  // Wheels, outside the body.
+  for (const side of [-1, 1]) {
+    const w = new THREE.Group(); w.position.set(0, side * TRACK / 2, WHEEL_R);
+    const tyre = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.034, 64), rubber);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.040, 0.040, 0.038, 48), shellMat);
+    tyre.castShadow = hub.castShadow = true; w.add(tyre, hub);
+    for (let i = 0; i < 3; i++) {                         // spokes, so that rolling shows
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.074, 0.040, 0.012), darkMat);
+      spoke.rotation.y = i * Math.PI / 3; w.add(spoke);
+    }
+    const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.05, 24), darkMat);
+    axle.position.y = -side * 0.025; w.add(axle);
+    robot.add(w); wheels.push(w);
+  }
+  add(new THREE.SphereGeometry(0.022, 24, 16), darkMat, 0.125, 0, 0.022);
+  add(new THREE.SphereGeometry(0.022, 24, 16), darkMat, -0.125, 0, 0.022);
+  // Lidar on top; its head spins.
+  add(zCylinder(0.050, 0.054, 0.016), darkMat, 0, 0, 0.222);
+  const head = new THREE.Group(); head.position.z = 0.248; robot.add(head);
+  const drum = new THREE.Mesh(zCylinder(0.042, 0.042, 0.036), darkMat); drum.castShadow = true;
+  const lens = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.030, 0.012), eyeMat); lens.position.x = 0.042;
+  head.add(drum, lens); robot.userData.head = head;
+  add(zCylinder(0.044, 0.044, 0.004), darkMat, 0, 0, 0.268);
+  robot.scale.setScalar(SCALE);
+}
+scene.add(robot);
+
+// Ring on the floor around the robot, and the e-stop pulse.
+const ring = new THREE.Mesh(new THREE.RingGeometry(0.40, 0.418, 96), flat(COLORS.planner, 0.9));
+const halo = new THREE.Mesh(new THREE.RingGeometry(0.30, 0.52, 96), flat(COLORS.planner, 0.10));
+const pulses = [0, 1].map(() => new THREE.Mesh(new THREE.RingGeometry(0.985, 1, 96), flat(COLORS.estop, 0)));
+scene.add(ring, halo, ...pulses);
+
+// Trail: a ribbon along the path, coloured by whoever was driving.
+const TRAIL_HZ = 20, TRAIL_AGE = 18, HALF = 0.028;
+const trailPoints = [];
+for (let t = 0; t < LENGTH; t += 1 / TRAIL_HZ) {
+  const p = poseAt(t), s = muxState(t);
+  trailPoints.push({ t, x: p.x, y: p.y, color: s.forwarded ? new THREE.Color(COLORS[s.forwarded]) : null });
+}
+const MAXQ = TRAIL_HZ * TRAIL_AGE + 4;
+const trailGeometry = new THREE.BufferGeometry();
+trailGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXQ * 18), 3));
+trailGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAXQ * 24), 4));
+const trail = new THREE.Mesh(trailGeometry, new THREE.MeshBasicMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+trail.frustumCulled = false;
+scene.add(trail);
+function drawTrail(t) {
+  const pos = trailGeometry.attributes.position.array, col = trailGeometry.attributes.color.array;
+  let q = 0;
+  for (let i = 1; i < trailPoints.length && trailPoints[i].t <= t && q < MAXQ; i++) {
+    const a = trailPoints[i - 1], b = trailPoints[i], age = t - b.t;
+    if (!b.color || age > TRAIL_AGE) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    if (len < 1e-5) continue;
+    const nx = -dy / len * HALF, ny = dx / len * HALF, z = 0.006;
+    const quad = [[a.x + nx, a.y + ny], [a.x - nx, a.y - ny], [b.x + nx, b.y + ny],
+                  [b.x + nx, b.y + ny], [a.x - nx, a.y - ny], [b.x - nx, b.y - ny]];
+    const alpha = 0.85 * (1 - age / TRAIL_AGE);
+    quad.forEach(([x, y], v) => {
+      pos.set([x, y, z], q * 18 + v * 3);
+      col.set([b.color.r, b.color.g, b.color.b, alpha], q * 24 + v * 4);
+    });
+    q++;
+  }
+  trailGeometry.setDrawRange(0, q * 6);
+  trailGeometry.attributes.position.needsUpdate = true;
+  trailGeometry.attributes.color.needsUpdate = true;
+}
+
+// ---- Camera path: high and wide at both ends, close to the robot between ----
+const centre = [];
+for (let k = 0; k < N; k++) { const p = poseAt(k / FPS); centre.push([p.x, p.y]); }
+function blur(a, r) {
+  return a.map((_, i) => { let sx = 0, sy = 0, n = 0;
+    for (let j = Math.max(0, i - r); j <= Math.min(a.length - 1, i + r); j++) { sx += a[j][0]; sy += a[j][1]; n++; }
+    return [sx / n, sy / n]; });
+}
+const soft = blur(blur(centre, 36), 36);
+const mix = (a, b, k) => a + (b - a) * k;
+function placeCamera(k) {
+  const t = k / FPS;
+  const close = smooth((t - 2.6) / 4.2) * (1 - smooth((t - (CARD.endStart - 1.2)) / 3.4));
+  const tx = mix(-0.8, soft[k][0], close), ty = mix(-1.15, soft[k][1], close);
+  const distance = mix(10.5, 5.0, close), elevation = mix(0.95, 0.50, close);
+  const azimuth = -2.05 + 0.5 * Math.sin((t - 8) * 0.045) - 0.35 * (1 - close);
+  camera.position.set(tx + distance * Math.cos(elevation) * Math.cos(azimuth),
+                      ty + distance * Math.cos(elevation) * Math.sin(azimuth),
+                      distance * Math.sin(elevation));
+  camera.lookAt(tx, ty, 0.12);
+  sun.target.position.set(soft[k][0], soft[k][1], 0);
+  sun.position.set(soft[k][0] + 2.6, soft[k][1] - 3.4, 7.5);
+}
+
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(WIDTH, HEIGHT,
+  { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.32, 0.6, 0.92));
+composer.addPass(new OutputPass());
+
+window.totalFrames = N;
+window.renderFrame = async function (k) {
+  const t = k / FPS;
+  const { state, body, color } = update(t);
+  const p = poseAt(t);
+  robot.position.set(p.x, p.y, 0);
+  robot.rotation.z = p.yaw;
+  wheels.forEach((w, side) => {
+    w.rotation.y = wheel[p.i][side] + (wheel[Math.min(p.i + 1, wheel.length - 1)][side] - wheel[p.i][side]) * p.k;
+  });
+  robot.userData.head.rotation.z = t * 9;
+
+  ledMat.color.set(color);
+  for (const m of [ring, halo]) { m.material.color.set(color); m.position.set(p.x, p.y, 0.005); }
+  ring.material.opacity = 0.9 * body; halo.material.opacity = 0.10 * body;
+  pulses.forEach((m, i) => {
+    const phase = ((t * 0.55 + i * 0.5) % 1);
+    m.position.set(p.x, p.y, 0.005);
+    m.scale.setScalar(0.45 + 1.1 * phase);
+    m.material.opacity = state.locked ? 0.7 * (1 - phase) * body : 0;
+  });
+  route.children.forEach((m) => { m.material.opacity = (m.geometry === dash ? 0.42 : 0.6) * body; });
+  drawTrail(t);
+  trail.material.opacity = body;
+
+  placeCamera(k);
+  composer.render();
+
+  const top = new THREE.Vector3(p.x, p.y, 0.56).project(camera);
+  tag.style.left = (top.x + 1) / 2 * WIDTH + 'px';
+  tag.style.top = (1 - top.y) / 2 * HEIGHT - 10 + 'px';
+  tag.style.background = color;
+  tag.textContent = state.forwarded ? (state.forwarded === 'teleop' ? 'OPERATOR' : 'PLANNER')
+    : (state.locked ? 'E-STOP' : 'NO COMMAND');
+  tag.style.opacity = body;
+};
+</script>
+</body>
+</html>
