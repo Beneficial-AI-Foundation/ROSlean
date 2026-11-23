@@ -145,3 +145,28 @@ before). Every seed passed on the first attempt, with no slow retry.
 | Finding | Outcome |
 | --- | --- |
 | No full run on macOS: the host runs were interrupted by another process on the machine. Seeds 0–9 completed there and passed with the same decision counts as in the container | Open |
+
+## Linux through pixi (2026-11-23)
+
+Until now the pixi route had been run on macOS only. Run on Ubuntu 24.04,
+x86-64, four cores, no screen and no graphics card; pixi 0.84.2, Lean
+4.37.0-rc1.
+
+| Step | Result | Time |
+| --- | --- | --- |
+| `pixi run build`, first run | `3 packages finished` | 76 s including the download of the ROS environment (5.9 GB on disk) |
+| `test_mux_ffi` | passed | 0.4 s |
+| `scenario` | passed | 58 s |
+| `random_diff`, seeds 0–19 | passed; 0 divergences | 413 s |
+| turtlesim demo on a virtual display, messages published in place of the keyboard | narrator output and turtle as in the tutorial | |
+| `teleop_twist_keyboard` fed key presses through a pseudo-terminal | one message per key press on `key_vel` | |
+| Gazebo demo, patrol and Nav2, virtual display, software rendering, world without the furniture | patrol, take-over, e-stop and release as in the tutorial; Nav2 reached the first stop of its tour | |
+
+| Finding | Outcome |
+| --- | --- |
+| `pixi run demo-estop` used `ros2 topic pub --once`, which waits for one subscriber and exits. With Gazebo loading the machine, the lock message reached only one of its two subscribers: in two runs the narrator missed it, and in one run the mux missed it, so the robot kept driving with the e-stop "engaged". Not specific to Linux; it depends on how busy the machine is | Fixed: `demo-estop` and `demo-release` wait for two subscribers and send the message five times. Two further Gazebo runs and one Nav2 run delivered it to both |
+| The mux subscribes to lock topics with the system default QoS, as upstream does; `ros2 topic info` reports it as best effort here. A lock message can therefore be lost without notice, which matters for an e-stop | Open. A real e-stop source should publish periodically, with a lock timeout |
+| Gazebo does not start when the furniture cannot be downloaded (the test machine could not reach `fuel.gazebosim.org`); the tutorial said the room would be empty | Tutorial corrected. The Linux run used a world without the furniture, so the furnished apartment is untested on Linux |
+| With no display at all, `gz sim` crashes at start in the Ogre2 renderer, also with `gui:=false` | Documented in the tutorial |
+| `pixi run prove` not run on Linux | Open |
+

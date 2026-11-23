@@ -37,8 +37,9 @@ Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
 Requires [elan](https://github.com/leanprover/elan) and
 [pixi](https://pixi.sh), both on `PATH`. The ROS 2 Jazzy environment
 (RoboStack, about 1 GB) is installed into `.pixi/` on first use, and the first
-build also downloads Mathlib. Verified on macOS arm64 this way; on Linux the
-verified route is the Docker build below.
+build also downloads Mathlib. Verified this way on macOS arm64 and, except
+for `pixi run prove`, on Linux x86-64 (Ubuntu 24.04; the demo windows on a
+virtual display). The Docker build below is the other verified Linux route.
 
 ```sh
 pixi run build     # lake build of the core + colcon build of the ROS packages

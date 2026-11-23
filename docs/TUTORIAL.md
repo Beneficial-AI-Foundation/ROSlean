@@ -4,20 +4,28 @@ You will build a `twist_mux` node whose decisions are made by a Lean function,
 check the proofs about that function, and watch it arbitrate between a
 planner, a keyboard and an emergency stop in the turtlesim simulator.
 
-Time: about 30 minutes, most of it downloads. Disk: about 6 GB for the
-experiment (ROS 2.4 GB, the Lean toolchain 3.3 GB), and another 8 GB for
-Mathlib if you also check the proofs (step 5).
+Time: about 30 minutes, most of it downloads. Disk: about 6 GB on macOS for
+the experiment (ROS 2.4 GB, the Lean toolchain 3.3 GB) and about 9 GB on
+Linux (ROS 5.9 GB, the Lean toolchain 3.3 GB), and another 8 GB for Mathlib
+if you also check the proofs (step 5).
 
 What has been run where:
 
 - **macOS on Apple silicon:** every step below.
-- **Linux:** steps 1 to 4 and the simulation have *not* been run through pixi.
-  The Linux build that has been run is the Docker one in step 9, which has no
-  simulator window.
+- **Linux (Ubuntu 24.04, x86-64):** steps 1 to 4 and the experiment in
+  step 6, on a machine without a screen: the turtlesim window was drawn on a
+  virtual display (Xvfb) and checked by screenshot, and the keyboard was
+  replaced by a script that publishes the same messages. The teleop program
+  itself was checked separately by feeding it key presses. Not run on Linux:
+  step 5 (the proofs), a desktop session with a real keyboard, and
+  Linux on arm64 through pixi. The Docker build in step 9 has been run on
+  Linux arm64.
 
 ## 1. Install the two tools
 
-Nothing else is needed: no system ROS, no compiler set-up.
+Nothing else is needed: no system ROS, no compiler set-up. The commands are
+the same on macOS and Linux; on Linux you need `curl` and `git`
+(`sudo apt install curl git` on Ubuntu).
 
 ```sh
 # Lean's toolchain manager. Accept the defaults.
@@ -62,7 +70,7 @@ things:
 
 It ends with `Summary: 3 packages finished`.
 
-## 4. Test against the original node (optional, about 12 minutes)
+## 4. Test against the original node (optional, 8 to 12 minutes)
 
 ```sh
 pixi run test
@@ -81,7 +89,8 @@ Summary: 3 tests, 0 errors, 0 failures, 0 skipped
 
 Nothing visible happens on screen while it runs. Do not run the demo at the
 same time. Most of the time goes to the random test, which runs 20
-cases of 350–550 events each (about 7 minutes).
+cases of 350–550 events each (about 7 minutes). On the Linux machine the
+whole step took 8 minutes.
 
 ## 5. Check the proofs (optional)
 
@@ -127,7 +136,9 @@ explains it:
 ```
 
 macOS may ask whether to allow incoming network connections; allow it (ROS
-nodes talk to each other over the local network).
+nodes talk to each other over the local network). On Linux the window needs
+a graphical session (X11 or Wayland); over SSH without one, turtlesim exits
+with `could not connect to display`.
 
 ### Take over with the keyboard
 
@@ -171,7 +182,9 @@ Terminal 3:
 pixi run demo-estop
 ```
 
-The turtle freezes, whether or not you are holding a key:
+The command waits until the mux and the narrator are both listening, sends
+the lock message five times and returns after about a second. The turtle
+freezes, whether or not you are holding a key:
 
 ```
 >>> e-stop lock ENGAGED
@@ -268,5 +281,7 @@ README for running it with your own parameter file.
 | --- | --- |
 | `pixi: command not found` or `lake: command not found` | New terminal needed, or `~/.pixi/bin` / `~/.elan/bin` not on `PATH`. |
 | The keyboard does nothing | Terminal 2 is not focused, or the key is not held: a single key press is one message, and teleop expires 0.5 s later. |
+| `pixi run demo-estop` prints `Waiting for at least 2 matching subscription(s)` and does not return | The demo is not running (terminal 1), or it was started on another machine or `ROS_DOMAIN_ID`. Stop the command with Ctrl-C. |
+| `could not connect to display` (Linux) | There is no graphical session. Run the demo from a terminal on the desktop, not over plain SSH. |
 | Narrator prints `UNEXPECTED` | A message was forwarded while the lock was on. That would contradict `not_forward_of_top_lock`; please report it with the terminal output. |
 | Tests fail only while the demo is running | They share the machine's ROS network; stop the demo and rerun. |

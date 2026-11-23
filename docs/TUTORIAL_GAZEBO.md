@@ -9,8 +9,9 @@ This is the same experiment as in the [turtlesim tutorial](TUTORIAL.md), in a
 simulator with physics, a lidar and furniture. If you have done that
 tutorial, skip to step 3.
 
-Time: about 20 minutes on top of the downloads. Disk: about 8 GB (ROS with
-Gazebo and Nav2 4.5 GB, the Lean toolchain 3.3 GB).
+Time: about 20 minutes on top of the downloads. Disk: about 8 GB on macOS
+(ROS with Gazebo and Nav2 4.5 GB, the Lean toolchain 3.3 GB), about 9 GB on
+Linux (5.9 GB and 3.3 GB).
 
 What has been run where:
 
@@ -18,7 +19,19 @@ What has been run where:
   publish the same messages your keyboard would and by screenshots of the
   Gazebo and RViz windows. Two things need a person and have not been tried:
   driving with the real keyboard, and clicking a goal in RViz.
-- **Linux:** nothing in this tutorial has been run on Linux.
+- **Linux (Ubuntu 24.04, x86-64):** steps 1 to 5 in part. The machine had
+  no screen, no graphics card and no access to Gazebo's model library, so:
+  the windows were drawn on a virtual display (Xvfb) with software
+  rendering and checked by screenshot; the keyboard was replaced by a
+  script that publishes the same messages; and the furniture was taken out
+  of the world file for the run, leaving the walls, the floor and the
+  robot. In that reduced room the patrol, the keyboard take-over, the
+  e-stop and its release behaved as described in step 4, and with Nav2
+  (step 5) the robot localised, reached the first stop of the tour and
+  obeyed the keyboard and the e-stop. Not run on Linux: the furnished
+  apartment, a desktop session with a graphics card and a real keyboard,
+  a look at the RViz view, clicking a goal in RViz, and the experiments in
+  steps 6 and 8.
 
 ![The apartment in Gazebo](images/gazebo.png)
 
@@ -33,7 +46,10 @@ curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
 Open a new terminal so that both are on `PATH`, then check with
-`lake --version` and `pixi --version`.
+`lake --version` and `pixi --version`. On Linux you need `curl` and `git`
+first (`sudo apt install curl git` on Ubuntu), and a graphical session:
+Gazebo's lidar is rendered, so the simulator needs a display even to run
+without its window.
 
 ## 2. Get the code and build
 
@@ -102,6 +118,11 @@ the theorem that explains it:
 
 macOS may ask whether to allow incoming network connections; allow it.
 
+On Linux without a graphics card Gazebo falls back to software rendering.
+It works, but slowly: on a four-core machine the simulation ran at about
+80 % of real time with the patrol and 60 % with Nav2, and the lidar gave 4
+scans a second.
+
 ### Take over with the keyboard
 
 Terminal 2:
@@ -143,8 +164,9 @@ Terminal 3:
 pixi run demo-estop
 ```
 
-The robot stops and stays stopped, whatever the patrol or your keyboard
-sends:
+The command waits until the mux and the narrator are both listening, sends
+the lock message five times and returns after about a second. The robot
+stops and stays stopped, whatever the patrol or your keyboard sends:
 
 ```
 >>> e-stop lock ENGAGED
@@ -320,12 +342,16 @@ It listens for two minutes while the robot patrols, then writes the map.
 
 | Symptom | Likely cause |
 | --- | --- |
-| The room is empty or half empty | The furniture is still downloading on the first launch, or there is no internet connection. |
+| The room is half empty | The furniture is still downloading on the first launch. |
+| Gazebo exits a few seconds after the first launch, with `Failed to download model` and `Unable to find uri[https://fuel.gazebosim.org/...]` | The furniture could not be downloaded: there is no internet connection, or a firewall or proxy blocks `fuel.gazebosim.org`. The world does not load without it. Once downloaded, the models are kept in `~/.gz/fuel` and later launches work offline. |
+| `Segmentation fault` in `gz sim` at start, with `Ogre2RenderEngine` in the trace (Linux) | There is no display. Gazebo renders the lidar, so it needs a graphical session even with `gui:=false`. Run it from a terminal on the desktop, not over plain SSH. |
+| The robot moves in slow motion (Linux) | No graphics card is in use and Gazebo renders in software. The percentage at the bottom of the Gazebo window is the speed relative to real time. |
+| `pixi run demo-estop` prints `Waiting for at least 2 matching subscription(s)` and does not return | The simulation is not running (terminal 1). Stop the command with Ctrl-C. |
 | I cannot find the robot | It is small. Zoom in on the middle of the room; in experiment 1 it circles between the rug and the bedroom wall. |
 | The keyboard does nothing | Terminal 2 is not focused, or the key is not held: one key press is one message, and teleop expires 0.5 s later. |
 | With Nav2 the robot does not move at first | Nav2 takes about half a minute to start; wait for `next stop:` in terminal 1. |
 | `did not reach ...; trying again` without my doing anything | Some Nav2 goals fail on the first attempt in this set-up and succeed on a retry. In a four-minute test about one attempt in three failed. |
-| RViz logs `Validation Failed: Sampler error` | Harmless on macOS; the map is drawn correctly. |
+| RViz logs `Validation Failed: Sampler error` or `active samplers with a different type refer to the same texture image unit` | Harmless on macOS; the map is drawn correctly. The second message also appears on Linux with software rendering, where the RViz view has not been looked at. |
 | Errors and "process has died" when I press Ctrl-C | RViz and some Python nodes exit noisily. Harmless. |
 | Narrator prints `UNEXPECTED` | A message was forwarded while the lock was on. That would contradict `not_forward_of_top_lock`; please report it with the terminal output. |
 | Something from an earlier run seems to interfere | A simulator process may have survived. Run `pkill -f "gz sim"` and start again. |

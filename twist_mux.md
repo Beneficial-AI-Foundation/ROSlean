@@ -20,7 +20,7 @@ TurtleBot3 in Gazebo with Nav2. The node accepts the same configurations as upst
 non-finite or absurdly large timeouts, SPEC D5) and
 makes the same decisions in every comparison run so far; the one known
 exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
-Built and tested on macOS arm64 (pixi) and on Linux (Docker, Ubuntu 24.04 with ROS from apt).
+Built and tested on macOS arm64 (pixi) and on Linux (pixi on Ubuntu 24.04 x86-64; Docker, Ubuntu 24.04 with ROS from apt).
 
 **Set-up.** Install [elan](https://github.com/leanprover/elan) (Lean) and
 [pixi](https://pixi.sh) (ROS 2 Jazzy from RoboStack) and put both on `PATH`.
@@ -33,7 +33,7 @@ pixi run prove     # check every theorem (first run fetches Mathlib)
 pixi run demo      # turtlesim: planner, keyboard teleop and an e-stop lock
 ```
 
-On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean installation at run time (see the README).
+The same commands work on Linux. To get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean installation at run time (see the README).
 
 **Reading order.**
 
