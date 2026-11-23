@@ -66,6 +66,14 @@ video/make_video.sh video/web/gazebo.html site/media/twist_mux_gazebo.mp4
 video/make_video.sh video/web/generated.html site/media/twist_mux_generated.mp4
 ```
 
+To add a soundtrack, give `make_video.sh` a sound file and the second of it
+at which the video should begin; it fades in and out at the ends. No sound
+file is kept in this repository.
+
+```sh
+AUDIO=track.m4a AUDIO_START=42 video/make_video.sh video/web/generated.html out.mp4
+```
+
 `record.sh` uses the X display if there is one. Without one it starts Xvfb
 and renders with Mesa's software renderer, which is how the videos here were
 made (Linux, no GPU). To change the wording or the timing, edit `BEATS` in
