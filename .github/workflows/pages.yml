@@ -2,6 +2,9 @@ name: Project page
 
 # Publishes site/ (plain HTML, no build step) to GitHub Pages.
 # Needs Settings > Pages > Source set to "GitHub Actions".
+# This must be the only workflow that deploys to Pages. If a run fails, start a
+# fresh one ("Run workflow") instead of "Re-run jobs": a re-run uploads a second
+# "github-pages" artifact into the same run and deploy-pages rejects it.
 on:
   push:
     branches: [main]
