@@ -2,6 +2,8 @@
  * It is compiled into libroslean_core, so that programs using the library
  * need neither the Lean headers nor a direct link to the Lean runtime. */
 
+#include <string.h>
+
 #include <lean/lean.h>
 
 #include "roslean_core/ffi.h"
@@ -29,3 +31,12 @@ lean_object * roslean_core_unit(void) {return lean_box(0);}
 void roslean_core_inc(lean_object * o) {lean_inc(o);}
 
 void roslean_core_dec(lean_object * o) {lean_dec(o);}
+
+lean_object * roslean_core_byte_array(const uint8_t * data, size_t size)
+{
+  lean_object * a = lean_alloc_sarray(1, size, size);
+  if (size != 0) {
+    memcpy(lean_sarray_cptr(a), data, size);
+  }
+  return a;
+}

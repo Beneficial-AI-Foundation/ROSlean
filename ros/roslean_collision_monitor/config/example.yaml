@@ -1,0 +1,63 @@
+# Example configuration for the Lean-backed collision monitor.
+#
+# The format is that of nav2_collision_monitor; this is upstream's example
+# (params/collision_monitor_params.yaml) restricted to what this node supports:
+# one laser scan source, `circle` and `polygon` zones with fixed shapes, and the
+# actions `stop` and `slowdown`. Anything else is refused at start-up with a
+# message that names the parameter (docs/collision_monitor/SPEC.md, "Excluded
+# features").
+#
+#   ros2 run roslean_collision_monitor collision_monitor --ros-args \
+#     --params-file config/example.yaml
+collision_monitor:
+  ros__parameters:
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    enable_stamped_cmd_vel: false
+    # A stored scan older than this (by its header stamp) stops the robot, and
+    # so does having no scan at all. 0.0 switches both checks off.
+    source_timeout: 5.0
+    # Zero is published for this long after it first appears, then nothing.
+    stop_pub_timeout: 2.0
+    # Required, and must be false: scan points are not corrected for the
+    # robot's motion (upstream's default is true).
+    base_shift_correction: false
+    # There is no transform lookup. A scan is used only if its frame_id is
+    # this frame, or if the sensor's pose is given below; otherwise the source
+    # counts as having no data, which stops the robot.
+    base_frame_id: "base_footprint"
+    # Zones are checked in this order. The first triggered stop zone wins over
+    # everything; otherwise the triggered slowdown zone with the smallest ratio.
+    polygons: ["PolygonStop", "PolygonSlow", "CircleSlow"]
+    PolygonStop:
+      type: "polygon"
+      points: "[[0.3, 0.3], [0.3, -0.3], [0.0, -0.3], [0.0, 0.3]]"
+      action_type: "stop"
+      min_points: 4
+      enabled: true
+    PolygonSlow:
+      type: "polygon"
+      points: "[[0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4]]"
+      action_type: "slowdown"
+      min_points: 4
+      slowdown_ratio: 0.3
+      enabled: true
+    CircleSlow:
+      type: "circle"
+      radius: 0.6
+      action_type: "slowdown"
+      min_points: 4
+      slowdown_ratio: 0.7
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      enabled: true
+      # Only in this node: the fixed pose of the sensor in the base frame,
+      # [x, y, yaw] in metres and radians, written with decimal points. With
+      # it, scans are used whatever their frame_id. Without it, only scans
+      # whose frame_id is base_frame_id are used. A sensor that is not mounted
+      # upright (roll or pitch) cannot be described and must not be
+      # approximated by this parameter.
+      roslean_sensor_pose: [0.0, 0.0, 0.0]

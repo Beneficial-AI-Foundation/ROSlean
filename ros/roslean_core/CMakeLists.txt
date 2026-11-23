@@ -58,7 +58,10 @@ endif()
 # run it once now so that they exist, and again on every build so that colcon
 # picks up changes to the Lean sources.
 set(_ir "${ROSLEAN_ROOT}/.lake/build/ir")
-set(ROSLEAN_MODULES ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop)
+set(ROSLEAN_MODULES
+  ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop
+  ROSleanCore/CollisionMonitor ROSleanCore/CollisionMonitorConvert
+  ROSleanCore/CollisionMonitorFFI)
 set(_generated)
 foreach(_m ${ROSLEAN_MODULES})
   list(APPEND _generated "${_ir}/${_m}.c")
@@ -171,6 +174,12 @@ if(BUILD_TESTING)
   target_compile_options(test_mux_ffi PRIVATE -Wall -Wextra -Wpedantic)
   target_link_libraries(test_mux_ffi roslean_core)
   add_test(NAME test_mux_ffi COMMAND test_mux_ffi)
+  add_executable(test_cm_ffi test/test_cm_ffi.cpp)
+  # -ffp-contract=off: the reference computations in the test must be the
+  # same IEEE operations on every platform.
+  target_compile_options(test_cm_ffi PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
+  target_link_libraries(test_cm_ffi roslean_core)
+  add_test(NAME test_cm_ffi COMMAND test_cm_ffi)
 endif()
 
 ament_export_targets(export_roslean_core HAS_LIBRARY_TARGET)

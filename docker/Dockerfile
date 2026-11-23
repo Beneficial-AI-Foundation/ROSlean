@@ -1,4 +1,4 @@
-# Lean-backed twist_mux on ROS 2 Jazzy (Ubuntu 24.04).
+# Lean-backed twist_mux and collision monitor on ROS 2 Jazzy (Ubuntu 24.04).
 #
 #   docker build -f docker/Dockerfile -t roslean-twist-mux .
 #   docker run --rm --network host roslean-twist-mux
@@ -16,7 +16,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
-      ros-${ROS_DISTRO}-twist-mux \
+      ros-${ROS_DISTRO}-sensor-msgs ros-${ROS_DISTRO}-twist-mux \
     && rm -rf /var/lib/apt/lists/*
 
 # elan installs the toolchain pinned in lean-toolchain on first use.
@@ -56,10 +56,15 @@ FROM ros:${ROS_DISTRO}-ros-base
 ARG ROS_DISTRO
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
+      ros-${ROS_DISTRO}-sensor-msgs \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/roslean /opt/roslean
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 # Mount your own parameter file and pass it instead to configure the inputs.
+# The collision monitor is in the same image:
+#   docker run --rm --network host roslean-twist-mux ros2 run roslean_collision_monitor \
+#     collision_monitor --ros-args --params-file \
+#     /opt/roslean/roslean_collision_monitor/share/roslean_collision_monitor/config/example.yaml
 CMD ["ros2", "run", "roslean_twist_mux", "twist_mux", "--ros-args", "--params-file", \
      "/opt/roslean/roslean_twist_mux/share/roslean_twist_mux/config/example.yaml"]

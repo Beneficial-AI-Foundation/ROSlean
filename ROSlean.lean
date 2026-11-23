@@ -2,6 +2,8 @@ import ROSleanCore.Noop
 import ROSleanCore.Mux
 import ROSleanCore.FFI
 import ROSleanCore.CollisionMonitor
+import ROSleanCore.CollisionMonitorConvert
+import ROSleanCore.CollisionMonitorFFI
 import ROSlean.Mux.Examples
 import ROSlean.Mux.Basic
 import ROSlean.Mux.Properties
@@ -13,3 +15,5 @@ import ROSlean.CollisionMonitor.Bits
 import ROSlean.CollisionMonitor.Geometry
 import ROSlean.CollisionMonitor.Properties
 import ROSlean.CollisionMonitor.Trace
+import ROSlean.CollisionMonitor.Convert
+import ROSlean.CollisionMonitor.FFI

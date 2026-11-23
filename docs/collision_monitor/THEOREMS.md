@@ -19,6 +19,8 @@ off, search the file for the theorem name.
 | [`Trace.lean`](../../ROSlean/CollisionMonitor/Trace.lean) | Event sequences: the trace invariant, the history, `stop_pub_timeout` |
 | [`Geometry.lean`](../../ROSlean/CollisionMonitor/Geometry.lean) | Circle and polygon tests, the margin, saturated points, `Config.ok` |
 | [`Bits.lean`](../../ROSlean/CollisionMonitor/Bits.lean) | The IEEE-754 bit-pattern helpers |
+| [`Convert.lean`](../../ROSlean/CollisionMonitor/Convert.lean) | The conversions at the boundary: millimetres, nanoseconds, refusals |
+| [`FFI.lean`](../../ROSlean/CollisionMonitor/FFI.lean) | The C interface computes the model; refused configurations stop every command |
 
 ## What the theorems are about
 
@@ -298,6 +300,56 @@ refuses it.
 | [`triggered_iff`](../../ROSlean/CollisionMonitor/Basic.lean#L40), [`triggered_nil_iff`](../../ROSlean/CollisionMonitor/Basic.lean#L58) | A zone triggers iff it is enabled and has at least `minPoints` points inside; without points, only a zone with `minPoints = 0` triggers (R11). |
 | [`evaluate_congr`](../../ROSlean/CollisionMonitor/Properties.lean#L40) | The demanded action reads the state only through the stored scan. |
 
+## The C interface and the conversions
+
+The node calls the exported wrappers of
+`core/ROSleanCore/CollisionMonitorFFI.lean`, and the shim hands every
+parameter and every scan coordinate over as a bit pattern, to be converted in
+Lean (`core/ROSleanCore/CollisionMonitorConvert.lean`). The theorems are in
+[`FFI.lean`](../../ROSlean/CollisionMonitor/FFI.lean) and
+[`Convert.lean`](../../ROSlean/CollisionMonitor/Convert.lean).
+
+| Theorem | Statement |
+| --- | --- |
+| **End to end** | |
+| [`cm_readBack_after`](../../ROSlean/CollisionMonitor/FFI.lean#L788), [`cm_out_after`](../../ROSlean/CollisionMonitor/FFI.lean#L776) | Create a monitor from a builder that is ok, feed it any sequence of events, then deliver a command: the kind, zone index and ratio the node reads back determine, and are the codes of, the output of `step` for that command in the state `run` reaches on the builder's configuration. This is what makes every theorem above a statement about the running node. |
+| [`cm_not_ok_after`](../../ROSlean/CollisionMonitor/FFI.lean#L805), [`foldl_exec_not_ok`](../../ROSlean/CollisionMonitor/FFI.lean#L674), [`apply_cmd_of_not_ok`](../../ROSlean/CollisionMonitor/FFI.lean#L563) | **Fail closed.** If the configuration was refused, the answer to every command, after any calls whatever, is `stopSource`: also for a non-finite command, and without the silence of R15. |
+| [`readBack_eq`](../../ROSlean/CollisionMonitor/FFI.lean#L733), [`step_publish_stopZone`](../../ROSlean/CollisionMonitor/FFI.lean#L714), [`step_publish_slowdown`](../../ROSlean/CollisionMonitor/FFI.lean#L722) | Nothing is truncated on the way to C: a published zone index is below the number of zones (at most 2³² assumed), and a published ratio is below the pattern of 1.0. |
+| **Events** | |
+| [`cmOnCmd_eq`](../../ROSlean/CollisionMonitor/FFI.lean#L599), [`cmOnScan_eq`](../../ROSlean/CollisionMonitor/FFI.lean#L569), [`apply_of_ok`](../../ROSlean/CollisionMonitor/FFI.lean#L554), [`foldl_apply`](../../ROSlean/CollisionMonitor/FFI.lean#L605), [`foldl_exec`](../../ROSlean/CollisionMonitor/FFI.lean#L657) | Each call is `step` on the corresponding event; a sequence of calls is `run`. |
+| [`cmOnScan_unusable`](../../ROSlean/CollisionMonitor/FFI.lean#L576), [`dropScan_stop`](../../ROSlean/CollisionMonitor/FFI.lean#L584), [`dropScan_fields`](../../ROSlean/CollisionMonitor/FFI.lean#L591) | A scan the shim reports as unusable (wrong frame, no sensor pose) discards the stored scan and nothing else; with an enabled source and a non-zero timeout the demanded action is then `stopSource` until a usable scan arrives (D11, R8). |
+| **Configuration and refusals** | |
+| [`builderAddCircle_zones`](../../ROSlean/CollisionMonitor/FFI.lean#L104), [`builderAddPolygon_zones`](../../ROSlean/CollisionMonitor/FFI.lean#L118), [`foldl_addVertex`](../../ROSlean/CollisionMonitor/FFI.lean#L163), [`zoneOfRaw_fields`](../../ROSlean/CollisionMonitor/FFI.lean#L90), [`builderSetSource_cfg`](../../ROSlean/CollisionMonitor/FFI.lean#L69), [`builderSetStopPubTimeout_cfg`](../../ROSlean/CollisionMonitor/FFI.lean#L76) | The configuration is what the builder calls say: zones in the order added, a polygon's vertices in the order of its `add_vertex` calls, each value the conversion of its argument. |
+| [`cmOk_iff`](../../ROSlean/CollisionMonitor/FFI.lean#L234), [`cmOk_cfg_ok`](../../ROSlean/CollisionMonitor/FFI.lean#L242), [`error_eq_zero_iff`](../../ROSlean/CollisionMonitor/FFI.lean#L216) | A monitor is ok iff no timeout was refused, no zone carries a refused value, and every zone passes `Zone.ok`; so `Config.ok` holds for it, which is the hypothesis of "a saturated point is in no zone" (`contains_eq_false_of_far`). |
+| [`not_ok_of_source_timeout`](../../ROSlean/CollisionMonitor/FFI.lean#L260), [`not_ok_of_stop_pub_timeout`](../../ROSlean/CollisionMonitor/FFI.lean#L269), [`entryError_addCircle_ne_zero`](../../ROSlean/CollisionMonitor/FFI.lean#L275), [`foldl_addVertex_refused`](../../ROSlean/CollisionMonitor/FFI.lean#L310), [`not_ok_of_entry`](../../ROSlean/CollisionMonitor/FFI.lean#L249), [`vertexOfRaw_eq_none_iff`](../../ROSlean/CollisionMonitor/FFI.lean#L347) | Each refused value makes the monitor not ok: a timeout, a radius, `min_points`, a vertex. A refused vertex is never dropped silently, and later vertices do not clear its mark. |
+| **Scan decoding** | |
+| [`decodeBeams_length`](../../ROSlean/CollisionMonitor/FFI.lean#L404), [`getElem_decodeBeams`](../../ROSlean/CollisionMonitor/FFI.lean#L408), [`beamAt_inRange`](../../ROSlean/CollisionMonitor/FFI.lean#L396) | A byte array of any length is a scan of `size / 20` readings; every decoded point is within ±`coordLimit`, whatever the bytes. |
+| [`decodeBeams_encodeBeams`](../../ROSlean/CollisionMonitor/FFI.lean#L487), [`coordAt_eq`](../../ROSlean/CollisionMonitor/FFI.lean#L391) | Decoding inverts the shim's encoding: the model sees the ranges as written and each coordinate converted by `coordMm`. |
+| **Conversions** (against the number a bit pattern denotes, `val64`, `val32`) | |
+| [`coordMm_abs_le`](../../ROSlean/CollisionMonitor/Convert.lean#L232), [`coordMm_abs_gt`](../../ROSlean/CollisionMonitor/Convert.lean#L243), [`coordMm_sign`](../../ROSlean/CollisionMonitor/Convert.lean#L254), [`coordMm_natAbs_le`](../../ROSlean/CollisionMonitor/Convert.lean#L221) | A scan coordinate in millimetres is never farther from zero than the true value, is less than 1 mm short of it unless it saturates, keeps its sign, and is within ±1,000,000. |
+| [`radiusMm_ge`](../../ROSlean/CollisionMonitor/Convert.lean#L298), [`radiusMm_lt`](../../ROSlean/CollisionMonitor/Convert.lean#L306), [`radiusMm_abs`](../../ROSlean/CollisionMonitor/Convert.lean#L268), [`radiusMm_le_limit`](../../ROSlean/CollisionMonitor/Convert.lean#L289), [`radiusMm_of_not_finite`](../../ROSlean/CollisionMonitor/Convert.lean#L264) | The model's radius is at least the configured magnitude plus 1 mm and less than that plus 2 mm; the sign of the parameter does not matter (R9, review finding 1); NaN, infinities and too large values are refused. |
+| [`circle_safe`](../../ROSlean/CollisionMonitor/Convert.lean#L319) | **Circles are safe**: a point strictly inside the configured circle, in exact arithmetic on the values the shim passed, is inside the model's circle. This is the SPEC's safe-direction claim for circles, with the conversions included. |
+| [`vertexMm_abs_sub_le`](../../ROSlean/CollisionMonitor/Convert.lean#L345), [`vertexMm_isSome_iff`](../../ROSlean/CollisionMonitor/Convert.lean#L340) | A vertex coordinate moves by at most half a millimetre; it is refused iff it is not finite. |
+| [`timeoutNs_of_neg`](../../ROSlean/CollisionMonitor/Convert.lean#L375), [`timeoutNs_of_not_finite`](../../ROSlean/CollisionMonitor/Convert.lean#L371), [`timeoutNs_of_huge`](../../ROSlean/CollisionMonitor/Convert.lean#L383), [`timeoutNs_isSome`](../../ROSlean/CollisionMonitor/Convert.lean#L398), [`sourceTimeoutNs_eq_none`](../../ROSlean/CollisionMonitor/Convert.lean#L411) | A timeout is accepted only if it is finite, not negative and below 9.2·10⁹ s; so a refused timeout cannot become 0, "check disabled" (review finding 7a). |
+| [`minPointsOfRaw_eq_some_iff`](../../ROSlean/CollisionMonitor/Convert.lean#L431) | `min_points` is accepted iff it is in the range of a 32-bit `int` (review finding 13). |
+| [`mant_shift_eq_magVal`](../../ROSlean/CollisionMonitor/Convert.lean#L119) | The reading of a binary64 pattern used for the conversions is `magVal` of `Bits.lean`. |
+
+Two limits of these theorems:
+
+- **Timeouts are tested, not proved, to be upstream's.** `timeoutNs`
+  reproduces `(int64_t)(seconds * 1e9)` by rounding an exact product to the
+  nearest binary64 value in integer arithmetic (`nearest`). That this is the
+  IEEE-754 product is checked against `rclcpp::Duration` and against the
+  hardware on 530,000 values with no disagreement, and not proved: there is
+  no formal IEEE-754 multiplication here to prove it against. What is proved
+  is which timeouts are refused.
+- **An unusable scan is not an event of the model.** `Monitor.dropScan`
+  clears the stored scan directly. The end-to-end theorems speak about
+  sequences of model events (commands and usable scans); for a sequence that
+  contains an unusable scan, `dropScan_stop` and `dropScan_fields` say what
+  the state is afterwards, and the theorems about `step` for an arbitrary
+  state apply from there.
+
 ## What is not proved
 
 - **That the model equals upstream `nav2_collision_monitor`.** The rules were
@@ -306,12 +358,12 @@ refuses it.
 - **The slowdown multiplication** (T1), as said above. No theorem speaks
   about a published velocity value other than "unchanged" and "zero", and
   those two only through the shim's contract.
-- **Anything about the C++ shim and the C interface** (T2, T3, T5): the scan
-  conversion with `cos` and `sin`, truncation and saturation to millimetres,
-  the configuration conversions (review findings 1, 2, 7, 13 are about
-  these), the clock, and that the shim publishes what the action says. The
-  C interface is being written separately; its theorems are not in these
-  files.
+- **The C++ shim** (T2, T3, T5): the scan's points in metres (`cos`, `sin`,
+  the angle, the sensor pose), the parsing of the `points` text, the
+  comparison of the scan's frame with the base frame, the clock, and that
+  the shim passes values unaltered and publishes what the action says. The
+  conversions to millimetres and nanoseconds and the refusals are no longer
+  in the shim; see "The C interface and the conversions".
 - **The topological half of the polygon safe-direction claim**, and the
   "other direction" tolerances (see Geometry).
 - **That `magVal` is IEEE-754** (see the bit-pattern helpers).
