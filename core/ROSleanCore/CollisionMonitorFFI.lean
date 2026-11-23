@@ -22,6 +22,11 @@ A monitor whose configuration was refused is not advisory: it answers every
 command with `stopSource` (`Monitor.apply`). The node is meant to exit at
 start-up when `cmOk` is false; this is the backstop if it does not.
 
+The builder is fail-closed: a configuration is accepted only if the scan
+source was set (`builderSetSource`), and a refused value makes it not
+accepted wherever in the sequence of calls it occurs. No later call clears a
+refusal.
+
 Ownership: every object argument is *consumed* (PLAN, lesson 8). A caller that
 wants to keep using a monitor after a query must `lean_inc` it first.
 
@@ -43,10 +48,16 @@ structure Builder where
   sourceTimeout : Nat
   stopPubTimeout : Nat
   /-- 0, or which source timeout was refused: 1 the node's `source_timeout`,
-  2 the source's own. -/
+  2 the source's own. Once non-zero it stays (the first refusal is kept). -/
   sourceErr : UInt8
-  /-- `stop_pub_timeout` was refused. -/
+  /-- `stop_pub_timeout` was refused, in this or an earlier call. -/
   stopPubBad : Bool
+  /-- `builderSetSource` was called. Without it the source timeout would be
+  0, "check off": such a builder is not accepted. -/
+  sourceSet : Bool
+  /-- `builderAddVertex` was called when the zone added last was not a
+  polygon, or when there was no zone: the vertex belongs to nothing. -/
+  stray : Bool
 
 /-- The model configuration the builder holds. -/
 def Builder.cfg (b : Builder) : Config :=
@@ -69,10 +80,13 @@ def entryError (ze : Zone × UInt8) : UInt8 := if ze.2 != 0 then ze.2 else zoneE
 
 /-- Why the configuration is not accepted: 0 it is accepted; 1 the node's
 `source_timeout`; 2 the source's own `source_timeout`; 3 `stop_pub_timeout`;
-4 a zone (`entryError` says which and why). -/
+5 the source was never set; 6 a vertex was added to no polygon; 4 a zone
+(`entryError` says which and why). -/
 def Builder.error (b : Builder) : UInt8 :=
   if b.sourceErr != 0 then b.sourceErr
   else if b.stopPubBad then 3
+  else if !b.sourceSet then 5
+  else if b.stray then 6
   else if b.zones.all (fun ze => entryError ze == 0) then 0 else 4
 
 /-- A running monitor: configuration, whether it was accepted, current state,
@@ -87,32 +101,38 @@ structure Monitor where
   st : State
   out : Output
 
-/-- No zones, source enabled, both timeouts 0, nothing refused. -/
+/-- No zones, source enabled, both timeouts 0, nothing refused, and the
+source not set: the monitor of a new builder is not accepted
+(`Builder.error` is 5) until `builderSetSource` has been called. -/
 @[export roslean_cm_builder_new]
 def builderNew (_ : Unit) : Builder :=
   { zones := [], sourceEnabled := true, sourceTimeout := 0, stopPubTimeout := 0, sourceErr := 0,
-    stopPubBad := false }
+    stopPubBad := false, sourceSet := false, stray := false }
 
 /-- Sets the scan source's `enabled` flag (any non-zero value is `true`) and
 its timeout. `nodeTimeout` is the node's `source_timeout` parameter and
 `ownTimeout` the source's own, both in seconds as binary64 patterns;
-`hasOwn` says whether the source's own parameter is set (`sourceTimeoutNs`). -/
+`hasOwn` says whether the source's own parameter is set (`sourceTimeoutNs`).
+A refusal recorded by an earlier call is kept. -/
 @[export roslean_cm_builder_set_source]
 def builderSetSource (b : Builder) (enabled : UInt8) (nodeTimeout : UInt64) (hasOwn : UInt8)
     (ownTimeout : UInt64) : Builder :=
   { b with
     sourceEnabled := enabled != 0
     sourceTimeout := (sourceTimeoutNs nodeTimeout.toNat (hasOwn != 0) ownTimeout.toNat).getD 0
+    sourceSet := true
     sourceErr :=
-      if (timeoutNs nodeTimeout.toNat).isNone then 1
+      if b.sourceErr != 0 then b.sourceErr
+      else if (timeoutNs nodeTimeout.toNat).isNone then 1
       else if hasOwn != 0 && (timeoutNs ownTimeout.toNat).isNone then 2 else 0 }
 
-/-- Sets `stop_pub_timeout` from the parameter in seconds (binary64 pattern). -/
+/-- Sets `stop_pub_timeout` from the parameter in seconds (binary64 pattern).
+A refusal recorded by an earlier call is kept. -/
 @[export roslean_cm_builder_set_stop_pub_timeout]
 def builderSetStopPubTimeout (b : Builder) (timeout : UInt64) : Builder :=
   { b with
     stopPubTimeout := (timeoutNs timeout.toNat).getD 0
-    stopPubBad := (timeoutNs timeout.toNat).isNone }
+    stopPubBad := b.stopPubBad || (timeoutNs timeout.toNat).isNone }
 
 /-- The zone action from its code: 1 is `slowdown` with the given ratio
 pattern; 0 and every other value is `stop`, and the ratio is ignored. -/
@@ -164,15 +184,27 @@ def vertexOfRaw (x y : UInt32) : Option Point :=
   | some xm, some ym => some ⟨xm, ym⟩
   | _, _ => none
 
-/-- Appends a vertex to the zone added last; no effect if that zone is not a
-polygon or if there is no zone. -/
+/-- The zone added last is a polygon. -/
+def lastIsPolygon (zs : List (Zone × UInt8)) : Bool :=
+  match zs.getLast? with
+  | some ze =>
+    match ze.1.shape with
+    | .polygon _ => true
+    | .circle _ => false
+  | none => false
+
+/-- Appends a vertex to the zone added last. If that zone is not a polygon, or
+if there is no zone, the vertex (refused or not) belongs to nothing: the zones
+are unchanged and the builder is marked (`stray`), so it is not accepted. -/
 @[export roslean_cm_builder_add_vertex]
 def builderAddVertex (b : Builder) (x y : UInt32) : Builder :=
-  { b with zones := addVertexToLast (vertexOfRaw x y) b.zones }
+  { b with
+    zones := addVertexToLast (vertexOfRaw x y) b.zones
+    stray := b.stray || !lastIsPolygon b.zones }
 
 /-- The monitor for the configuration built so far, in the initial state and
-with output `silent`. It is accepted iff no raw value was refused and
-`Config.ok` holds. -/
+with output `silent`. It is accepted iff the source was set, no raw value was
+refused, no vertex was added to no polygon, and `Config.ok` holds. -/
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
@@ -235,31 +267,33 @@ def scanOfRaw (stampNs : Int64) (rangeMinBits rangeMaxBits : UInt32) (beams : By
 /-! ## Events -/
 
 /-- Applies one event and records its output. An accepted monitor does what
-`step` says. A monitor that was not accepted ignores scans and answers every
-command with `stopSource`, whatever the command. -/
+`step` says. A monitor that was not accepted ignores scans, usable or not,
+and answers every command with `stopSource`, whatever the command. -/
 def Monitor.apply (m : Monitor) (e : Event) : Monitor :=
   if m.ok then
     let (st, out) := step m.cfg m.st e
     { m with st, out }
   else
     match e with
-    | .scan _ _ => { m with out := .silent }
     | .cmd _ _ => { m with out := .publish .stopSource }
+    | .scan _ _ | .scanUnusable _ => { m with out := .silent }
 
-/-- A scan arrived that cannot be used (the shim has no transform for its
-frame, D11): the stored scan is discarded, so that the source has no data
-until a usable scan arrives (R8). Nothing is published. -/
-def Monitor.dropScan (m : Monitor) : Monitor :=
-  { m with st := { m.st with scan := none }, out := .silent }
+/-- The event of the model that a scan call delivers. `usable` is 0 if the
+scan's frame is not the base frame and no sensor pose was configured (D11):
+then the event is `scanUnusable`, and the other arguments are not looked
+at. -/
+def scanEvent (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
+    (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Event :=
+  if usable != 0 then .scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)
+  else .scanUnusable nowNs.toNat
 
-/-- A scan arrived at node-clock time `nowNs`. `usable` is 0 if the scan's
-frame is not the base frame and no sensor pose was configured: then the scan
-is not stored and the stored one is discarded (`Monitor.dropScan`). -/
+/-- A scan arrived at node-clock time `nowNs`: one `step` of the model on
+`scanEvent`. An unusable scan is not stored and the stored one is discarded,
+so that the source has no data until a usable scan arrives (R8). -/
 @[export roslean_cm_on_scan]
 def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
     (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
-  if usable != 0 then m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams))
-  else m.dropScan
+  m.apply (scanEvent nowNs stampNs usable rangeMinBits rangeMaxBits beams)
 
 /-- A velocity command arrived at node-clock time `nowNs`; the six components
 are binary64 bit patterns. -/

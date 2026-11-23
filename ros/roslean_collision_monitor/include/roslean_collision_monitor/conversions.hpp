@@ -88,6 +88,13 @@ inline void put_le(uint8_t * out, uint64_t v, int bytes)
 /// single precision, range * cos(angle) and range * sin(angle) are
 /// single-precision products, widened to double. The core converts the
 /// coordinates to millimetres.
+///
+/// "As upstream" is about the operations. The bits of the result are
+/// upstream's when this file is compiled with optimisation (the package's
+/// default build type is Release) and with -ffp-contract=off, for a scan
+/// without a pose; without optimisation the compiler calls another library
+/// entry for cos and sin, and about 1 % of the coordinates differ by one unit
+/// in the last place of a float (SPEC, "Scan event"; smoke_conversions).
 inline std::vector<uint8_t> encode_scan(
   float angle_min, float angle_increment, const std::vector<float> & ranges,
   const SensorPose & pose)

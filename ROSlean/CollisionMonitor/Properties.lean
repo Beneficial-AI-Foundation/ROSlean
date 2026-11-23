@@ -103,6 +103,34 @@ theorem yieldsZero_iff (a : Action) (v : Twist) :
 theorem step_scan (cfg : Config) (st : State) (now : Nat) (s : Scan) :
     step cfg st (.scan now s) = ({ st with scan := some s }, .silent) := rfl
 
+/-- D11: an unusable scan discards the stored scan, nothing else changes, and
+nothing is published. -/
+theorem step_scanUnusable (cfg : Config) (st : State) (now : Nat) :
+    step cfg st (.scanUnusable now) = ({ st with scan := none }, .silent) := rfl
+
+/-- **An unusable scan stops the robot by the source rule (D11, R8).** In the
+state after an unusable scan, from any state: with the source enabled and a
+non-zero timeout, the action demanded at any time is `stopSource`, exactly as
+when no scan was ever received. (For how long: `run_stale` in `Trace.lean`,
+until the next usable scan.) -/
+theorem evaluate_after_scanUnusable (cfg : Config) (st : State) (t now : Nat)
+    (he : cfg.sourceEnabled = true) (ht : 0 < cfg.sourceTimeout) :
+    evaluate cfg (step cfg st (.scanUnusable t)).1 now = .stopSource := by
+  simp [evaluate, sourcePoints, step, he, Nat.pos_iff_ne_zero.mp ht]
+
+/-- An unusable scan leaves the record of published zeros (R15) alone. -/
+theorem step_scanUnusable_zero (cfg : Config) (st : State) (now : Nat) :
+    (step cfg st (.scanUnusable now)).1.prevZero = st.prevZero ∧
+      (step cfg st (.scanUnusable now)).1.stopStamp = st.stopStamp := ⟨rfl, rfl⟩
+
+/-- Only a command is answered: scans, usable or not, publish nothing (R1). -/
+theorem output_of_not_cmd (cfg : Config) (st : State) (e : Event)
+    (h : ∀ now v, e ≠ .cmd now v) : (step cfg st e).2 = .silent := by
+  cases e with
+  | scan now s => rfl
+  | scanUnusable now => rfl
+  | cmd now v => exact absurd rfl (h now v)
+
 /-- **Bad data (b), R2.** A command with an infinite or NaN component is
 ignored: nothing is published and the state is unchanged. -/
 theorem step_cmd_of_not_finite (cfg : Config) (st : State) (now : Nat) (v : Twist)

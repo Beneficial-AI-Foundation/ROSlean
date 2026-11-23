@@ -54,10 +54,27 @@ collision_monitor:
       type: "scan"
       topic: "scan"
       enabled: true
-      # Only in this node: the fixed pose of the sensor in the base frame,
-      # [x, y, yaw] in metres and radians, written with decimal points. With
-      # it, scans are used whatever their frame_id. Without it, only scans
-      # whose frame_id is base_frame_id are used. A sensor that is not mounted
-      # upright (roll or pitch) cannot be described and must not be
-      # approximated by this parameter.
-      roslean_sensor_pose: [0.0, 0.0, 0.0]
+      # Only in this node: `roslean_sensor_pose`, the fixed pose of the sensor
+      # in the base frame, [x, y, yaw] in metres and radians, written with
+      # decimal points. It is NOT set here, and should stay unset unless you
+      # need it:
+      #
+      #   - Unset: only scans whose frame_id is base_frame_id are used. A scan
+      #     in any other frame is not used and counts as "no data", which
+      #     stops the robot (with a non-zero source_timeout). This is the
+      #     frame check.
+      #   - Set: the frame check is OFF. Every scan is used whatever its
+      #     frame_id, placed by this pose; no transform is looked up, so a
+      #     pose that is wrong (for example [0.0, 0.0, 0.0] for a sensor that
+      #     is mounted backwards or off-centre) puts obstacles in the wrong
+      #     place without any error. The node warns at start-up, and again
+      #     when a scan arrives in another frame.
+      #
+      # Set it only if your scans are not in base_frame_id, to the pose that
+      # your robot description gives for the sensor's frame, for example
+      # (TurtleBot3 burger, base_footprint -> base_scan):
+      #
+      #   roslean_sensor_pose: [-0.032, 0.0, 0.0]
+      #
+      # A sensor that is not mounted upright (roll or pitch) cannot be
+      # described and must not be approximated by this parameter.

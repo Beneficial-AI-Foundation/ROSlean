@@ -21,6 +21,11 @@
 #include "roslean_collision_monitor/conversions.hpp"
 #include "roslean_core/collision_monitor.hpp"
 
+// test/upstream_points.cpp: upstream's computation of the points of a scan,
+// in a translation unit of its own that is always compiled with -O2.
+std::vector<std::array<double, 2>> upstream_points(
+  float angle_min, float angle_increment, const std::vector<float> & ranges);
+
 namespace
 {
 
@@ -78,6 +83,27 @@ Rec one(float range, float angle, const SensorPose & pose = SensorPose{})
 }
 
 bool mm(const Rec & r, int64_t x, int64_t y) {return r.x_mm == x && r.y_mm == y;}
+
+// The same double, bit for bit; two NaNs count as the same.
+bool same_bits(double a, double b)
+{
+  return bits_of(a) == bits_of(b) || (std::isnan(a) && std::isnan(b));
+}
+
+// The number of coordinates of the encoded scan that are not, bit for bit,
+// those of the reference points.
+size_t differing(const std::vector<uint8_t> & b, const std::vector<std::array<double, 2>> & ref)
+{
+  if (b.size() != 20 * ref.size()) {
+    return 2 * ref.size() + 1;
+  }
+  size_t n = 0;
+  for (size_t i = 0; i < ref.size(); ++i) {
+    n += !same_bits(rec(b, i).x, ref[i][0]);
+    n += !same_bits(rec(b, i).y, ref[i][1]);
+  }
+  return n;
+}
 
 }  // namespace
 
@@ -138,27 +164,35 @@ int main()
     check(rec(b, 4).range_bits == 0u && mm(rec(b, 4), 0, 0), "zero reading");
   }
   {
-    // The angle accumulates in single precision, one addition per reading,
-    // valid or not (R3).
-    const float inc = 0.0061f;
-    std::vector<float> ranges(1000, 5.0f);
-    ranges[10] = kNaNF;
-    const auto b = encode_scan(-3.05f, inc, ranges, SensorPose{});
-    bool same = true;
-    int differs_from_double = 0;
-    float angle = -3.05f;
-    for (size_t i = 0; i < ranges.size(); ++i) {
-      const float xf = ranges[i] * std::cos(angle);
-      const float yf = ranges[i] * std::sin(angle);
-      const Rec r = rec(b, i);
-      same = bits_of(r.x) == bits_of(static_cast<double>(xf)) &&
-        bits_of(r.y) == bits_of(static_cast<double>(yf)) && same;
-      const double a = -3.05 + static_cast<double>(i) * 0.0061;
-      differs_from_double += r.x != 5.0 * std::cos(a) || r.y != 5.0 * std::sin(a);
-      angle += inc;
+    // The points of a scan in the base frame are, bit for bit, the points an
+    // optimised build of upstream's loop computes on this machine (R3; review
+    // CM3/CM4, finding 5). The reference is upstream_points.cpp, which shares
+    // no code with encode_scan and is always compiled with -O2; encode_scan
+    // is compiled here with the flags of the node. On macOS arm64 this fails
+    // when the package is built without optimisation.
+    std::mt19937_64 gen(11);
+    std::uniform_real_distribution<float> range(0.05f, 12.0f), start(-3.2f, 0.0f),
+    step(0.001f, 0.013f);
+    size_t differ = 0, total = 0, differs_from_double = 0;
+    for (int n = 0; n < 200; ++n) {
+      std::vector<float> ranges(1000);
+      for (auto & r : ranges) {r = range(gen);}
+      ranges[10] = kNaNF;  // the angle advances for an invalid reading too
+      ranges[20] = kInfF;
+      const float angle_min = start(gen), inc = step(gen);
+      const auto b = encode_scan(angle_min, inc, ranges, SensorPose{});
+      differ += differing(b, upstream_points(angle_min, inc, ranges));
+      total += 2 * ranges.size();
+      for (size_t i = 0; i < ranges.size(); ++i) {
+        const double a = static_cast<double>(angle_min) + static_cast<double>(i) * inc;
+        differs_from_double += rec(b, i).x != ranges[i] * std::cos(a);
+      }
     }
-    check(same, "1000 readings: single-precision angle accumulation and products");
-    check(differs_from_double > 0, "which is distinguishable from a double-precision computation");
+    std::printf("      %zu of %zu coordinates differ from the reference\n", differ, total);
+    check(differ == 0,
+      "200 scans of 1000 readings: bit for bit the points of an optimised build of upstream's loop");
+    check(differs_from_double > total / 4,
+      "which is distinguishable from a double-precision computation of the angle");
   }
   {
     // Whatever the reading and the angle, the millimetre point never lies
@@ -197,10 +231,27 @@ int main()
       check(std::llabs(r.x_mm) == 1000000 && std::llabs(r.y_mm) == 1000000,
         "infinite reading with a pose: both coordinates saturated");
     }
-    const SensorPose zero{};
-    const auto a = encode_scan(0.3f, 0.01f, {1.0f, 2.0f, 3.0f}, zero);
-    const auto b = encode_scan(0.3f, 0.01f, {1.0f, 2.0f, 3.0f}, SensorPose{0.0, 0.0, 0.0});
-    check(a == b, "a zero pose changes nothing");
+    {
+      // A pose of zero is "the sensor is the base frame": the points are
+      // those of a scan in the base frame, bit for bit, also where a
+      // coordinate is -0.0 (a rotation by 0 and a shift by 0 would turn it
+      // into +0.0) and for a pose written with negative zeros. The reference
+      // knows no pose.
+      const std::vector<float> ranges = {1.0f, 2.0f, 0.0f, 3.0f, 0.0f, kNaNF, 7.5f};
+      const auto ref = upstream_points(3.0f, 0.05f, ranges);  // cos < 0: 0 * cos = -0.0
+      bool has_negative_zero = false;
+      for (const auto & p : ref) {
+        has_negative_zero = has_negative_zero || bits_of(p[0]) == bits_of(-0.0);
+      }
+      check(has_negative_zero, "the scan of the next two checks has a coordinate of -0.0");
+      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{0.0, 0.0, 0.0}), ref) == 0,
+        "a pose of [0, 0, 0] gives the points of a scan in the base frame, bit for bit");
+      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{-0.0, -0.0, -0.0}), ref) == 0,
+        "and so does a pose of [-0, -0, -0]");
+      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{0.0, 0.0, 1e-9}), ref) > 0 &&
+        differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{1e-9, 0.0, 0.0}), ref) > 0,
+        "while the smallest yaw or shift is applied");
+    }
   }
 
   // ---- the `points` string ------------------------------------------------
