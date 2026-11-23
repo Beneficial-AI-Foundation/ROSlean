@@ -73,12 +73,18 @@
       <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
 
       <h3 id="video">See it run</h3>
-      <figure class="video" role="img" aria-label="Demo video, coming soon">
-        <div>
-          <div class="play" aria-hidden="true"></div>
-          <strong>Demo video coming soon</strong>
-          <span>A TurtleBot3 in Gazebo: Nav2 drives, the keyboard takes over, the e-stop freezes everything.</span>
-        </div>
+      <figure class="video">
+        <video id="demo" controls playsinline preload="metadata" width="1920" height="1080"
+               poster="media/twist_mux_generated.jpg" src="media/twist_mux_generated.mp4"
+               aria-describedby="demo-caption">
+          Your browser cannot play this video. Download it:
+          <a href="media/twist_mux_generated.mp4">3D replay</a>,
+          <a href="media/twist_mux_gazebo.mp4">Gazebo footage</a>.
+        </video>
+        <figcaption>
+          <span id="demo-caption" aria-live="polite">A 3D replay drawn from the messages of a recorded Gazebo run. The robot's path and every mux decision are the recorded ones.</span>
+          <button id="demo-switch" type="button">Watch the original Gazebo footage</button>
+        </figcaption>
       </figure>
 
       <h3 id="theorem">The verified theorem</h3>
@@ -132,6 +138,42 @@ document.querySelectorAll('.status').forEach(function (box) {
     if (e.key === 'Escape') { set(false); btn.blur(); }
   });
 });
+
+// Demo video: the 3D replay by default; the button swaps in the Gazebo footage
+// of the same run (same length and timeline) and keeps the playback position.
+(function () {
+  var video = document.getElementById('demo');
+  var button = document.getElementById('demo-switch');
+  var caption = document.getElementById('demo-caption');
+  var takes = {
+    generated: {
+      file: 'media/twist_mux_generated',
+      caption: caption.textContent,
+      other: 'Watch the original Gazebo footage'
+    },
+    gazebo: {
+      file: 'media/twist_mux_gazebo',
+      caption: 'The original footage of the same run: a TurtleBot3 in Gazebo, filmed by a camera in the simulated world.',
+      other: 'Back to the 3D replay'
+    }
+  };
+  var current = 'generated';
+  button.addEventListener('click', function () {
+    current = current === 'generated' ? 'gazebo' : 'generated';
+    var take = takes[current];
+    var at = video.currentTime, playing = !video.paused && !video.ended;
+    video.poster = take.file + '.jpg';
+    video.src = take.file + '.mp4';
+    if (at > 0) {
+      video.addEventListener('loadedmetadata', function () {
+        video.currentTime = at;
+        if (playing) video.play();
+      }, { once: true });
+    }
+    caption.textContent = take.caption;
+    button.textContent = take.other;
+  });
+})();
 </script>
 
 </body>

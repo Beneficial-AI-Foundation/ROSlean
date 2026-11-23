@@ -3,12 +3,15 @@
 Two one-minute videos of the same run of the Gazebo demo
 ([docs/TUTORIAL_GAZEBO.md](../docs/TUTORIAL_GAZEBO.md), experiment 1):
 
-- [`twist_mux_gazebo.mp4`](twist_mux_gazebo.mp4): the run as filmed by a
+- [`twist_mux_gazebo.mp4`](../site/media/twist_mux_gazebo.mp4): the run as filmed by a
   camera in the Gazebo world, with captions and a panel that shows which
   input the mux is forwarding.
-- [`twist_mux_generated.mp4`](twist_mux_generated.mp4): the same run drawn in
+- [`twist_mux_generated.mp4`](../site/media/twist_mux_generated.mp4): the same run drawn in
   3D from the recording (not Gazebo), with a better-looking robot and the
   same captions and panel.
+
+The files are in [`site/media/`](../site/media), from where the project page
+shows them: the generated one first, with a button for the Gazebo one.
 
 ## What is real in them
 
@@ -59,8 +62,8 @@ pixi run bash video/record.sh /tmp/take          # about 30 minutes without a GP
 python3 video/build_data.py /tmp/take
 ln -sfn /tmp/take/frames video/web/frames
 (cd video && npm install)                        # three.js; playwright must be installed too
-video/make_video.sh video/web/gazebo.html video/twist_mux_gazebo.mp4
-video/make_video.sh video/web/generated.html video/twist_mux_generated.mp4
+video/make_video.sh video/web/gazebo.html site/media/twist_mux_gazebo.mp4
+video/make_video.sh video/web/generated.html site/media/twist_mux_generated.mp4
 ```
 
 `record.sh` uses the X display if there is one. Without one it starts Xvfb

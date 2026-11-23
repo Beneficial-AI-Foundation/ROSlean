@@ -5,7 +5,7 @@ ROS 2 nodes whose decision logic is written and proved in Lean. First target:
 velocity command sources by priority, freshness and locks.
 
 Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
-[`site/`](site), deployed by the CI workflow on pushes to `main`).
+[`site/`](site), deployed by the `pages.yml` workflow on pushes to `main`).
 
 - [twist_mux.md](twist_mux.md): scope, and where to start as a new reader.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
