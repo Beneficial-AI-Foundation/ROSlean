@@ -50,9 +50,8 @@ agent; the findings and what was done about them are in
 ### Not done
 
 - **CI for the ROS side.** The GitHub workflows are the Lean project
-  template: they run `lake build` (the proofs) and a docs deployment that
-  needs GitHub Pages enabled. Nothing in CI builds the ROS packages or runs
-  the tests.
+  template: they run `lake build` (the proofs). Nothing in CI builds the
+  ROS packages or runs the tests.
 - **Linux beyond the container.** The Docker build (`docker/Dockerfile`,
   Ubuntu 24.04, apt ROS) builds, passes all tests against apt's upstream
   `twist_mux` and yields an install tree that needs no Lean installation.

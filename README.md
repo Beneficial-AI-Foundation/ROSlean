@@ -161,15 +161,3 @@ Two things the theorems make precise that are easy to get wrong:
   priority above every input.
 - When all inputs are silent the mux publishes nothing; it does not send a
   stop command. Stopping is the base driver's job, as with upstream.
-
-## GitHub configuration
-
-To set up your new GitHub repository, follow these steps:
-
-* Under your repository name, click **Settings**.
-* In the **Actions** section of the sidebar, click "General".
-* Check the box **Allow GitHub Actions to create and approve pull requests**.
-* Click the **Pages** section of the settings sidebar.
-* In the **Source** dropdown menu, select "GitHub Actions".
-
-After following the steps above, you can remove this section from the README file.
