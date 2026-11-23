@@ -49,3 +49,15 @@ gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 
 # With gazebo-nav2 running and tour:=false: pixi run gazebo-goal X Y  (map coordinates, metres)
 gazebo-goal = "bash -c 'source install/setup.bash && ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \"{pose: {header: {frame_id: map}, pose: {position: {x: $0, y: $1}, orientation: {w: 1.0}}}}\"'"
 gazebo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=key_vel -p stamped:=true -p speed:=0.2 -p turn:=1.0'"
+# Collision monitor demo (docs/TUTORIAL_COLLISION_MONITOR.md): the mux and the
+# monitor in series on the TurtleBot3. cm-gazebo-scenario drops a box in front
+# of the robot and takes it away again by itself.
+cm-gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py'", depends-on = ["build"] }
+cm-gazebo-scenario = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py scenario:=true'", depends-on = ["build"] }
+cm-gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
+# With cm-gazebo running: put a box 1.2 m in front of the robot; take it away.
+cm-box-drop = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py drop'"
+cm-box-remove = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py remove'"
+# Runs the scenario without windows and checks it against the simulator's
+# ground truth (about a minute). For upstream's node: pixi run cm-check --monitor nav2_collision_monitor
+cm-check = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/check_demo.py \"$@\"' --", depends-on = ["build"] }

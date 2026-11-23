@@ -38,6 +38,13 @@ set_target_properties(collision_monitor PROPERTIES
 install(TARGETS collision_monitor DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
+# --- Gazebo demo (docs/TUTORIAL_COLLISION_MONITOR.md) -------------------------
+# Launch file, monitor configuration, obstacle scripts and narrator. The
+# automated check, demo/gazebo/check_demo.py, is not a colcon test: it needs
+# the simulator with a display and the downloaded furniture (`pixi run cm-check`).
+install(DIRECTORY demo DESTINATION share/${PROJECT_NAME})
+# --- end of Gazebo demo -------------------------------------------------------
+
 if(BUILD_TESTING)
   # The trusted floating-point work of the shim together with the core's
   # conversion to millimetres, without ROS.
