@@ -65,7 +65,7 @@ agent; the findings and what was done about them are in
   source as position-independent code would bring this down to a few MB.
 - **Gazebo / Nav2 demo: done on macOS, with gaps.** A TurtleBot3 in a
   furnished apartment, with a patrol script or Nav2 as the planner
-  (`demo/gazebo/`). Not done: RViz (crashes on macOS), any Linux run, and an
+  (`demo/gazebo/`). Not done: any Linux run, and an
   automated test; it was checked by scripts that are not in the repository.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
   deliberate difference from upstream.

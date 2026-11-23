@@ -15,8 +15,8 @@ when the mux goes silent (the mux itself never sends a stop command).
 Arguments:
   planner:=nav2            Nav2 instead of the patrol script
   tour:=false              with Nav2: do not send goals automatically
-  rviz:=true               with Nav2: open RViz, to watch the plan and set goals
-                           (off by default: it crashes on macOS with a shader error)
+  rviz:=false              with Nav2: no RViz window (RViz shows the map, the lidar
+                           and the plan, and sets goals with "Nav2 Goal")
   mux_package:=twist_mux   run upstream's node instead
   gui:=false               no windows (for tests)
 
@@ -62,7 +62,7 @@ def generate_launch_description():
         DeclareLaunchArgument('mux_package', default_value='roslean_twist_mux'),
         DeclareLaunchArgument('gui', default_value='true'),
         DeclareLaunchArgument('tour', default_value='true'),
-        DeclareLaunchArgument('rviz', default_value='false'),
+        DeclareLaunchArgument('rviz', default_value='true'),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3, 'models')),
 
         # Simulator: server always, window unless gui:=false.

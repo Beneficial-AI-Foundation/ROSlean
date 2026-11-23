@@ -292,8 +292,14 @@ localises the robot with the lidar on a map of the apartment, plans a path
 around the furniture, and publishes velocity commands on `nav_vel`, which is
 just another input to the mux. A small tour script sends it from place to
 place (desk, kitchen, sofa, bedroom door, bookshelf), so the robot keeps
-moving by itself. Allow about half a minute after the window appears for
+moving by itself. Allow about half a minute after the windows appear for
 Nav2 to start.
+
+A second window, RViz, shows what Nav2 knows: the map, the cost it assigns
+around obstacles (purple), the lidar returns, its position estimate (green
+dots) and the planned path (red line).
+
+![RViz with the apartment map, costmap and Nav2's plan](images/rviz.png)
 
 Teleop and the e-stop work as before, with one new effect worth watching:
 hold the robot with either for more than a few seconds and Nav2 notices that
@@ -301,7 +307,9 @@ it is making no progress and gives up on its goal (`did not reach ...; trying
 again` in terminal 1). The mux does not tell Nav2 that it is being
 overridden; Nav2 only sees that the robot is not doing what it asked.
 
-To send goals yourself, start with `tour:=false` and use
+To send goals yourself, start with `tour:=false`. Then either click
+"Nav2 Goal" in the RViz toolbar and click a point on the map (not tried from
+this side: it needs a person at the mouse), or use
 `pixi run gazebo-goal X Y` (map coordinates in metres; the room spans
 x from -4.5 to 4.5 and y from -3.5 to 3.5, and the robot starts at 0 0):
 
@@ -314,9 +322,10 @@ pixi run gazebo-goal -2.3 -2.3
 
 Known limits of the Nav2 variant:
 
-- **RViz is off by default.** On macOS it crashes at start with a graphics
-  shader error, so there is no view of the map and the planned path. On
-  Linux, add `rviz:=true` to the launch command (untested).
+- **RViz prints alarming messages that can be ignored.** On macOS it logs a
+  shader "Validation Failed" error when the map loads, and it aborts when
+  the demo is shut down with Ctrl-C. Neither affects the display. Add
+  `rviz:=false` to the launch command to run without it.
 - **Some goals fail and are retried.** In a four-minute test the tour went
   round the whole apartment, with about one goal in three needing a second
   or third attempt.
