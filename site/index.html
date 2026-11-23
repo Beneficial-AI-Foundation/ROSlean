@@ -17,7 +17,8 @@
     <a class="brand" href="./">ROS<span>lean</span></a>
     <nav aria-label="Site">
       <a href="./" aria-current="page">Overview</a>
-      <a href="details.html">More details</a>
+      <a href="#packages">Packages</a>
+      <a href="details.html">twist_mux details</a>
       <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
     </nav>
   </div>
@@ -40,11 +41,38 @@
         <li><span class="tag ok">Prove</span><b>Theorems in Lean</b>Lean checks statements about that function for all configurations and all event histories.</li>
         <li><span class="tag">Run</span><b>An ordinary ROS node</b>Lean compiles the function to C. A thin C++ shim handles topics, parameters and the clock.</li>
       </ol>
-      <p class="note">The first package done this way is <a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a>, the node that chooses between velocity command sources such as a planner, a joystick and an emergency stop. It is a drop-in replacement for the original.</p>
     </section>
 
-    <section id="video">
-      <h2>See it run</h2>
+    <section id="packages">
+      <h2>Packages</h2>
+      <p>Each package is a drop-in replacement for an existing ROS 2 package. <code>twist_mux</code> is the first; others will be listed here as they are done.</p>
+      <ul class="packages">
+        <li>
+          <a href="#twist_mux"><code>twist_mux</code></a>
+          <span>Chooses between velocity command sources such as a planner, a joystick and an emergency stop.</span>
+          <div class="status">
+            <span class="tag ok">Verified</span>
+            <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="twist_mux-verified">i</button>
+            <div class="pop" id="twist_mux-verified" role="note">
+              <p><b>Proved</b>Lean checks theorems about one function, <code>step</code>, which makes every forward-or-drop decision. They hold for every configuration and every sequence of events.</p>
+              <p><b>Run</b>The node on the robot runs that same function, compiled by Lean to C. A thin C++ shim handles topics, parameters and the clock, and makes no decisions.</p>
+              <p><b>How they connect</b>A further theorem, <code>muxForward_after</code>, shows that the decision the node reads through the C interface is the one <code>step</code> makes. The shim, Lean's compiler and runtime, and ROS are trusted, not proved.</p>
+              <p><b>Not proved</b>That it behaves like the original C++ <code>twist_mux</code>. This is tested by running both side by side. <a href="details.html#theorems">Full account</a></p>
+            </div>
+          </div>
+        </li>
+        <li class="next">
+          <span>More packages to come.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section id="twist_mux">
+      <p class="eyebrow">Package 1</p>
+      <h2><code>twist_mux</code></h2>
+      <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
+
+      <h3 id="video">See it run</h3>
       <figure class="video" role="img" aria-label="Demo video, coming soon">
         <div>
           <div class="play" aria-hidden="true"></div>
@@ -52,11 +80,9 @@
           <span>A TurtleBot3 in Gazebo: Nav2 drives, the keyboard takes over, the e-stop freezes everything.</span>
         </div>
       </figure>
-    </section>
 
-    <section id="theorem">
-      <h2>The verified theorem</h2>
-      <p>For the Lean <code>twist_mux</code>, one theorem says exactly when a velocity command is passed on to the robot. A message arriving on input <em>i</em> is forwarded <strong>if and only if</strong>:</p>
+      <h3 id="theorem">The verified theorem</h3>
+      <p>One theorem says exactly when a velocity command is passed on to the robot. A message arriving on input <em>i</em> is forwarded <strong>if and only if</strong>:</p>
       <ol class="conds">
         <li><em>i</em> is a configured input with priority above 0;</li>
         <li>no active lock has higher priority than <em>i</em>;</li>
@@ -73,7 +99,7 @@
       <p>Two further theorems carry this to the running node. <code>run_forward_iff_history</code> shows it holds after any sequence of events since start-up. <code>muxForward_after</code> shows the decision the C++ node reads through the C interface is this one. Safety properties follow directly, for example: while an e-stop lock above every input is engaged, nothing is forwarded.</p>
       <p class="note">That the Lean model behaves like the original C++ <code>twist_mux</code> is tested against the original, not proved. The details page says what is proved, what is tested and what is trusted.</p>
       <div class="links">
-        <a class="cta" href="details.html">More details</a>
+        <a class="cta" href="details.html">twist_mux in detail</a>
         <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">Source on GitHub</a>
       </div>
     </section>
@@ -83,9 +109,30 @@
 <footer>
   <div class="wrap wide">
     <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
-    <span><a href="details.html">Implementation, theorems, correspondence, performance</a></span>
+    <span><a href="details.html">twist_mux: implementation, theorems, correspondence, performance</a></span>
   </div>
 </footer>
+
+<script>
+// Info popovers: CSS opens them on hover and focus; this adds click to toggle,
+// Escape and outside click to close.
+document.querySelectorAll('.status').forEach(function (box) {
+  var btn = box.querySelector('.info');
+  function set(open) {
+    box.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open);
+  }
+  btn.addEventListener('click', function () {
+    var open = !box.classList.contains('open');
+    set(open);
+    if (!open) btn.blur();
+  });
+  document.addEventListener('click', function (e) { if (!box.contains(e.target)) set(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { set(false); btn.blur(); }
+  });
+});
+</script>
 
 </body>
 </html>

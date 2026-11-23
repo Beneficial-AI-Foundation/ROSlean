@@ -103,6 +103,54 @@ section + section { border-top: 1px solid var(--line); }
 .pipeline .tag.ok { color: var(--proved); }
 @media (max-width: 640px) { .pipeline { grid-template-columns: 1fr; } }
 
+/* Package list: one row per verified package */
+.packages { list-style: none; margin: 1.25rem 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
+.packages li {
+  display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto;
+  gap: 0.25rem 1rem; align-items: baseline; padding: 0.8rem 1rem; font-size: 0.95rem;
+}
+.packages li + li { border-top: 1px solid var(--line); }
+.packages a { font-weight: 600; }
+.packages .tag { font: 500 0.72rem var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.packages .tag.ok { color: var(--proved); }
+.packages .next { display: block; color: var(--muted); }
+
+/* "Verified" with an info button; the explanation opens below the row */
+.packages li { position: relative; }
+.status { display: flex; align-items: center; gap: 0.4rem; }
+.info {
+  position: relative; width: 1.05rem; height: 1.05rem; padding: 0; flex: none;
+  border: 1px solid var(--proved); border-radius: 50%; background: none;
+  color: var(--proved); font: italic 600 0.72rem/1 Georgia, "Times New Roman", serif;
+  cursor: pointer;
+}
+.info::after { content: ""; position: absolute; inset: -0.6rem; }
+.info:hover, .status.open .info { background: var(--proved); color: var(--surface); }
+.pop {
+  position: absolute; z-index: 5; top: calc(100% - 0.5rem); right: 0.5rem;
+  width: min(27rem, calc(100% - 1rem)); padding: 0.9rem 1rem 0.2rem;
+  background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--proved);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.16);
+  font-size: 0.9rem; line-height: 1.5; text-align: left;
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.12s, visibility 0s 0.25s;
+}
+.status:hover .pop, .status:focus-within .pop, .status.open .pop {
+  visibility: visible; opacity: 1; transition-delay: 0s;
+}
+.pop p { margin: 0 0 0.7rem; }
+.pop b {
+  display: block; font: 500 0.72rem var(--font-mono); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.pop a { font-weight: 400; }
+@media (prefers-reduced-motion: reduce) { .pop { transition: none; } }
+@media (max-width: 640px) { .packages li { grid-template-columns: 1fr; } }
+.eyebrow a { color: inherit; }
+section > .eyebrow { margin-bottom: 0.4rem; }
+h2 code { font-size: 0.95em; }
+h3[id], section[id] { scroll-margin-top: 1rem; }
+
 /* Video slot */
 .video {
   aspect-ratio: 16 / 9; max-width: 100%; margin: 0;
