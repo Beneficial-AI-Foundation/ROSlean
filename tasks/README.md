@@ -63,7 +63,7 @@ prints what it did. Everything below was measured by task T00
 | `pixi run build` | `colcon build` of the ROS packages. | 1 min |
 | `pixi run test` | All colcon tests (11 tests in 4 packages). | 20 min |
 | `review/collision_monitor/run_upstream_probe.sh $PWD/.pixi/envs/default` | Runs upstream's `nav2_collision_monitor` binary. | 1 min |
-| `pixi run cm-check` | Headless Gazebo check of the demo. | Fails as it is; see below. |
+| `pixi run cm-check-cloud` | Headless Gazebo check of the demo, without furniture. | 1 to 3 min; see below |
 
 Start `lake build` early and in the background if the task needs the
 theorems: it uses all four cores for 35 minutes, and timing-sensitive tests
@@ -96,29 +96,26 @@ it; use what is allowed or report it.
 ### Gazebo
 
 There is no display and no graphics card; `Xvfb` and Mesa's software
-renderer are installed on the machine (`/usr/bin/xvfb-run`).
+renderer are installed on the machine (`/usr/bin/xvfb-run`), and the
+furniture of the world cannot be downloaded. In the cloud use
 
-- `pixi run cm-check` as it is: Gazebo cannot download the furniture, exits,
-  and the check does not notice: it was still waiting when it was killed
-  after five minutes.
-- With the furniture taken out of the world but no display: `gz sim`
-  segfaults in `Ogre2RenderEngine`; the check gives up after six minutes.
-- With the furniture taken out **and** a virtual display and software
-  rendering, the check passes in one minute, with this repository's monitor
-  and with upstream's:
+```sh
+pixi run cm-check-cloud                                     # 1 to 3 minutes
+pixi run cm-check-cloud --monitor nav2_collision_monitor    # upstream's node
+```
 
-  ```sh
-  LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x1024x24" pixi run cm-check
-  LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x1024x24" pixi run cm-check --monitor nav2_collision_monitor
-  ```
+It is `cm-check` under a virtual display, with software rendering
+(`LIBGL_ALWAYS_SOFTWARE=1`) and with `--no-furniture`, which makes the launch
+file (`furniture:=false`) load a copy of the world without the fifteen models
+from `fuel.gazebosim.org`. The walls, the floor and the robot remain, which
+is all the check's scenario uses. Both commands pass here. This is a stopgap
+the user allowed, to be replaced later; it is not the furnished apartment.
 
-  "Taken out" means: the fifteen `<include>` blocks with a
-  `fuel.gazebosim.org` URI deleted from
-  `ros/roslean_twist_mux/demo/gazebo/apartment.sdf`. T00 did that in the
-  working tree for the run only and did not commit it. The walls, the floor
-  and the robot remain, which is all the check's scenario uses. A task that
-  needs the check in the cloud has to do the same (and not commit it), or
-  be given a world file that needs no download.
+- `pixi run cm-check` as it is fails: Gazebo cannot download the furniture
+  and exits, and the check does not notice: it was still waiting when it was
+  killed after five minutes.
+- Without a display (furniture left out) `gz sim` segfaults in
+  `Ogre2RenderEngine`; the check gives up after six minutes.
 - Windows (`pixi run cm-gazebo`, RViz) were not tried.
 
 ### Other

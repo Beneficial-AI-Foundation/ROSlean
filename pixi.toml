@@ -61,3 +61,7 @@ cm-box-remove = "bash -c 'source install/setup.bash && python3 ros/roslean_colli
 # Runs the scenario without windows and checks it against the simulator's
 # ground truth (about a minute). For upstream's node: pixi run cm-check --monitor nav2_collision_monitor
 cm-check = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/check_demo.py \"$@\"' --", depends-on = ["build"] }
+# The same on a machine without display, graphics card and access to Gazebo
+# Fuel (a cloud session): virtual display, software rendering, world without
+# furniture. Needs xvfb-run on the machine. A stopgap, see tasks/reports/T00.md.
+cm-check-cloud = { cmd = "bash -c 'source install/setup.bash && LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s \"-screen 0 1280x1024x24\" python3 ros/roslean_collision_monitor/demo/gazebo/check_demo.py --no-furniture \"$@\"' --", depends-on = ["build"] }

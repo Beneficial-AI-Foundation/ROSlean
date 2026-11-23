@@ -21,10 +21,13 @@ It prints the measured speeds, the stopping distance and the gap to the box.
 static, so its pose is the one it was created with.
 
     check_demo.py [--monitor nav2_collision_monitor] [--mux twist_mux] [--log FILE]
+                  [--no-furniture]
 
 Not a colcon test: Gazebo renders the lidar, so the check needs a machine
 with a display (docs/TUTORIAL_GAZEBO.md), and the world needs the furniture
-from Gazebo Fuel. It takes about a minute. Unless ROS_DOMAIN_ID and
+from Gazebo Fuel (--no-furniture leaves it out, for machines that cannot
+reach Gazebo Fuel; the scenario uses the walls, the floor and the robot
+only). It takes about a minute. Unless ROS_DOMAIN_ID and
 GZ_PARTITION are set, it uses a domain and a partition of its own, so that a
 demo running on the same machine is not disturbed.
 """
@@ -260,6 +263,8 @@ def main():
                         help='package of the monitor (nav2_collision_monitor for upstream)')
     parser.add_argument('--mux', default='roslean_twist_mux')
     parser.add_argument('--log', help='keep the output of the demo in this file')
+    parser.add_argument('--no-furniture', action='store_true',
+                        help='load the world without the models from Gazebo Fuel')
     args = parser.parse_args()
 
     launch_file = os.path.join(get_package_share_directory('roslean_collision_monitor'),
@@ -271,7 +276,7 @@ def main():
     wall = time.monotonic()
     demo = subprocess.Popen(
         ['ros2', 'launch', launch_file, 'gui:=false', f'monitor_package:={args.monitor}',
-         f'mux_package:={args.mux}'],
+         f'mux_package:={args.mux}'] + (['furniture:=false'] if args.no_furniture else []),
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     rclpy.init()
     rec = Recorder()
