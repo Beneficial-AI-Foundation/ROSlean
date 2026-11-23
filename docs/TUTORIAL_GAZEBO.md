@@ -38,7 +38,7 @@ Open a new terminal so that both are on `PATH`, then check with
 ## 2. Get the code and build
 
 ```sh
-git clone <repository URL> ROSlean
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ROSlean
 pixi run build
 ```
