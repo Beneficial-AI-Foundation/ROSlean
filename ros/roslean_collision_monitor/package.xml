@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>roslean_collision_monitor</name>
+  <version>0.1.0</version>
+  <description>Replacement for the core of Nav2's collision monitor with decision logic in Lean. For now: the black-box tests that pin down what upstream nav2_collision_monitor does.</description>
+  <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <test_depend>rclpy</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>rosgraph_msgs</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>tf2_msgs</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <test_depend>nav2_collision_monitor</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,142 @@
+# Parameters shared by all collision-monitor test scenarios.
+#
+# Every zone used by any scenario is defined here; a scenario picks the ones
+# it wants with `-p polygons:=[...]` (only listed zones are configured) and
+# overrides single values the same way. All coordinates, radii and timeouts
+# are binary fractions unless a scenario is about rounding.
+/**:
+  ros__parameters:
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_in
+    transform_tolerance: 0.0
+    source_timeout: 0.5
+    stop_pub_timeout: 1.0
+    # The scan is in the base frame unless a scenario says otherwise, and
+    # then no transform is needed at all.
+    base_shift_correction: false
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+
+    StopCircle:
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: 3
+    SlowCircle:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      min_points: 3
+    StopPoly:
+      type: "polygon"
+      points: "[[0.5, 0.5], [0.5, -0.5], [-0.5, -0.5], [-0.5, 0.5]]"
+      action_type: "stop"
+      min_points: 3
+    SlowPoly:
+      type: "polygon"
+      points: "[[1.0, 1.0], [1.0, -1.0], [-1.0, -1.0], [-1.0, 1.0]]"
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      min_points: 3
+    # A wider slowdown zone with a ratio that is not a binary fraction.
+    SlowWide:
+      type: "circle"
+      radius: 2.0
+      action_type: "slowdown"
+      slowdown_ratio: 0.3
+      min_points: 3
+
+    # Boundary probes: one point decides.
+    Circle1:
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: 1
+    # 0.7 and 0.3 are not representable: float32(0.7) < 0.7 and float32(0.3) > 0.3.
+    Circle07:
+      type: "circle"
+      radius: 0.7
+      action_type: "stop"
+      min_points: 1
+    Circle03:
+      type: "circle"
+      radius: 0.3
+      action_type: "stop"
+      min_points: 1
+    Poly1:
+      type: "polygon"
+      points: "[[0.5, 0.5], [0.5, -0.5], [-0.5, -0.5], [-0.5, 0.5]]"
+      action_type: "stop"
+      min_points: 1
+    Poly03:
+      type: "polygon"
+      points: "[[0.3, 0.3], [0.3, -0.3], [-0.3, -0.3], [-0.3, 0.3]]"
+      action_type: "stop"
+      min_points: 1
+    Poly07:
+      type: "polygon"
+      points: "[[0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [-0.7, 0.7]]"
+      action_type: "stop"
+      min_points: 1
+    # The half plane y > 0 near the robot: its edge runs along the x axis.
+    PolyUpper:
+      type: "polygon"
+      points: "[[1.0, 1.0], [1.0, 0.0], [-1.0, 0.0], [-1.0, 1.0]]"
+      action_type: "stop"
+      min_points: 1
+
+    # Odd parameter values.
+    SlowNegative:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: -0.5
+      min_points: 1
+    SlowMinusOne:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: -1.0
+      min_points: 1
+    SlowOne:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: 1.0
+      min_points: 1
+    SlowTwo:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: 2.0
+      min_points: 1
+    SlowZero:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: 0.0
+      min_points: 1
+    StopMin0:
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: 0
+    StopMinNeg:
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: -1
+    Triangle:
+      type: "polygon"
+      points: "[[0.5, 0.0], [-0.5, -0.5], [-0.5, 0.5]]"
+      action_type: "stop"
+      min_points: 1
+    NoAction:
+      type: "circle"
+      radius: 0.5
+      action_type: "none"
+      min_points: 1
