@@ -56,7 +56,9 @@ agent; the findings and what was done about them are in
 - **Linux beyond the container.** The Docker build (`docker/Dockerfile`,
   Ubuntu 24.04, apt ROS) builds, passes all tests against apt's upstream
   `twist_mux` and yields an install tree that needs no Lean installation.
-  Not tried: Linux through pixi/RoboStack.
+  Linux through pixi/RoboStack (Ubuntu 24.04, x86-64): `pixi run build`
+  and `pixi run test` pass, and the turtlesim demo runs. Not tried there:
+  `pixi run prove`, arm64, and an install tree copied to another machine.
 - **Packaging.** No Debian or conda package. A ROS build farm release would
   need the generated C and a Lean runtime vendored, since the farm has
   neither Lean nor network.
@@ -65,7 +67,9 @@ agent; the findings and what was done about them are in
   source as position-independent code would bring this down to a few MB.
 - **Gazebo / Nav2 demo: done on macOS, with gaps.** A TurtleBot3 in a
   furnished apartment, with a patrol script or Nav2 as the planner
-  (`demo/gazebo/`). Not done: any Linux run, and an
+  (`demo/gazebo/`). On Linux it has run only without the furniture and
+  with software rendering (see the tutorial). Not done: a Linux run of the
+  furnished apartment on a desktop, and an
   automated test; it was checked by scripts that are not in the repository.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
   deliberate difference from upstream.

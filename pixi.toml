@@ -32,10 +32,14 @@ noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
 prove = "lake exe cache get && lake build ROSlean"
 demo = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_twist_mux demo_launch.py'", depends-on = ["build"] }
-# Run these in other terminals while the demo is up:
+# Run these in other terminals while the demo is up.
+# The lock commands wait for both subscribers (the mux and the narrator) and
+# send the message five times. With `--once` the command waits for one
+# subscriber only and exits; on a busy machine the other one, which may be
+# the mux, then never gets the message.
 demo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=key_vel'"
-demo-estop = "bash -c 'source install/setup.bash && ros2 topic pub --once /e_stop std_msgs/msg/Bool \"data: true\"'"
-demo-release = "bash -c 'source install/setup.bash && ros2 topic pub --once /e_stop std_msgs/msg/Bool \"data: false\"'"
+demo-estop = "bash -c 'source install/setup.bash && ros2 topic pub -w 2 --times 5 --rate 10 /e_stop std_msgs/msg/Bool \"data: true\"'"
+demo-release = "bash -c 'source install/setup.bash && ros2 topic pub -w 2 --times 5 --rate 10 /e_stop std_msgs/msg/Bool \"data: false\"'"
 # Gazebo demo: a TurtleBot3 in a furnished apartment (first run downloads the furniture).
 gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py'", depends-on = ["build"] }
 gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
