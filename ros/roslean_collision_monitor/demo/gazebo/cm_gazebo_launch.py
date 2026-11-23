@@ -30,8 +30,7 @@ Arguments:
                            again, by itself (obstacle.py run)
   furniture:=false         leave the furniture out of the world: walls, floor
                            and robot only. For machines that cannot reach
-                           Gazebo Fuel (cloud sessions). A stopgap: see
-                           world_file() below.
+                           Gazebo Fuel. A stopgap: see world_file() below.
 
 The first launch downloads the furniture from Gazebo Fuel (about 100 MB).
 """
@@ -64,9 +63,9 @@ def world_file(apartment):
     """The world to load: the apartment, or with furniture:=false a copy of it
     in a temporary file without the models that come from Gazebo Fuel.
 
-    TODO: a stopgap for cloud sessions, where fuel.gazebosim.org is blocked
-    (tasks/reports/T00.md). To be replaced once the furniture can be had
-    there, or by a world that needs no download. The argument is read from
+    TODO: a stopgap for machines where fuel.gazebosim.org is blocked
+    (tasks/reports/T00.md); better would be a world that needs no download.
+    The argument is read from
     the command line because the world's path is needed before the launch
     arguments are resolved.
     """
