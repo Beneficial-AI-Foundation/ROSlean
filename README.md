@@ -13,6 +13,7 @@ Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
 - [docs/THEOREMS.md](docs/THEOREMS.md): the main theorems in plain words,
   with links to the statements.
+- [docs/collision_monitor/THEOREMS.md](docs/collision_monitor/THEOREMS.md): the same for the second node, the collision monitor core (in progress).
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
   turtlesim experiment, step by step.
 - [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment

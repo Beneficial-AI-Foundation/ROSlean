@@ -204,10 +204,22 @@ example : outputs cfg [clear, .cmd (ms 1000) halt, .cmd (ms 2000) (twist dNeg0 d
     = [.silent, .publish .pass, .publish .pass, .silent, .publish .pass, .publish .pass] := by
   decide
 
--- A zero command while a stop is demanded continues the same period.
+-- A zero command after a stop continues the stop's period: the scan is cleared before
+-- the zero command, so at 1900 ms no stop is demanded any more (the output is `pass`),
+-- yet the zero at 2001 ms is dropped, 1 s after the stop at 1000 ms.
 example : outputs cfg [blocked, .cmd (ms 1000) fwd, clear, .cmd (ms 1900) halt,
       .cmd (ms 2001) halt]
     = [.silent, .publish (.stopZone 0), .silent, .publish .pass, .silent] := by decide
+
+-- A stop that is never published (review finding 5). The robot idles: zero
+-- commands for longer than 1 s, so the node has gone silent. Then an obstacle
+-- enters the stop zone and the planner commands 0.5 m/s. A stop is demanded
+-- and nothing is published, because the idle zeros and the stop are one period
+-- of zero. The last message the base received is the zero at 1000 ms
+-- (`run_silent_last_published_zero`). Upstream does the same.
+example : outputs cfg [clear, .cmd (ms 1000) halt, .cmd (ms 2500) halt, blocked,
+      .cmd (ms 2600) fwd, .cmd (ms 2700) fwd]
+    = [.silent, .publish .pass, .silent, .silent, .silent, .silent] := by decide
 
 -- A command that turns on the spot is not zero.
 example : (twist d0 d0_2).planarZero = false := by decide

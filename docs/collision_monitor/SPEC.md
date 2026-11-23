@@ -214,9 +214,17 @@ Values that are only compared or classified are passed as bit patterns
 because that needs no rounding: `F32.le` is IEEE `<=` on patterns, `F64.isFinite`
 and `F64.isZero` are the tests of R2 and R15, and for non-negative doubles the
 order of the patterns is the order of the values, which is all R13 needs.
-These four definitions were compared with the hardware operations on 200,000
-random and special patterns each, with no disagreement; they are not yet
-proved against a formal IEEE semantics.
+These definitions were compared with the hardware operations on random and
+special patterns, with no disagreement (`review/collision_monitor/Checks.lean`).
+`ROSlean/CollisionMonitor/Bits.lean` proves them against the IEEE-754 formula
+for the number a pattern denotes (`F32.le` is `≤` on the denoted numbers and
+false for NaN; a pattern below `F64.one` denotes a number in `[0, 1)`); what
+stays trusted is listed in `THEOREMS.md`.
+
+Bits above the format's width are ignored by `F32.le`, `F64.isFinite` and
+`F64.isZero`. A slowdown ratio is compared as a natural number, so a pattern
+of 2⁶⁴ or more is never selected rather than read modulo 2⁶⁴; `Config.ok`
+refuses it and the C interface cannot produce it.
 
 ### Safe direction
 
@@ -246,9 +254,12 @@ zone contains, and never treats data as fresher than it is.
   point is not inside the rounded polygon, the boundary passed over the point
   while both were being rounded, so the point is within 2.13 mm of the rounded
   boundary. In the other direction, a point up to 4.4 mm outside the
-  configured polygon can count as inside. This argument is in prose; it is
-  not formalised (it needs real geometry), and it is not among the properties
-  below.
+  configured polygon can count as inside. Of this argument the quantitative
+  half is proved (`nearSegment_iff`: the margin test is exactly "at most √5 mm
+  from the segment"; `nearBoundary_of_rounded`: a point of the configured
+  boundary is, after rounding and truncation, within the margin). The
+  topological half, "the boundary passed over the point", is prose; see
+  `THEOREMS.md`.
 - **Far and non-finite points.** A coordinate that is NaN, or whose magnitude
   is 1000 m or more, is passed as ±1,000,000 mm (NaN as +1,000,000).
   `Config.ok` requires every zone to stay inside that limit (circle radius at
@@ -293,8 +304,9 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
 
 - T1. *The slowdown multiplication.* For a finite double `x` and a double
   `r` with `0 ≤ r < 1`, the IEEE-754 product `x * r` rounded to nearest has
-  the sign of `x` or is zero, and its magnitude is at most `|x|` and within
-  half a unit in the last place of `r·|x|`. The core guarantees the premise:
+  the sign of `x` or is zero, its magnitude is at most `|x|` and within
+  half a unit in the last place of `r·|x|`, and it does not grow when `r`
+  is made smaller (the last is what "Slowdown bound" needs). The core guarantees the premise:
   a `slowdown` action always carries a pattern below `F64.one`.
 - T2. *The scan conversion.* The computation of R3 in floating point (angle
   accumulation, `cos`, `sin`, the product, the fixed sensor pose of D11) and
@@ -302,7 +314,9 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
 - T3. *The configuration conversion.* Radius and vertices to millimetres,
   timeouts to nanoseconds, the parsing of `points`.
 - T4. *The bit-pattern definitions* `F32.le`, `F64.isFinite`, `F64.isZero`
-  mean what IEEE-754 says (tested, not proved).
+  mean what IEEE-754 says. Proved against the formula for the number a
+  pattern denotes (`Bits.lean`); trusted: that formula (`magVal`), and that
+  the compiler's `float` and `double` are binary32 and binary64.
 - T5. *The shim* delivers every message as one event with one clock reading,
   passes the fields named under "Shim boundary" unaltered, and publishes what
   the table above says and nothing else.
@@ -345,17 +359,44 @@ stated on each:
 
 ## Properties
 
-To be proved about `step` and lifted to `run`. `cfg`, `st`, `now`, `v` are
-arbitrary unless restricted; no property needs `Config.ok`. "The output of
-the command" is `(step cfg st (.cmd now v)).2`. A zone *is triggered by `pts`*
-means `z.triggered pts = true`.
+Proved about `step` and lifted to `run` in `ROSlean/CollisionMonitor/`; the
+theorem for each is named in [THEOREMS.md](THEOREMS.md). `cfg`, `st`, `now`,
+`v` are arbitrary unless restricted; no property needs `Config.ok`. "The
+output of the command" is `(step cfg st (.cmd now v)).2`. A zone *is
+triggered by `pts`* means `z.triggered pts = true`.
+
+**Output.** The output of a command is `.silent` iff `v` is not finite, or
+`(evaluate cfg st now).yieldsZero v` and `st.prevZero` and `st.stopStamp +
+cfg.stopPubTimeout < now`; otherwise it is `.publish (evaluate cfg st now)`.
+The properties below that end in "or `.silent`" are to be read with this:
+silence occurs in these two cases and in no other.
+
+**Only if.** `evaluate cfg st now` is `.stopSource` iff the source is
+invalid; `.stopZone k` iff the source is valid and `k` is the first
+triggered stop zone; `.slowdown k r` iff the source is valid, no stop zone is
+triggered, and `k` is the first triggered slowdown zone with the smallest
+ratio pattern `r`, which is below `F64.one`; `.pass` iff the source is valid
+and neither kind is triggered.
+
+**State.** After a finite command, `prevZero` is whether the demanded
+velocity was zero, and `stopStamp` is `now` if it was zero and the previous
+one was not, and unchanged otherwise. On runs from `State.init`: if a finite
+command gets no answer, the message published last before it was a zero.
+(Not: "a stop is published whenever it is demanded". After zero commands
+for longer than `stop_pub_timeout`, an obstacle entering a stop zone together
+with a non-zero command is answered with silence; the last published message
+is the earlier zero. Example in `Examples.lean`.)
+
+**Monotonicity.** Adding points never turns a stop into anything else,
+and never turns a slowdown into `pass` or into a slowdown with a larger
+ratio.
 
 **Stop.** If `sourcePoints cfg st now = some pts` and some zone of
 `cfg.zones` with action `stop` is triggered by `pts`, then
 `evaluate cfg st now = .stopZone k`, where `k` is the index of the first such
 zone; and the output of the command is `.publish (.stopZone k)` or
-`.silent`. In particular it is never `.publish .pass` or
-`.publish (.slowdown …)`.
+`.silent`, the latter exactly in the two cases of **Output**. In particular
+it is never `.publish .pass` or `.publish (.slowdown …)`.
 
 In words: if at least `min_points` valid points of the stored scan lie in an
 enabled stop zone, the node publishes exactly zero or nothing. "Nothing"
@@ -373,7 +414,8 @@ zone with `minPoints = 0` triggers.
 **Stale data.** If `cfg.sourceEnabled`, `0 < cfg.sourceTimeout`, and either
 `st.scan = none` or `st.scan = some s` with `s.stamp + cfg.sourceTimeout <
 now`, then `evaluate cfg st now = .stopSource`, and the output of the command
-is `.publish .stopSource` or `.silent`.
+is `.publish .stopSource` or `.silent`, the latter exactly in the two cases
+of **Output**.
 
 "Older than `source_timeout`" is by header stamp (R7), and "newest scan" is
 the scan received last (R5). The property is **false without the two
@@ -385,8 +427,11 @@ scan of the last `scan` event, or `none` if there was none.
 
 **Bad data.** The rule is R4 for readings (`Scan.validBeam`: a reading counts
 iff `F32.le rangeMin range && F32.le range rangeMax`), R2 for commands
-(`Twist.finite`), and D8 for a negative stamp. Statements: (a) a beam that is
-not valid does not occur in `Scan.points`, so it affects no zone count;
+(`Twist.finite`), and D8 for a negative stamp. Statements: (a) readings that
+are not valid never change a decision: the output of every command is the
+same when they are removed from the stored scan, whatever points they carry
+(the earlier wording, "does not occur in `Scan.points`", was the definition
+restated, and false for a point shared with a valid reading);
 (b) the output of a command that is not finite is `.silent` and the state is
 unchanged; (c) `step` is total, and so are the conversions of the C interface
 (a byte array of any length is a scan). Upstream itself does not satisfy
@@ -585,9 +630,9 @@ exit code 1, before any subscription is created.
 | D3 | Points in `double` metres; zone tests in floating point, the polygon test with a division | Points and shapes in integer millimetres; tests exact, the division multiplied out | No floating point in the core. A point within a few millimetres of a boundary can be classified differently; the direction is fixed by D4. |
 | D4 | Zone is the configured shape | Circle radius rounded up plus 1 mm; polygon with a band of √5 mm around its boundary | Makes the rounding of D3 err only towards "inside" ("Safe direction"). Zones grow by up to 3.5 mm (circle) or 4.4 mm (polygon). Upstream's uneven treatment of polygon boundary points (R10) disappears: all boundary points are inside. |
 | D5 | Any `slowdown_ratio` accepted; negative ones reverse the command or do nothing, `-0.0` gives zero | A ratio with the sign bit set is refused at start-up | The reversal is a hazard, and "no amplification" is false with it. The model would treat such a ratio as never selected; refusing avoids a silent difference. Ratios of 1 or more, infinite or NaN are accepted and never take effect, as upstream. |
-| D6 | Slowdown selection and the zero test use the computed floating-point velocity | Selection by exact order of the ratios; zero iff stop, or the command is zero, or the selected ratio is 0 | The core does not compute velocities. Differs only when a product or squared norm underflows or overflows (components below about 10⁻¹⁶² or above 10¹⁵⁴), or two ratios are within rounding of each other: upstream then passes the command unscaled or picks the other zone, and a product that underflows to zero is not treated as zero for R15. |
+| D6 | Slowdown selection and the zero test use the computed floating-point velocity | Selection by exact order of the ratios; zero iff stop, or the command is zero, or the selected ratio is 0 | The core does not compute velocities. Three differences. (a) When a product or squared norm underflows or overflows (command components below about 10⁻¹⁶² or above 10¹⁵⁴ in magnitude, or a ratio below about 10⁻¹⁶² with an ordinary command), or two ratios are within rounding of each other: upstream then passes the command unscaled or picks the other zone, and a product that underflows to zero is not treated as zero for R15. (b) For a command that is zero in the three components, in a triggered slowdown zone: upstream takes no action (`0 < 0` is false), the model returns `slowdown k r`. The published bits are the same (zero), but the action, and so `out_kind` and any log line, differ. That `evaluate` does not depend on the command is therefore a difference from upstream, not one of its rules. |
 | D7 | The clock is read at the start of `process` and again in `publishVelocity` | One reading per event | A decision is a function of (state, event). Differs by the run time of the callback, only for the boundary of `stop_pub_timeout`. |
-| D8 | A scan stamp with negative seconds ends the process with an uncaught exception when the next command arrives | The stamp is taken as 0: the scan is too old under any non-zero timeout | The node must not crash on input. With timeout 0 the scan is used. |
+| D8 | A scan stamp with negative seconds ends the process with an uncaught exception when the next command arrives | The stamp is taken as 0: under a non-zero timeout the scan is too old once the node clock is past the timeout (`0 + source_timeout < now`) | The node must not crash on input. The scan is **used** with timeout 0, and also while the node clock is still at or below the timeout (simulated time shortly after start: with `source_timeout: 2.0` and the clock at 1.5 s the scan counts as fresh). The shim's sum does not detect every stamp upstream refuses (`sec = -1` with `nanosec ≥ 10⁹` is positive); see REVIEWS, CM1/CM2 finding 9. |
 | D9 | Negative timeouts accepted (a negative `source_timeout` makes nearly every scan too old; a negative `stop_pub_timeout` publishes zero once); non-finite or huge ones are undefined behaviour in the conversion | Negative, non-finite, and timeouts of 9.2·10⁹ s or more are refused | Keeps times in `Nat`; avoids undefined behaviour. |
 | D10 | `max_points` overrides `min_points`; `min_points` read into a 32-bit `int` | `max_points` refused; `min_points` 64-bit | One rule for the threshold in the core. Differs otherwise only beyond ±2³¹. |
 | D11 | Scan points transformed to `base_frame_id` by TF, by default with correction for the robot's motion since the stamp; a failed lookup stops the robot (R8) | No TF. Points are taken to be in the base frame, or moved by a fixed sensor pose from the ROSlean-only parameter `<source>.roslean_sensor_pose: [x, y, yaw]` (metres, radians; default `[0, 0, 0]`). `header.frame_id` is not read | Scope. With `base_shift_correction: false`, a zero pose and scans whose frame is the base frame, upstream performs no lookup either and the two agree. |

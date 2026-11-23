@@ -8,3 +8,8 @@ import ROSlean.Mux.Properties
 import ROSlean.Mux.Trace
 import ROSlean.Mux.FFI
 import ROSlean.CollisionMonitor.Examples
+import ROSlean.CollisionMonitor.Basic
+import ROSlean.CollisionMonitor.Bits
+import ROSlean.CollisionMonitor.Geometry
+import ROSlean.CollisionMonitor.Properties
+import ROSlean.CollisionMonitor.Trace

@@ -27,8 +27,10 @@ namespace ROSleanCore.CollisionMonitor
 
 /-! ## IEEE-754 bit patterns
 
-Only classification and ordering, never arithmetic. A bit pattern is a `Nat`;
-bits above the format's width are ignored. -/
+Only classification and ordering, never arithmetic. A bit pattern is a `Nat`.
+The functions below ignore bits above the format's width. Slowdown ratios are
+compared as natural numbers instead (`slowdownStep`), so a ratio pattern of
+2⁶⁴ or more is never selected, not read modulo 2⁶⁴. -/
 
 /-! Operations on binary32 (`float`) bit patterns. -/
 namespace F32
