@@ -57,6 +57,26 @@ if(BUILD_TESTING)
   target_link_libraries(smoke_timeouts rclcpp::rclcpp roslean_core::roslean_core)
   add_test(NAME smoke_timeouts COMMAND smoke_timeouts)
 
+  # The core's zones against upstream's zone tests, point by point: the two
+  # bounds of SPEC D4 (nothing upstream counts is missed; nothing is counted
+  # beyond 3.5 mm / 4.4 mm outside), on 6.4 million points near boundaries.
+  add_executable(band_bounds test/band_bounds.cpp)
+  target_include_directories(band_bounds PRIVATE include)
+  target_link_libraries(band_bounds roslean_core::roslean_core)
+  add_test(NAME band_bounds COMMAND band_bounds 20000)
+
+  if(APPLE)
+    # EXPECTED TO FAIL (COMPARISON.md, defect 4): compiled as the node is,
+    # the shim takes cosine and sine from cosf and sinf, upstream's binary
+    # from __sincosf_stret, and for 2.6 % of angles Apple's library returns
+    # values one float32 step apart. The test asserts upstream's value for
+    # one such angle. When it "unexpectedly passes", remove WILL_FAIL.
+    add_executable(t2_point_as_upstream test/t2_point_as_upstream.cpp)
+    target_include_directories(t2_point_as_upstream PRIVATE include)
+    add_test(NAME t2_point_as_upstream COMMAND t2_point_as_upstream)
+    set_tests_properties(t2_point_as_upstream PROPERTIES WILL_FAIL TRUE)
+  endif()
+
   # The node over real topics under simulated time: pass-through, slowdown,
   # stop, and the configurations it must refuse.
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -103,6 +123,54 @@ if(BUILD_TESTING)
     set_tests_properties(reference_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=96" TIMEOUT 1200)
   else()
     message(WARNING "nav2_collision_monitor not found: the tests against upstream are not registered")
+  endif()
+
+  # ---- The ROSlean node through the same harness -----------------------
+  # Results and what they mean: docs/collision_monitor/COMPARISON.md.
+  set(_lean "$<TARGET_FILE:collision_monitor>")
+
+  # Every fixed scenario, and the probes of test/probes.py. The expectations
+  # are upstream's; test/profile_roslean.py states each answer that differs,
+  # with the number of the difference in the SPEC, and the configurations
+  # the node must refuse. A stated difference that does not occur fails too.
+  add_test(NAME roslean_scenario
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" "${_lean}" --profile profile_roslean)
+  set_tests_properties(roslean_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=91" TIMEOUT 3600)
+
+  # Malformed and hostile input. Without upstream the node is driven alone.
+  if(nav2_collision_monitor_FOUND)
+    set(_beside ${_upstream})
+  else()
+    set(_beside "")
+  endif()
+  add_test(NAME roslean_fault_injection
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}" ${_beside}
+      --skip clock-negative)
+  set_tests_properties(roslean_fault_injection PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=97" TIMEOUT 1800)
+  # EXPECTED TO FAIL (COMPARISON.md, defect 1): a /clock message with a
+  # negative time aborts the node; the exception is thrown in rclcpp's clock
+  # thread. The test asserts that the node survives. When the node is fixed
+  # this test "unexpectedly passes": remove WILL_FAIL then.
+  add_test(NAME roslean_fault_clock_negative
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}"
+      --only clock-negative)
+  set_tests_properties(roslean_fault_clock_negative PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=98" TIMEOUT 600 WILL_FAIL TRUE)
+
+  if(nav2_collision_monitor_FOUND)
+    # Statements that only the SPEC makes, put to upstream's binary.
+    add_test(NAME upstream_probes
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" ${_upstream}
+        --profile profile_upstream --own)
+    set_tests_properties(upstream_probes PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=92" TIMEOUT 1200)
+    # ROSlean against upstream on random cases with points at zone
+    # boundaries, judged by the bounds of SPEC D4 (test/cm_bounds.py). The
+    # long run is `pixi run cm-diff` (600 seeds).
+    add_test(NAME roslean_random_diff
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" "${_lean}" ${_upstream} 0 6
+        --roslean)
+    set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800)
   endif()
 endif()
 

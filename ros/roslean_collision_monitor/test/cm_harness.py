@@ -145,9 +145,12 @@ class Side:
                 '-r', f'__node:={self.name}',
                 '-p', 'use_sim_time:=true',
                 '-p', f'cmd_vel_out_topic:={self.out_topic}',
-                '-p', f'state_topic:={self.state_topic}',
                 # Nav2 lifecycle nodes: no bond with a lifecycle manager.
                 '-p', 'bond_heartbeat_period:=0.0']
+        # A node without a state topic (state_topic None) is not given the
+        # parameter at all: the ROSlean node refuses it (SPEC, D13).
+        if self.state_topic:
+            args += ['-p', f'state_topic:={self.state_topic}']
         for p in params:
             args += ['-p', p]
         self.log = open(log, 'w') if log else None
@@ -189,9 +192,10 @@ class Driver(Node):
         for side in sides:
             self.create_subscription(
                 self.T, side.out_topic, lambda m, sd=side: sd.out.append(m), 10)
-            self.create_subscription(
-                CollisionMonitorState, side.state_topic,
-                lambda m, sd=side: sd.states.append(m), 10)
+            if side.state_topic:
+                self.create_subscription(
+                    CollisionMonitorState, side.state_topic,
+                    lambda m, sd=side: sd.states.append(m), 10)
 
     def spin_for(self, seconds):
         end = time.monotonic() + seconds
@@ -267,16 +271,19 @@ class Driver(Node):
         if transforms:
             self.tf_pub.publish(TFMessage(transforms=transforms))
 
-    def wait_connected(self, need_tf, timeout=20.0):
-        """Wait until every node has all its subscriptions and its publisher."""
+    def wait_connected(self, tf_listeners=0, timeout=20.0):
+        """Wait until every node has all its subscriptions and its publisher.
+
+        tf_listeners: how many of the nodes must have subscribed to the
+        static transforms (the lifecycle nodes, if transforms are published).
+        """
         n = len(self.sides)
 
         def ready():
             ok = (self.clock_pub.get_subscription_count() >= n
                   and self.cmd_pub.get_subscription_count() == n
-                  and self.scan_pub.get_subscription_count() == n)
-            if need_tf:
-                ok = ok and self.tf_pub.get_subscription_count() >= n
+                  and self.scan_pub.get_subscription_count() == n
+                  and self.tf_pub.get_subscription_count() >= tf_listeners)
             for side in self.sides:
                 ok = ok and self.count_publishers(side.out_topic) == 1
             return ok

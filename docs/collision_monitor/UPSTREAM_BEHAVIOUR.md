@@ -305,8 +305,17 @@ is involved in the comparison. Rounding enters once, when the parameter is
 converted: seconds times 10⁹, truncated. `source_timeout: 1.001` becomes
 1000999999 ns (the double nearest to 1.001, times 10⁹, is
 1000999999.9999999), so a scan aged 1001000000 ns is too old.
-`stop_pub_timeout` (finding 3) is compared the same way, to the nanosecond;
-its conversion from seconds was not probed.
+`stop_pub_timeout` (finding 3) is compared the same way, to the nanosecond.
+
+Added after the comparison with the SPEC ([COMPARISON.md](COMPARISON.md),
+scenarios in `test/probes.py`): "rounding enters once" holds for
+`stop_pub_timeout` and for a timeout given to the source itself
+(`scan.source_timeout: 2.094` is 2093999999 ns). The node's
+`source_timeout`, when the source inherits it, is converted **twice**
+(seconds to nanoseconds, back to seconds, to nanoseconds again), which for
+some values loses another nanosecond: `source_timeout: 2.094` gives the
+source 2093999998 ns, so a scan aged 2093999999 ns is too old. 1.001 is not
+such a value.
 
 Scenarios `timeout`, `timeout-unix-clock`, `timeout-decimal`,
 `stop-publication`.
@@ -458,7 +467,9 @@ pixi run test            # all packages
 The package registers four tests: `upstream_scenario`,
 `upstream_random_diff` (seeds 0 to 19), `reference_scenario` and
 `reference_random_diff` (seeds 0 to 4). Together they take about 11 minutes
-on the macOS machine used here.
+on the macOS machine used here. The tests that run the ROSlean node through
+the same harness, and `upstream_probes`, were added later; they are
+described in [COMPARISON.md](COMPARISON.md).
 
 or one at a time, with any node as the first argument:
 

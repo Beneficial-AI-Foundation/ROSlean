@@ -230,3 +230,28 @@ the installed 1.3.12 header: identical); `lake build ROSlean` with Mathlib
 Linux; `docs.nav2.org`. There is no Lean node yet, so nothing was compared
 end to end.
 
+## CM comparison — the Lean node against upstream (2026-11-23)
+
+The collision monitor node run through the black-box harness, beside upstream's
+binary on random cases, under fault injection and under load. Full account:
+[collision_monitor/COMPARISON.md](collision_monitor/COMPARISON.md).
+
+No divergence in the unsafe direction: in 600 random cases (54,043
+commands) with points aimed at zone boundaries, and 34 million point tests
+of the core, upstream never stopped or slowed where the Lean node did not,
+and the node counted no point beyond the growth stated in D4 (farthest:
+3.41 mm of 3.5, 4.17 mm of 4.4). Every check of the fixed scenarios that
+differs from upstream is a numbered difference of the SPEC.
+
+| Finding | Outcome |
+| --- | --- |
+| A `/clock` message with a negative time aborts the node (rclcpp's time source throws in its own thread); upstream likewise | Open. `roslean_fault_clock_negative` asserts survival and is marked `WILL_FAIL` |
+| Command path: 200 ns per reading and polygon zone; 0.43 ms per command at 1080 readings with two polygons, 4 ms at 10,000 (upstream 7.5 µs and 62 µs) | Open. `bench/roslean_bench`, `run_cm_bench.py core` |
+| The shim is compiled without optimisation (`pixi run build` sets no build type): `encode_scan` 165 µs instead of 52 µs at 1080 readings | Open |
+| T2: as built on macOS the shim calls `sinf`/`cosf`, upstream `__sincosf_stret`; 2.6 % of angles give a point one float32 step from upstream's. Inside the margin of D4 by four orders of magnitude | Open. `t2_point_as_upstream` (macOS), `WILL_FAIL` |
+| D8 as written: with the clock below `source_timeout`, a clear scan with a negative stamp lets commands pass | Confirmed by `fault_injection.py`, case `negative-stamp-early-clock`. CM1/CM2 finding 9 stays open |
+| SPEC against UPSTREAM_BEHAVIOUR.md: one contradiction (a timeout inherited by the source is converted twice); the binary sides with the SPEC. 17 further statements that only the SPEC makes were confirmed by the binary | UPSTREAM_BEHAVIOUR.md finding 16 corrected; `test/probes.py`, test `upstream_probes` |
+| The harness gave every node a state topic and could only skip scenarios with transforms; the random test could not compare nodes whose zones differ by design | Fixed: profiles (`profile_roslean.py`), `random_diff.py --roslean` judged by the bounds of D4 (`cm_bounds.py`) |
+| Memory: 32 minutes of load and 2 million events in process | No growth after the first ten minutes (26.3 MB); none at all in process |
+
+Not run: anything on Linux; `pixi run test` as a whole.

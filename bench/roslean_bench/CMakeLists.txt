@@ -53,10 +53,43 @@ add_executable(load_probe src/load_probe.cpp)
 target_compile_options(load_probe PRIVATE -Wall -Wextra)
 target_link_libraries(load_probe rclcpp::rclcpp ${geometry_msgs_TARGETS} ${std_msgs_TARGETS})
 
-set_target_properties(bench_core load_probe PROPERTIES
-  INSTALL_RPATH "$ORIGIN/../../../roslean_core/lib;$ORIGIN/..")
+# Collision monitor (docs/collision_monitor/COMPARISON.md). bench_cm calls
+# the callbacks of upstream's own library (nav2_collision_monitor, from the
+# environment) and the callback bodies of the ROSlean node in one process;
+# cm_load drives running nodes over topics.
+find_package(sensor_msgs REQUIRED)
+find_package(nav2_collision_monitor QUIET)
+set(_cm_targets cm_load)
+add_executable(cm_load src/cm_load.cpp)
+target_compile_options(cm_load PRIVATE -Wall -Wextra)
+target_link_libraries(cm_load rclcpp::rclcpp ${geometry_msgs_TARGETS} ${sensor_msgs_TARGETS})
+if(APPLE)
+  # The message targets include the Python generators' libraries, which need
+  # the interpreter's symbols and abort a plain executable when it starts.
+  target_link_options(cm_load PRIVATE -Wl,-dead_strip_dylibs)
+endif()
+if(nav2_collision_monitor_FOUND)
+  add_executable(bench_cm src/bench_cm.cpp)
+  # As the node's own build: no fused multiply-add in the conversions.
+  target_compile_options(bench_cm PRIVATE -Wall -Wextra -ffp-contract=off)
+  target_include_directories(bench_cm PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../ros/roslean_collision_monitor/include")
+  ament_target_dependencies(bench_cm nav2_collision_monitor rclcpp sensor_msgs geometry_msgs)
+  target_link_libraries(bench_cm roslean_core::roslean_core)
+  list(APPEND _cm_targets bench_cm)
+else()
+  message(WARNING "nav2_collision_monitor not found: bench_cm is not built")
+endif()
 
-install(TARGETS bench_core load_probe DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/run_bench.py DESTINATION lib/${PROJECT_NAME})
+if(APPLE)
+  set(_origin "@loader_path")
+else()
+  set(_origin "$ORIGIN")
+endif()
+set_target_properties(bench_core load_probe ${_cm_targets} PROPERTIES
+  INSTALL_RPATH "${_origin}/../../../roslean_core/lib;${_origin}/..")
+
+install(TARGETS bench_core load_probe ${_cm_targets} DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/run_bench.py scripts/run_cm_bench.py DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
