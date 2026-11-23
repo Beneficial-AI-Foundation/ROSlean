@@ -120,3 +120,28 @@ this change found no error in the model, proofs, C interface or tests:
 | No test name contains a byte below `.`, where the order differs from a plain name sort | Open |
 | No fixed ROS-level scenario for a tie created by clamping (300 vs 255); covered in the FFI test and by chance in the random test | Open |
 | `forward_priority` is now `≤`; the strict fact for an earlier input needs `forward_first_of_equal` too | By design; `forward_iff` carries both |
+
+## Longer random cases (2026-11-23)
+
+The random differential test now generates 350–550 events per case instead
+of 35–55 (`random_diff.py`, `gen`); its CMake timeout went from 900 s to
+2400 s. The generator is otherwise unchanged, so this adds longer histories
+per case (more clock jumps, lock changes and take-overs before each
+decision), not new kinds of input: still 1–6 inputs, 0–4 locks, and no event
+within 25 ms of a timeout boundary (D2).
+
+Full suite in a Linux arm64 container (Ubuntu 24.04, ROS Jazzy and upstream
+`twist_mux` from apt):
+
+| Test | Result | Time |
+| --- | --- | --- |
+| `test_mux_ffi` | passed | 0.3 s |
+| `scenario` | passed; both nodes agree on all 69 decisions | 58 s |
+| `random_diff`, seeds 0–19 | passed; 0 divergences in 4,692 decisions | 412 s |
+
+Decisions per random case: 157 to 359 (13 to 33 before; 447 in total
+before). Every seed passed on the first attempt, with no slow retry.
+
+| Finding | Outcome |
+| --- | --- |
+| No full run on macOS: the host runs were interrupted by another process on the machine. Seeds 0–9 completed there and passed with the same decision counts as in the container | Open |

@@ -80,7 +80,8 @@ Summary: 3 tests, 0 errors, 0 failures, 0 skipped
 ```
 
 Nothing visible happens on screen while it runs. Do not run the demo at the
-same time.
+same time. Most of the time goes to the random test, which runs 20
+cases of 350–550 events each (about 7 minutes).
 
 ## 5. Check the proofs (optional)
 
