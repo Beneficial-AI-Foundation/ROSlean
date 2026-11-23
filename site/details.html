@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROSlean details: implementation, theorems, correspondence, performance</title>
+<meta name="description" content="How the Lean twist_mux is built, what is proved about it, how it corresponds to the original C++ node, and how it performs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap wide">
+    <a class="brand" href="./">ROS<span>lean</span></a>
+    <nav aria-label="Site">
+      <a href="./">Overview</a>
+      <a href="./#packages">Packages</a>
+      <a href="details.html" aria-current="page">twist_mux details</a>
+      <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap wide doc">
+  <nav class="toc" aria-label="On this page">
+    <p class="eyebrow">On this page</p>
+    <ol>
+      <li><a href="#implementation">Implementation</a></li>
+      <li><a href="#theorems">Theorems proven</a></li>
+      <li><a href="#correspondence">Correspondence to the original</a></li>
+      <li><a href="#performance">Performance</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="hero">
+      <p class="eyebrow"><a href="./#packages">Packages</a> / twist_mux</p>
+      <h1>How it is built, what is proved, and what it costs.</h1>
+      <p class="lede"><code>twist_mux</code> picks one of several velocity command sources by priority, freshness and locks. This page describes the Lean version: its structure, its theorems, how it relates to the original C++ node, and how the two compare at run time.</p>
+    </div>
+
+    <section id="implementation">
+      <h2>Implementation</h2>
+      <p>The node is split so that every decision is made in Lean and nothing else is.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Part</th><th>Where</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Executable model</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/core/ROSleanCore/Mux.lean"><code>core/ROSleanCore/Mux.lean</code></a></td><td>150 lines of Lean with no dependencies. Defines <code>Config</code>, <code>State</code>, <code>Event</code> and <code>step</code>. Compiled to C.</td></tr>
+            <tr><td class="nw">C interface</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/core/ROSleanCore/FFI.lean"><code>core/ROSleanCore/FFI.lean</code></a></td><td>Exported wrappers the node calls: build a mux, deliver an input message, deliver a lock message, read the decision.</td></tr>
+            <tr><td class="nw">Proofs</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/Mux"><code>ROSlean/Mux/</code></a></td><td>Lean with Mathlib. Theorems about the model and about the C interface. Never linked into a node.</td></tr>
+            <tr><td class="nw">Runtime library</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ros/roslean_core"><code>ros/roslean_core</code></a></td><td>Builds the generated C into <code>libroslean_core</code> and installs the Lean runtime with it. Checks the declared C signatures against Lean's output at build time.</td></tr>
+            <tr><td class="nw">The node</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ros/roslean_twist_mux/src/twist_mux_node.cpp"><code>ros/roslean_twist_mux</code></a></td><td>A 200-line C++ shim: reads parameters, subscribes, reads the clock, publishes. No arbitration logic.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>One function decides</h3>
+      <p>The whole behaviour is <code>step : Config → State → Event → State × Bool</code>. An event is a command arriving on input <em>i</em> at time <em>t</em>, or a value arriving on lock <em>j</em> at time <em>t</em>. The boolean says whether to forward the message that just arrived.</p>
+<pre><code><span class="k">def</span> step (cfg : Config) (st : State) : Event → State × Bool
+  | .input i t =>
+    <span class="k">if</span> i &lt; cfg.inputs.length <span class="k">then</span>
+      <span class="k">let</span> st' := { st <span class="k">with</span> inputStamps := setPad st.inputStamps i t 0 }
+      (st', select cfg st' t == some i)
+    <span class="k">else</span> (st, false)
+  | .lock j value t =>
+    <span class="k">if</span> j &lt; cfg.locks.length <span class="k">then</span>
+      ({ st <span class="k">with</span>
+          lockStamps := setPad st.lockStamps j t 0
+          lockValues := setPad st.lockValues j value false }, false)
+    <span class="k">else</span> (st, false)</code></pre>
+      <p>The message body never enters Lean. The shim passes an input index and a clock reading in nanoseconds, and forwards the message unchanged when the answer is <code>true</code>. Time is an integer, so the core has no floating point.</p>
+<pre class="plain"><code><span class="c">// twist_mux_node.cpp: the whole input callback</span>
+[this, i, pub](typename MsgT::ConstSharedPtr msg) {
+  if (mux_->on_input(i, now_ns())) {
+    pub->publish(*msg);
+  }
+}</code></pre>
+
+      <h3>Build and deployment</h3>
+      <p>The model lives in its own Lake package so that building the node never needs Mathlib. Lean is a build-time dependency only: the install tree carries the Lean runtime and can be copied to another machine with ROS 2 Jazzy. A Docker build on <code>ros:jazzy-ros-base</code> compiles everything, runs all tests including the comparison with the original, and produces an image with no Lean toolchain in it.</p>
+      <p>The node takes the same parameter file, topics and QoS as the original, so switching is a change of package name in a launch file.</p>
+    </section>
+
+    <section id="theorems">
+      <h2>Theorems proven</h2>
+      <p>All theorems are in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/Mux"><code>ROSlean/Mux/</code></a>, with no <code>sorry</code> and only Lean's three standard axioms. "Forwarded" means <code>step</code> returned <code>true</code> for a message on input <em>i</em> at time <em>t</em>. A plain-language guide with links to every statement is in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/THEOREMS.md">THEOREMS.md</a>.</p>
+
+      <h3>The decision, in one step</h3>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/Properties.lean#L122"><code>forward_iff</code></a> is the central result: a message is forwarded if and only if its input is configured with positive priority, no active lock outranks it, and every other live input ranks below it (lower priority, or equal priority and later in the list). The rest of this table is that statement read in one direction at a time. Nothing is assumed about the clock.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Property</th><th>Theorem</th><th>Statement</th></tr></thead>
+          <tbody>
+            <tr><td>Provenance</td><td><code>forward_configured</code></td><td>Only a message on a configured input with positive priority is forwarded.</td></tr>
+            <tr><td>Priority</td><td><code>forward_priority</code></td><td>If a message on <em>i</em> is forwarded, no live input has higher priority.</td></tr>
+            <tr><td>Tie-break</td><td><code>forward_first_of_equal</code></td><td>Among live inputs of equal priority, only the first in list order is forwarded.</td></tr>
+            <tr><td>Lock</td><td><code>forward_lock</code></td><td>If a message on <em>i</em> is forwarded, no active lock has higher priority.</td></tr>
+            <tr><td>E-stop</td><td><code>not_forward_of_top_lock</code></td><td>If a lock strictly above every input has last value <code>true</code>, nothing is forwarded.</td></tr>
+            <tr><td class="nw">Dead lock publisher</td><td><code>not_forward_of_silent_lock</code></td><td>A lock whose publisher is silent past its timeout is active, and inputs below it are not forwarded.</td></tr>
+            <tr><td>Liveness</td><td><code>forward_of_highest_live</code></td><td>The highest live input that no lock outranks <em>is</em> forwarded.</td></tr>
+            <tr><td>Expiry</td><td><code>forward_of_others_expired</code>, <code>inputLive_iff_le</code></td><td>An input that has timed out never suppresses another. An input is live up to and including <code>stamp + timeout</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Over whole runs</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Theorem</th><th>Statement</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/Trace.lean#L56"><code>run_forward_iff</code></a></td><td>In any run from any state, the <em>n</em>-th event is forwarded iff it meets the three conditions of <code>forward_iff</code> in the state reached after the first <em>n</em> events.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/Trace.lean#L224"><code>run_forward_iff_history</code></a></td><td>After any events since start-up, the decision depends only on the time of each input's and lock's last message and each lock's last value. This is a specification you can read without seeing the code.</td></tr>
+            <tr><td><code>run_not_forward_of_lock_true</code></td><td>If the last message on a lock above <em>i</em> said <code>true</code>, <em>i</em> is not forwarded, however long ago that was.</td></tr>
+            <tr><td><code>run_not_forward_of_higher_live</code></td><td>If a higher-priority input spoke within its timeout, <em>i</em> is not forwarded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The code that runs</h3>
+      <p>The node calls exported wrappers, not <code>step</code> directly. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/FFI.lean#L107"><code>muxForward_after</code></a> closes that gap: build a mux from the handles the node added, feed it any sequence of events, deliver a message, and the decision the node reads is the model's decision for exactly those handles and events. Companion theorems show the configuration keeps the handles in the order added, clamps priorities to 255, and treats a zero or negative timeout as "never expires".</p>
+
+      <h3>Not proved</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Trusted or tested</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr><td>The model matches the original <code>twist_mux</code></td><td>Tested by running both nodes on the same messages; see the next section.</td></tr>
+            <tr><td>The C++ shim</td><td>Maps subscriptions to indices, reads the clock, converts seconds to nanoseconds, publishes on <code>true</code>.</td></tr>
+            <tr><td>One event at a time</td><td>The node uses a single-threaded executor. The theorems say nothing about concurrent callbacks.</td></tr>
+            <tr><td>The clock</td><td>Theorems are about recorded clock readings. If the clock jumps back, expired inputs count as fresh until it catches up, as in the original.</td></tr>
+            <tr><td>Silence</td><td>When all inputs are silent the mux publishes nothing. It does not send a stop command; that is the base driver's job, as with the original.</td></tr>
+            <tr><td>Lean's compiler and runtime, and ROS</td><td>The usual trusted base.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="correspondence">
+      <h2>Correspondence to the original code</h2>
+      <p>The model was written from the upstream C++ source, <a href="https://github.com/ros-teleop/twist_mux/tree/4.5.1"><code>ros-teleop/twist_mux</code> 4.5.1</a>, not from its documentation. The reading is recorded as sixteen numbered rules in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/SPEC.md">SPEC.md</a>, and each Lean definition cites the rule it implements.</p>
+
+      <h3>Side by side</h3>
+      <p>The selection loop is a direct transcription. Both start from priority 0 and no selection, scan the inputs in order, and replace the candidate only on a strictly greater priority.</p>
+      <div class="pair">
+        <div>
+          <h4>Original, twist_mux.cpp</h4>
+<pre class="plain"><code>bool TwistMux::hasPriority(
+    const VelocityTopicHandle &amp; twist)
+{
+  const auto lock_priority = getLockPriority();
+  LockTopicHandle::priority_type priority = 0;
+  std::string velocity_name = "NULL";
+
+  for (const auto &amp; velocity_h : *velocity_hs_) {
+    if (!velocity_h.isMasked(lock_priority)) {
+      const auto velocity_priority =
+        velocity_h.getPriority();
+      if (priority &lt; velocity_priority) {
+        priority = velocity_priority;
+        velocity_name = velocity_h.getName();
+      }
+    }
+  }
+  return twist.getName() == velocity_name;
+}</code></pre>
+        </div>
+        <div>
+          <h4>Lean, Mux.lean</h4>
+<pre><code><span class="k">def</span> selectStep (cfg : Config) (st : State)
+    (now : Nat) (lp : Nat)
+    (best : Nat × Option Nat)
+    (hk : Handle × Nat) : Nat × Option Nat :=
+  <span class="k">if</span> unmasked cfg st now lp hk.2
+      &amp;&amp; best.1 &lt; hk.1.priority
+  <span class="k">then</span> (hk.1.priority, some hk.2)
+  <span class="k">else</span> best
+
+<span class="k">def</span> select (cfg : Config) (st : State)
+    (now : Nat) : Option Nat :=
+  <span class="k">let</span> lp := lockPriority cfg st now
+  (cfg.inputs.zipIdx.foldl
+    (selectStep cfg st now lp) (0, none)).2</code></pre>
+        </div>
+      </div>
+
+      <div class="table">
+        <table>
+          <thead><tr><th>Rule</th><th>Original C++</th><th>Lean</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Expiry (R4)</td><td><code>timeout &gt; 0 &amp;&amp; now − stamp &gt; timeout</code> in <code>hasExpired</code></td><td><code>expired</code>: <code>0 &lt; timeout &amp;&amp; stamp + timeout &lt; now</code></td></tr>
+            <tr><td class="nw">Locked (R6)</td><td><code>hasExpired() || getMessage().data</code> in <code>isLocked</code></td><td><code>lockActive</code></td></tr>
+            <tr><td class="nw">Lock priority (R7)</td><td>maximum over locked locks in <code>getLockPriority</code></td><td><code>lockPriority</code></td></tr>
+            <tr><td class="nw">Masked (R8)</td><td><code>hasExpired() || getPriority() &lt; lock_priority</code> in <code>isMasked</code></td><td><code>unmasked</code> (the negation)</td></tr>
+            <tr><td class="nw">Selection (R9, R10)</td><td>the loop in <code>hasPriority</code></td><td><code>select</code>, <code>selectStep</code></td></tr>
+            <tr><td class="nw">Callbacks (R11, R12)</td><td>stamp the handle, then publish if it has priority</td><td><code>step</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Tested against the original binary</h3>
+      <p>Correspondence is checked by running both nodes side by side on the same messages and the same simulated clock, and comparing every forward or drop decision.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Test</th><th>What it covers</th><th class="n">Result</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Fixed scenarios</td><td>Take-overs, locks, ties, and timeout boundaries hit to the nanosecond.</td><td class="n">69 of 69 decisions agree</td></tr>
+            <tr><td class="nw">Random differential</td><td>20 random configurations, 350 to 550 events each: 1 to 6 inputs, 0 to 4 locks, negative and out-of-range priorities, ties, zero and sub-nanosecond timeouts, backward clock jumps.</td><td class="n">0 divergences in 4,692 decisions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Run in a Linux container against <code>ros-jazzy-twist-mux</code> from apt. The original's own test suite does not pin these rules: its priority test is commented out.</p>
+
+      <h3>Deliberate differences</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Original</th><th>ROSlean</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>Elapsed time computed in floating-point seconds</td><td>Integer nanoseconds throughout</td><td>The only known difference in decisions. It shows when a message arrives within about a microsecond of a timeout boundary, where the original's rounding can expire a handle slightly early or late. ROSlean applies the documented rule exactly.</td></tr>
+            <tr><td>Clock re-read for every expiry check in one callback</td><td>One clock reading per event</td><td>Makes the decision a function of state and event. Differs only for timeouts as short as the callback itself.</td></tr>
+            <tr><td>NaN, infinite or huge timeouts accepted; undefined behaviour beyond 2<sup>63</sup> ns</td><td>Rejected at start-up</td><td>Avoids undefined behaviour.</td></tr>
+            <tr><td>A start-up error aborts the process</td><td>Logged as fatal, exit code 1</td><td>Clean failure.</td></tr>
+            <tr><td>Diagnostics, <code>twist_marker</code>, <code>joystick_relay</code>, launch file</td><td>Not provided</td><td>Out of scope.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Reading the source also surfaced behaviour the documentation does not mention, all reproduced and now stated as theorems: an input with timeout 0 is live from start-up and suppresses lower inputs without ever sending a message; a priority-0 input is never forwarded; an input at priority 255 can never be blocked by a lock.</p>
+    </section>
+
+    <section id="performance">
+      <h2>Performance compared with the original</h2>
+      <p>For the configurations robots use (a handful of inputs, one or two locks, commands at 10 to 1000 Hz) the two nodes are indistinguishable in latency, loss and CPU time. The Lean node uses about 50 MB more memory. The current Lean core has one real weakness: its cost grows with the square of the number of inputs.</p>
+      <p class="note">Measured on 2026-11-23 on 4 virtual cores of a 2.3 GHz Xeon, ROS 2 Jazzy with Fast DDS. A shared virtual machine, not a robot computer: compare the columns with each other. Method and raw data are in the <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/claude/lean-vs-upstream-benchmark/docs/BENCHMARK.md">benchmark report</a> (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/pull/1">pull request 1</a>).</p>
+
+      <h3>The whole node, over real topics</h3>
+      <p>Latency from the load generator's <code>publish</code> to a subscriber on <code>cmd_vel_out</code>.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Scenario</th><th>Node</th><th class="n">Forwarded</th><th class="n">p50 µs</th><th class="n">p99 µs</th><th class="n">CPU %</th><th class="n">Memory MB</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="2">3 inputs at 50 Hz, 1 lock</td><td>original</td><td class="n">1499 / 1500</td><td class="n">299</td><td class="n">2 520</td><td class="n">1.7</td><td class="n">21</td></tr>
+            <tr><td>Lean</td><td class="n">1500 / 1500</td><td class="n">328</td><td class="n">2 930</td><td class="n">1.9</td><td class="n">70</td></tr>
+            <tr><td rowspan="2">4 inputs at 1 kHz each</td><td>original</td><td class="n">98.0 %</td><td class="n">160</td><td class="n">1 520</td><td class="n">20.3</td><td class="n">21</td></tr>
+            <tr><td>Lean</td><td class="n">98.3 %</td><td class="n">161</td><td class="n">1 260</td><td class="n">20.4</td><td class="n">70</td></tr>
+            <tr><td rowspan="2">16 inputs at 100 Hz, bursts</td><td>original</td><td class="n">2999 / 3000</td><td class="n">288</td><td class="n">2 220</td><td class="n">3.1</td><td class="n">23</td></tr>
+            <tr><td>Lean</td><td class="n">3000 / 3000</td><td class="n">314</td><td class="n">2 070</td><td class="n">3.4</td><td class="n">72</td></tr>
+            <tr><td rowspan="2">64 inputs at 50 Hz, bursts</td><td>original</td><td class="n">1500 / 1500</td><td class="n">483</td><td class="n">3 580</td><td class="n">4.8</td><td class="n">27</td></tr>
+            <tr><td>Lean</td><td class="n">1499 / 1500</td><td class="n">756</td><td class="n">3 480</td><td class="n">7.8</td><td class="n">76</td></tr>
+            <tr><td rowspan="2">256 inputs at 50 Hz, bursts</td><td>original</td><td class="n">1498 / 1500</td><td class="n">3 410</td><td class="n">8 920</td><td class="n">28.4</td><td class="n">44</td></tr>
+            <tr class="warn"><td>Lean</td><td class="n">876 / 1500</td><td class="n">16 500</td><td class="n">20 800</td><td class="n">92.7</td><td class="n">93</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The decision alone</h3>
+      <p>Nanoseconds per event, each node's callback logic called in process with the ROS clock.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th class="n">Inputs</th><th class="n">Lean, ns</th><th class="n">Original, ns</th><th class="n">Ratio</th></tr></thead>
+          <tbody>
+            <tr><td class="n">1</td><td class="n">266</td><td class="n">116</td><td class="n">2.3</td></tr>
+            <tr><td class="n">3</td><td class="n">445</td><td class="n">203</td><td class="n">2.2</td></tr>
+            <tr><td class="n">8</td><td class="n">878</td><td class="n">441</td><td class="n">2.0</td></tr>
+            <tr><td class="n">32</td><td class="n">4 030</td><td class="n">1 450</td><td class="n">2.8</td></tr>
+            <tr><td class="n">128</td><td class="n">36 400</td><td class="n">5 850</td><td class="n">6.2</td></tr>
+            <tr><td class="n">512</td><td class="n">596 000</td><td class="n">25 600</td><td class="n">23</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Reading the numbers</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Aspect</th><th>Finding</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Normal use</td><td>The Lean decision takes about 0.4 µs and the original's 0.2 µs. The message spends 100 to 300 µs in the middleware either way, so the difference cannot be seen from outside.</td></tr>
+            <tr><td class="nw">Tail latency</td><td>Lean frees memory by reference counting, with no collector that pauses the program. p99 stays within 1.5 times the median, and 20 million events show no growth in memory or latency.</td></tr>
+            <tr><td class="nw">Many inputs</td><td>The model keeps its data in linked lists and looks inputs up by index inside the loop, so cost is quadratic. Fine at 16 inputs, 60 % more CPU at 64, and at 256 inputs and 50 Hz the node cannot keep up. The original grows linearly.</td></tr>
+            <tr><td class="nw">Memory and disk</td><td>70 MB resident against 21 MB, and a 183 MB Lean runtime library on Linux. The mux state itself is a few hundred bytes.</td></tr>
+            <tr><td class="nw">Start-up</td><td>47 ms against 26 ms.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The quadratic cost comes from the model's data structures, which were chosen for the proofs, and not from Lean. The same rule written over arrays in one pass runs in 62 ns at 3 inputs and 2.2 µs at 256, faster than the original as measured here. That version is not yet proved; carrying the theorems over to it is the next step.</p>
+    </section>
+
+    <section id="more">
+      <h2>Further reading</h2>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL.md">Tutorial</a>: from an empty machine to the turtlesim experiment. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_GAZEBO.md">Gazebo tutorial</a>: the same on a TurtleBot3 with Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/PLAN.md">Development plan</a> and lessons learned. <a href="docs/">API documentation</a> generated from the Lean sources.</p>
+      <p><a href="./#twist_mux">Back to the overview</a></p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap wide">
+    <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
+    <span><a href="https://github.com/Beneficial-AI-Foundation/ROSlean">Source on GitHub</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

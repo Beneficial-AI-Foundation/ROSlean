@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROSlean: ROS 2 packages written and verified in Lean</title>
+<meta name="description" content="ROS 2 packages whose decision logic is written in Lean, compiled into ordinary ROS nodes, and backed by machine-checked theorems.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap wide">
+    <a class="brand" href="./">ROS<span>lean</span></a>
+    <nav aria-label="Site">
+      <a href="./" aria-current="page">Overview</a>
+      <a href="#packages">Packages</a>
+      <a href="details.html">twist_mux details</a>
+      <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow">Beneficial AI Foundation</p>
+    <h1>ROS 2 packages written in Lean, with machine-checked proofs of what they do.</h1>
+    <p class="lede">ROSlean replaces the decision logic of a ROS node with a Lean function and proves theorems about that function. The node that runs on the robot executes the same code the theorems are about.</p>
+  </div>
+
+  <div class="wrap">
+    <section id="goal">
+      <h2>The goal</h2>
+      <p>Robots run on ROS packages that decide which command reaches the motors, when to stop, and who is in control. Today those rules live in C++ and in documentation that does not always match it. Tests cover the cases someone thought of.</p>
+      <p>We want ROS packages where the rules are stated once, in Lean, and hold for every input and every sequence of events. A package built this way is used like any other: same topics, same parameter files, same <code>ros2 run</code>. Lean is needed to build it, not to run it.</p>
+      <ol class="pipeline">
+        <li><span class="tag">Write</span><b>Logic in Lean</b>The node's decisions are one pure function: state and event in, new state and decision out.</li>
+        <li><span class="tag ok">Prove</span><b>Theorems in Lean</b>Lean checks statements about that function for all configurations and all event histories.</li>
+        <li><span class="tag">Run</span><b>An ordinary ROS node</b>Lean compiles the function to C. A thin C++ shim handles topics, parameters and the clock.</li>
+      </ol>
+    </section>
+
+    <section id="packages">
+      <h2>Packages</h2>
+      <p>Each package is a drop-in replacement for an existing ROS 2 package. <code>twist_mux</code> is the first; others will be listed here as they are done.</p>
+      <ul class="packages">
+        <li>
+          <a href="#twist_mux"><code>twist_mux</code></a>
+          <span>Chooses between velocity command sources such as a planner, a joystick and an emergency stop.</span>
+          <div class="status">
+            <span class="tag ok">Verified</span>
+            <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="twist_mux-verified">i</button>
+            <div class="pop" id="twist_mux-verified" role="note">
+              <p><b>Proved</b>Lean checks theorems about one function, <code>step</code>, which makes every forward-or-drop decision. They hold for every configuration and every sequence of events.</p>
+              <p><b>Run</b>The node on the robot runs that same function, compiled by Lean to C. A thin C++ shim handles topics, parameters and the clock, and makes no decisions.</p>
+              <p><b>How they connect</b>A further theorem, <code>muxForward_after</code>, shows that the decision the node reads through the C interface is the one <code>step</code> makes. The shim, Lean's compiler and runtime, and ROS are trusted, not proved.</p>
+              <p><b>Not proved</b>That it behaves like the original C++ <code>twist_mux</code>. This is tested by running both side by side. <a href="details.html#theorems">Full account</a></p>
+            </div>
+          </div>
+        </li>
+        <li class="next">
+          <span>More packages to come.</span>
+        </li>
+      </ul>
+    </section>
+
+    <section id="twist_mux">
+      <p class="eyebrow">Package 1</p>
+      <h2><code>twist_mux</code></h2>
+      <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
+
+      <h3 id="video">See it run</h3>
+      <figure class="video">
+        <video id="demo" controls playsinline preload="metadata" width="1920" height="1080"
+               poster="media/twist_mux_generated.jpg" src="media/twist_mux_generated.mp4"
+               aria-describedby="demo-caption">
+          Your browser cannot play this video. Download it:
+          <a href="media/twist_mux_generated.mp4">3D replay</a>,
+          <a href="media/twist_mux_gazebo.mp4">Gazebo footage</a>.
+        </video>
+        <figcaption>
+          <span id="demo-caption" aria-live="polite">A 3D replay drawn from the messages of a recorded Gazebo run. The robot's path and every mux decision are the recorded ones.</span>
+          <button id="demo-switch" type="button">Watch the original Gazebo footage</button>
+        </figcaption>
+      </figure>
+
+      <h3 id="theorem">The verified theorem</h3>
+      <p>One theorem says exactly when a velocity command is passed on to the robot. A message arriving on input <em>i</em> is forwarded <strong>if and only if</strong>:</p>
+      <ol class="conds">
+        <li><em>i</em> is a configured input with priority above 0;</li>
+        <li>no active lock has higher priority than <em>i</em>;</li>
+        <li>every other live input has lower priority than <em>i</em>, or the same priority and a later position in the input list.</li>
+      </ol>
+<pre><code><span class="k">theorem</span> forward_iff (cfg : Config) (st : State) (i t : Nat) :
+    (step cfg st (.input i t)).2 = true ↔
+    ∃ hi, cfg.inputs[i]? = some hi ∧ 0 &lt; hi.priority ∧
+      (∀ j hj, cfg.locks[j]? = some hj → lockActive cfg st t j = true →
+        hj.priority ≤ hi.priority) ∧
+      (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i → inputLive cfg st t k = true →
+        hk.priority &lt; hi.priority ∨ (hk.priority = hi.priority ∧ i &lt; k))</code></pre>
+      <p class="caption"><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/Properties.lean#L122"><code>ROSlean/Mux/Properties.lean</code></a>. Checked by Lean with no <code>sorry</code> and only Lean's three standard axioms.</p>
+      <p>Two further theorems carry this to the running node. <code>run_forward_iff_history</code> shows it holds after any sequence of events since start-up. <code>muxForward_after</code> shows the decision the C++ node reads through the C interface is this one. Safety properties follow directly, for example: while an e-stop lock above every input is engaged, nothing is forwarded.</p>
+      <p class="note">That the Lean model behaves like the original C++ <code>twist_mux</code> is tested against the original, not proved. The details page says what is proved, what is tested and what is trusted.</p>
+      <div class="links">
+        <a class="cta" href="details.html">twist_mux in detail</a>
+        <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">Source on GitHub</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap wide">
+    <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
+    <span><a href="details.html">twist_mux: implementation, theorems, correspondence, performance</a></span>
+  </div>
+</footer>
+
+<script>
+// Info popovers: CSS opens them on hover and focus; this adds click to toggle,
+// Escape and outside click to close.
+document.querySelectorAll('.status').forEach(function (box) {
+  var btn = box.querySelector('.info');
+  function set(open) {
+    box.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open);
+  }
+  btn.addEventListener('click', function () {
+    var open = !box.classList.contains('open');
+    set(open);
+    if (!open) btn.blur();
+  });
+  document.addEventListener('click', function (e) { if (!box.contains(e.target)) set(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { set(false); btn.blur(); }
+  });
+});
+
+// Demo video: the 3D replay by default; the button swaps in the Gazebo footage
+// of the same run (same length and timeline) and keeps the playback position.
+(function () {
+  var video = document.getElementById('demo');
+  var button = document.getElementById('demo-switch');
+  var caption = document.getElementById('demo-caption');
+  var takes = {
+    generated: {
+      file: 'media/twist_mux_generated',
+      caption: caption.textContent,
+      other: 'Watch the original Gazebo footage'
+    },
+    gazebo: {
+      file: 'media/twist_mux_gazebo',
+      caption: 'The original footage of the same run: a TurtleBot3 in Gazebo, filmed by a camera in the simulated world.',
+      other: 'Back to the 3D replay'
+    }
+  };
+  var current = 'generated';
+  button.addEventListener('click', function () {
+    current = current === 'generated' ? 'gazebo' : 'generated';
+    var take = takes[current];
+    var at = video.currentTime, playing = !video.paused && !video.ended;
+    video.poster = take.file + '.jpg';
+    video.src = take.file + '.mp4';
+    if (at > 0) {
+      video.addEventListener('loadedmetadata', function () {
+        video.currentTime = at;
+        if (playing) video.play();
+      }, { once: true });
+    }
+    caption.textContent = take.caption;
+    button.textContent = take.other;
+  });
+})();
+</script>
+
+</body>
+</html>

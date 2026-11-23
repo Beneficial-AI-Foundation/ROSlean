@@ -1,0 +1,74 @@
+/* Shared look of both videos: captions, the "who is driving" panel, cards. */
+:root {
+  --planner: #5aa9ff;
+  --teleop: #ffb42e;
+  --estop: #ff5468;
+  --lean: #42dba0;
+  --ink: #f4f6fa;
+  --muted: #9aa6b8;
+  --panel: rgba(13, 18, 28, 0.80);
+  --line: rgba(255, 255, 255, 0.10);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0b0f17; }
+body { font-family: 'Inter', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+#stage { position: absolute; inset: 0; overflow: hidden; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+#shade { position: absolute; inset: 0; background: #070a11; opacity: 0; }
+#vignette { position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(6, 9, 15, 0.62) 0%, rgba(6, 9, 15, 0) 34%),
+              linear-gradient(to bottom, rgba(6, 9, 15, 0.40) 0%, rgba(6, 9, 15, 0) 22%); }
+
+#brand { position: absolute; left: 64px; top: 54px; font-size: 22px; font-weight: 600;
+  letter-spacing: 0.02em; display: flex; align-items: center; gap: 12px; }
+#brand i { width: 10px; height: 10px; border-radius: 50%; background: var(--lean); display: block; }
+#brand span { color: var(--muted); font-weight: 500; }
+#brand .where { position: absolute; left: 0; top: 42px; white-space: nowrap; font-size: 15px; font-weight: 600;
+  letter-spacing: 0.14em; color: #c5cedb; }
+
+/* Caption, bottom left. */
+#caption { position: absolute; left: 64px; bottom: 64px; width: 860px; }
+#caption .kicker { font-size: 18px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--lean); margin-bottom: 14px; }
+#caption h2 { font-size: 50px; line-height: 1.12; font-weight: 700; letter-spacing: -0.015em;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55); }
+#caption p { margin-top: 16px; font-size: 27px; line-height: 1.36; font-weight: 400; color: #dfe5ee;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.65); max-width: 800px; }
+#caption .thm { margin-top: 22px; display: inline-flex; align-items: center; gap: 12px;
+  padding: 9px 16px 9px 12px; border-radius: 999px; background: rgba(13, 18, 28, 0.82);
+  border: 1px solid rgba(66, 219, 160, 0.45); font-size: 19px; }
+#caption .thm b { color: var(--lean); font-weight: 600; font-family: 'Inter', sans-serif; }
+#caption .thm svg { display: block; }
+
+/* Panel, top right. */
+#hud { position: absolute; right: 56px; top: 44px; width: 680px; height: 268px; border-radius: 18px;
+  background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35); }
+#hud svg { position: absolute; inset: 0; }
+#hud text { fill: var(--ink); font-family: 'Inter', sans-serif; }
+#hud .head { font-size: 13px; font-weight: 600; letter-spacing: 0.16em; fill: var(--muted); }
+#hud .name { font-size: 21px; font-weight: 600; }
+#hud .status { font-size: 13px; font-weight: 600; letter-spacing: 0.10em; }
+#hud .prio { font-family: 'JetBrains Mono', monospace; font-size: 16px; fill: var(--muted); }
+#hud .mux { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 600; }
+#hud .lean { font-size: 13px; font-weight: 600; fill: var(--lean); letter-spacing: 0.04em; }
+#hud .out { font-family: 'JetBrains Mono', monospace; font-size: 14px; fill: var(--muted); }
+
+/* Title and end cards. */
+.card { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+  padding: 0 150px; opacity: 0; }
+.card .kicker { font-size: 22px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--lean); display: flex; align-items: center; gap: 14px; }
+.card .kicker i { width: 12px; height: 12px; border-radius: 50%; background: var(--lean); }
+.card h1 { margin-top: 26px; font-size: 104px; line-height: 1.02; font-weight: 700; letter-spacing: -0.03em; }
+.card h1 em { font-style: normal; color: var(--lean); }
+.card .lede { margin-top: 30px; font-size: 36px; line-height: 1.3; color: #d5dce7; max-width: 1250px; }
+#end h1 { font-size: 76px; }
+#end ul { list-style: none; margin-top: 50px; display: grid; gap: 26px; }
+#end li { display: flex; align-items: baseline; gap: 22px; font-size: 33px; color: #e3e8f0; }
+#end li svg { flex: none; transform: translateY(5px); }
+#end li b { font-weight: 600; color: #fff; width: 190px; flex: none; }
+#end .foot { margin-top: 62px; font-size: 22px; color: var(--muted); display: flex; gap: 34px; }
+#end .foot .mono { color: #cfd7e3; }
+#black { position: absolute; inset: 0; background: #000; opacity: 0; }
