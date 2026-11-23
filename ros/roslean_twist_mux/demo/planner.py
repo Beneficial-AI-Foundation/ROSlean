@@ -3,6 +3,7 @@
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 
@@ -16,7 +17,7 @@ def main():
     node.create_timer(0.1, lambda: pub.publish(cmd))
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
 
 

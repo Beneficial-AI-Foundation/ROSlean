@@ -5,7 +5,7 @@
 #
 # Two stages. The builder has Lean (elan) and compiles everything; the final
 # image has ROS and the install tree only: no Lean toolchain, no sources.
-# `--build-arg RUN_TESTS=0` skips the tests (they take about 2 minutes and
+# `--build-arg RUN_TESTS=0` skips the tests (they take about 8 minutes and
 # compare every decision with upstream twist_mux).
 
 ARG ROS_DISTRO=jazzy

@@ -1,0 +1,20 @@
+# Mux configuration for the Gazebo demo: a patrol planner at low priority,
+# keyboard teleop above it, and an e-stop lock above both. Stamped messages,
+# as the TurtleBot3 simulation expects.
+twist_mux:
+  ros__parameters:
+    use_stamped: true
+    topics:
+      planner:
+        topic   : nav_vel
+        timeout : 0.5
+        priority: 10
+      teleop:
+        topic   : key_vel
+        timeout : 0.5
+        priority: 100
+    locks:
+      e_stop:
+        topic   : e_stop
+        timeout : 0.0
+        priority: 255

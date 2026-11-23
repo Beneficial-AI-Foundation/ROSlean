@@ -12,7 +12,7 @@ What has been run where:
 
 - **macOS on Apple silicon:** every step below.
 - **Linux:** steps 1 to 4 and the simulation have *not* been run through pixi.
-  The Linux build that has been run is the Docker one in step 8, which has no
+  The Linux build that has been run is the Docker one in step 9, which has no
   simulator window.
 
 ## 1. Install the two tools
@@ -80,7 +80,8 @@ Summary: 3 tests, 0 errors, 0 failures, 0 skipped
 ```
 
 Nothing visible happens on screen while it runs. Do not run the demo at the
-same time.
+same time. Most of the time goes to the random test, which runs 20
+cases of 350–550 events each (about 7 minutes).
 
 ## 5. Check the proofs (optional)
 
@@ -238,7 +239,16 @@ Undo the change afterwards.
 
 **Read on.** `twist_mux.md` has a reading order for the code and proofs.
 
-## 8. Without pixi: the Docker build (Linux)
+## 8. The same experiment in Gazebo
+
+A more realistic setting: a TurtleBot3 with a lidar in a furnished
+apartment, simulated with physics, with either a patrol script or Nav2 as
+the planner. It has its own tutorial:
+[TUTORIAL_GAZEBO.md](TUTORIAL_GAZEBO.md).
+
+![The apartment in Gazebo](images/gazebo.png)
+
+## 9. Without pixi: the Docker build (Linux)
 
 This builds the node on Ubuntu 24.04 with ROS from apt, runs the same tests,
 and produces an image with no Lean installation in it. There is no simulator

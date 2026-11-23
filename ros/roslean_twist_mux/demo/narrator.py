@@ -4,10 +4,13 @@
 Watches the inputs, the lock and the mux output. A message on the output is
 attributed to the input whose latest message it equals. The theorem names
 refer to ROSlean/Mux/Properties.lean and ROSlean/Mux/Trace.lean.
+
+Parameter `stamped` (default false): the topics carry TwistStamped.
 """
 
 import rclpy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
@@ -40,6 +43,8 @@ class Narrator(Node):
 
     def __init__(self):
         super().__init__('demo_narrator')
+        stamped = self.declare_parameter('stamped', False).value
+        Twist = TwistStamped if stamped else globals()['Twist']
         self.latest = {}
         self.heard = {}
         self.locked = False
@@ -102,7 +107,7 @@ def main():
     rclpy.init()
     try:
         rclpy.spin(Narrator())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
 
 

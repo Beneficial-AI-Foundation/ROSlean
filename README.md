@@ -8,8 +8,12 @@ velocity command sources by priority, freshness and locks.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
   and every deliberate difference.
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
+- [docs/THEOREMS.md](docs/THEOREMS.md): the main theorems in plain words,
+  with links to the statements.
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
   turtlesim experiment, step by step.
+- [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment
+  on a TurtleBot3 in a furnished apartment in Gazebo, with Nav2.
 - [docs/BENCHMARK.md](docs/BENCHMARK.md): run-time comparison with upstream
   `twist_mux`, and what it means on a robot.
 
@@ -104,6 +108,11 @@ prints each change together with the theorem that explains it, for example:
 >>> nothing is forwarded: the e-stop lock (255) is above every input
     theorem not_forward_of_top_lock
 ```
+
+There is also a Gazebo version: a TurtleBot3 in a furnished apartment, with
+either a patrol script (`pixi run gazebo`) or Nav2 (`pixi run gazebo-nav2`)
+as the planner, `pixi run gazebo-teleop` for the keyboard, and the same
+e-stop commands. See [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md).
 
 To see the same demo on upstream's node, pass `mux_package:=twist_mux` to the
 launch file (the theorem names then describe behaviour that upstream shares,

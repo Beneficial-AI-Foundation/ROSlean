@@ -278,7 +278,7 @@ def gen(seed):
             for _ in range(r.randint(1, 4)):
                 events.append(('cmd', r.randrange(n_in)))
         events.append(('clock', now))
-    for _ in range(r.randint(35, 55)):
+    for _ in range(r.randint(350, 550)):
         x = r.random()
         if x < 0.30:
             k = r.choice([1, 1, 2, 2, 3, 5, 6, 8, 14, 15, 27, 40])
