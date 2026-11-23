@@ -5,16 +5,25 @@ session. [PLAN.md](PLAN.md) lists the tasks, their order and their status.
 This file holds the rules that apply to every task. A session reads this file,
 then its task file, then the documents the task file names.
 
+## The integration branch
+
+All work of this effort lives on the branch `collision-monitor`. It plays the
+part that `main` usually plays: sessions start from it, pull requests target
+it, and finished task branches are merged into it. **Nothing is merged or
+pushed to `main`.** Merging `collision-monitor` into `main` at the end is the
+user's decision alone.
+
 ## Starting a task
 
 In a terminal, in a checkout of this repository:
 
 ```sh
-claude --cloud "Read tasks/README.md and tasks/T04-nav2-spec.md in this repository and carry out the task. Follow both files exactly."
+git fetch origin && git checkout collision-monitor && git pull --ff-only
+claude --cloud "Check out the branch collision-monitor of this repository. Read tasks/README.md and tasks/T04-nav2-spec.md there and carry out the task. Follow both files exactly."
 ```
 
 or paste the same sentence into a new session at <https://claude.ai/code> with
-this repository selected. Only what is pushed to GitHub exists for the
+this repository and the branch `collision-monitor` selected. Only what is pushed to GitHub exists for the
 session: no local file, no other session's memory.
 
 ## What a session knows
@@ -22,10 +31,10 @@ session: no local file, no other session's memory.
 Nothing but the repository. Sessions do not talk to each other and nobody
 answers questions while a session runs. So:
 
-- Take your starting point from `origin/main` unless the task names another
+- Take your starting point from `origin/collision-monitor` unless the task names another
   branch.
-- If the task depends on a task whose branch is not yet merged into `main`
-  (check [PLAN.md](PLAN.md) and `git log origin/main`), stop and say so in
+- If the task depends on a task whose branch is not yet merged into `collision-monitor`
+  (check [PLAN.md](PLAN.md) and `git log origin/collision-monitor`), stop and say so in
   your report. Do not rebuild the missing work yourself.
 - When a decision is the user's and no default is given in the task or in
   [PLAN.md](PLAN.md) ("Decisions"), keep upstream's behaviour and list the
@@ -71,17 +80,18 @@ not obtain.
 
 ## Finishing a task
 
-1. Merge `origin/main` into your branch once more and re-run the builds.
+1. Merge `origin/collision-monitor` into your branch once more and re-run the builds.
 2. Write `tasks/reports/T??.md` on your branch (format below).
 3. Commit in the style of `git log`, and push to the branch the task names.
-4. Do not merge into `main`. Open a pull request against `main` whose
+4. Do not merge into `collision-monitor` yourself and never touch `main`.
+   Open a pull request with base branch `collision-monitor` (not `main`) whose
    description is the report.
 
 ### Report format
 
 ```markdown
 # T?? — title
-Branch: claude/…            Base: <commit of origin/main you started from>
+Branch: claude/…            Base: <commit of origin/collision-monitor you started from>
 ## Done
 ## Run, with results          (command, platform, counts)
 ## Not run, and why
@@ -94,6 +104,6 @@ Branch: claude/…            Base: <commit of origin/main you started from>
 
 For each finished branch: fetch it, read the report, rebuild
 (`lake build` in `core/` and in the root, `pixi run build`, the tests the
-report names), merge into `main`, update the status column in
+report names), merge into `collision-monitor`, update the status column in
 [PLAN.md](PLAN.md), push. Where two branches touched the package's
 `CMakeLists.txt` or `package.xml`, the merge is the union of both.

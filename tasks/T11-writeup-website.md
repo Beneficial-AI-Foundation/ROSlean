@@ -8,7 +8,7 @@ Read [README.md](README.md) first.
 Everything under `docs/collision_monitor/`, `docs/REVIEWS.md`,
 `docs/PLAN.md`, `README.md`, and the site (`site/index.html`,
 `site/details.html`, `site/style.css`; deployed by `.github/workflows/pages.yml`
-on pushes to `main`).
+on pushes to `main`, so the site changes go live only when the user merges `collision-monitor` into `main`).
 
 ## Do
 

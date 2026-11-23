@@ -5,7 +5,7 @@ Needs: T00 and T01 merged. Read [README.md](README.md) first.
 
 ## State
 
-`claude/cm-comparison-wip` is one WIP commit on top of an older `main`
+`claude/cm-comparison-wip` is one WIP commit on top of an older `collision-monitor`
 (`462088e`). It extends the harness so that the Lean node runs through it,
 adds a random comparison of the Lean node with upstream that asserts the
 SPEC's millimetre bounds, fault injection, benchmarks, and
@@ -16,7 +16,7 @@ are from macOS arm64, measured while other work loaded the machine.
 
 ## Do
 
-1. Merge `origin/main` into the branch (T01 changed the node, the model and
+1. Merge `origin/collision-monitor` into the branch (T01 changed the node, the model and
    the package's `CMakeLists.txt`; the merge of build files is the union).
    Resolve what T01 made obsolete: the document's defects 3 and 4 (build
    type, `sinf`/`cosf` against `sincos`) may be fixed; re-measure and say so.
@@ -25,7 +25,7 @@ are from macOS arm64, measured while other work loaded the machine.
    SPEC and is not a blanket skip. Run the self-tests that show the random
    comparison can fail (`--self-test swap`, `shrink`).
 3. Run everything in the document's "What was run" table on this Linux
-   machine, with the Lean node as now on `main`, and replace every
+   machine, with the Lean node as now on `collision-monitor`, and replace every
    placeholder and every macOS number that you re-measured. Keep the macOS
    numbers that you cannot re-measure, marked with platform and date. At
    least 600 random seeds beside upstream.

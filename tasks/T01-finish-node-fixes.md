@@ -5,7 +5,7 @@ Read [README.md](README.md) first.
 
 ## State
 
-`claude/cm-node-fixes` holds one commit on top of `main`: "Collision monitor:
+`claude/cm-node-fixes` holds one commit on top of `collision-monitor`: "Collision monitor:
 fix the eight findings of the CM3/CM4 review". The session that wrote it was
 stopped before it reported, so nothing about it is verified and it may be
 incomplete. Treat it as a draft by someone else.
@@ -15,7 +15,7 @@ incomplete. Treat it as a draft by someone else.
 The section "CM3/CM4 — collision monitor C interface and node" at the end of
 `docs/REVIEWS.md` (eight findings, each with its smallest input), the scripts
 under `review/collision_monitor/` that back them, `docs/collision_monitor/SPEC.md`
-and `THEOREMS.md`, and the branch's diff against `main`.
+and `THEOREMS.md`, and the branch's diff against `collision-monitor`.
 
 ## Do
 

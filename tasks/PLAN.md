@@ -6,9 +6,12 @@ monitor, for `stop` and `slowdown` zones, with proved decision logic, tested
 against the upstream binary, and a precise public statement of what is still
 missing. Rules for sessions: [README.md](README.md).
 
+All of this lives on the integration branch `collision-monitor`; `main` holds
+none of it until the user merges the branch at the end.
+
 ## Where things stand
 
-On `main` (each merged after a rebuild on macOS arm64):
+On `collision-monitor` (each merged after a rebuild on macOS arm64):
 
 | Part | Where | State |
 | --- | --- | --- |
@@ -20,11 +23,11 @@ On `main` (each merged after a rebuild on macOS arm64):
 | Reviews | `docs/REVIEWS.md` | CM1/CM2 answered; CM3/CM4 has eight open findings |
 | Gazebo demo | `ros/roslean_collision_monitor/demo/gazebo/` | headless check passes; never watched on a screen |
 
-Not on `main`:
+Not on `collision-monitor`:
 
 | Branch | Contents | State |
 | --- | --- | --- |
-| `claude/cm-node-fixes` | Fixes for the eight CM3/CM4 findings, including `Event.scanUnusable` in the model | One commit on top of `main`. The session was stopped before it reported. **Unverified.** |
+| `claude/cm-node-fixes` | Fixes for the eight CM3/CM4 findings, including `Event.scanUnusable` in the model | One commit on top of `collision-monitor`. The session was stopped before it reported. **Unverified.** |
 | `claude/cm-comparison-wip` | Lean node through the harness, random comparison, fault injection, benchmarks, `COMPARISON.md` | Stopped before finishing. Uncommitted work was saved as one WIP commit on top of `462088e`. Placeholders (`{{…}}`) remain in the document. **Unverified.** It reports four defects. |
 
 Nothing has been run on Linux x86-64 except the node's own tests under
@@ -32,7 +35,7 @@ emulation. The comparison with upstream has not been run on Linux at all.
 
 ## Tasks
 
-Run a task when everything in "Needs" is merged into `main`. Tasks in the
+Run a task when everything in "Needs" is merged into `collision-monitor`. Tasks in the
 same row group can run at the same time.
 
 | Task | What | Needs | Runs in cloud | Status |
