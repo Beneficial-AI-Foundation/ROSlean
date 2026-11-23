@@ -12,7 +12,7 @@ What has been run where:
 
 - **macOS on Apple silicon:** every step below.
 - **Linux:** steps 1 to 4 and the simulation have *not* been run through pixi.
-  The Linux build that has been run is the Docker one in step 8, which has no
+  The Linux build that has been run is the Docker one in step 9, which has no
   simulator window.
 
 ## 1. Install the two tools
@@ -238,7 +238,49 @@ Undo the change afterwards.
 
 **Read on.** `twist_mux.md` has a reading order for the code and proofs.
 
-## 8. Without pixi: the Docker build (Linux)
+## 8. The same experiment in Gazebo
+
+A more realistic setting: a TurtleBot3 with a lidar in a furnished apartment,
+simulated with physics in Gazebo. Verified on macOS (Apple silicon); not yet
+tried on Linux.
+
+```sh
+pixi run gazebo            # terminal 1
+pixi run gazebo-teleop     # terminal 2: hold i / j / l / , as before
+pixi run demo-estop        # terminal 3
+pixi run demo-release
+```
+
+![The apartment in Gazebo, with the TurtleBot3 near the office chair](images/gazebo.png)
+
+The first launch downloads the furniture models from Gazebo's online library
+(about 100 MB, cached in `~/.gz/fuel`), so the window can take a minute to
+fill in. The robot is the small grey disc in the middle of the room; zoom
+with the scroll wheel and orbit by dragging with the right button.
+
+What differs from turtlesim:
+
+- **The planner is a patrol.** `demo/gazebo/patrol.py` drives a rectangle
+  through the open part of the room. It is a stand-in: it takes the robot's
+  position from the simulator, not from a localisation system, and does not
+  plan around obstacles.
+- **Messages are stamped** (`TwistStamped`), the default on current
+  TurtleBots, so this exercises the other half of the node's interface.
+- **The node runs on simulated time**, so its timeouts follow the simulator's
+  clock.
+- **There is a base watchdog between the mux and the robot.** The mux never
+  sends a stop command; when everything is silent or blocked it publishes
+  nothing (docs/SPEC.md, R13). turtlesim stops on its own after a second
+  without commands, as a real base does. Gazebo's drive does not: it keeps
+  executing the last command, so without the watchdog the robot would roll
+  on with the e-stop engaged. `demo/gazebo/base_watchdog.py` plays the part
+  of the robot's firmware and sends zero velocity after 0.3 s of silence.
+  This is the assumption the proofs leave to the base (SPEC, A3), made
+  visible.
+
+The narrator output and the theorems are the same as in step 6.
+
+## 9. Without pixi: the Docker build (Linux)
 
 This builds the node on Ubuntu 24.04 with ROS from apt, runs the same tests,
 and produces an image with no Lean installation in it. There is no simulator

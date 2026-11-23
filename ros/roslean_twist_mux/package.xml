@@ -18,6 +18,11 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>turtlesim</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>turtlebot3_gazebo</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
 
   <test_depend>rclpy</test_depend>
   <test_depend>rosgraph_msgs</test_depend>
