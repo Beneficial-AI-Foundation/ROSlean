@@ -54,11 +54,11 @@ function poseAt(t) {
 const TRAIL = [];
 for (let t = 0; t < LENGTH; t += 1 / 15) {
   const [x, y] = poseAt(t), s = muxState(t);
-  TRAIL.push({ t, p: project(x, y, 0.01), color: s.forwarded ? COLORS[s.forwarded] : null });
+  TRAIL.push({ t, w: [x, y], p: project(x, y, 0.01), color: s.forwarded ? COLORS[s.forwarded] : null });
 }
 
 // Virtual camera: wide at the start and the end, close on the robot between.
-const TIGHT = 2300, AIM = [0.54, 0.56];
+const TIGHT = 3200, AIM = [0.54, 0.56];
 const N = Math.round(LENGTH * FPS);
 const raw = [];
 for (let k = 0; k < N; k++) { const [x, y] = poseAt(k / FPS); raw.push(project(x, y, 0.08)); }
@@ -97,6 +97,7 @@ window.renderFrame = async function (k) {
   for (let i = 1; i < TRAIL.length && TRAIL[i].t <= t; i++) {
     const a = TRAIL[i - 1], b = TRAIL[i], age = t - b.t;
     if (!b.color || age > 16) continue;
+    if (Math.hypot(b.w[0] - x, b.w[1] - y) < 0.25) continue;      // not across the robot itself
     svg += `<line x1="${a.p[0]}" y1="${a.p[1]}" x2="${b.p[0]}" y2="${b.p[1]}" stroke="${b.color}" ` +
            `stroke-width="${5 * px}" stroke-linecap="round" opacity="${0.85 * (1 - age / 16)}"/>`;
   }

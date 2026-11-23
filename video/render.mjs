@@ -5,7 +5,7 @@ import { createRequire } from 'module';
 import { mkdirSync } from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
-const { chromium } = createRequire(import.meta.url)('playwright');
+const { chromium } = createRequire(import.meta.url.replace(/[^/]*$/, '') + 'x.js')('playwright');
 
 const [page_, out, from_, to_] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });

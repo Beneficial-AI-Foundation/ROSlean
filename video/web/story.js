@@ -8,7 +8,7 @@ const COLORS = { planner: '#5aa9ff', teleop: '#ffb42e', estop: '#ff5468', lean: 
 
 const BEATS = [
   { from: 5.2, to: 12.6,
-    title: 'Several sources want to drive one robot.',
+    title: 'Many sources. One robot.',
     sub: '<span class="mono">twist_mux</span> forwards exactly one of them, chosen by priority.' },
   { from: 13.2, to: 20.4, kicker: 'What you are watching', key: 'lean',
     title: 'This is its Lean implementation, running live.',
@@ -177,7 +177,6 @@ function buildStory(options = {}) {
     h += `<g transform="translate(624 ${midY})"><rect x="-19" y="-24" width="38" height="8" rx="3" fill="${rc}"/>` +
          `<rect x="-19" y="16" width="38" height="8" rx="3" fill="${rc}"/>` +
          `<circle r="19" fill="#0d121c" stroke="${rc}" stroke-width="3"/><path d="M-3 -7L8 0L-3 7Z" fill="${rc}"/></g>` +
-         `<text class="out" x="${(ox0 + ox1) / 2 - 2}" y="${midY - 14}" text-anchor="middle">${out ? 'cmd_vel' : ''}</text>` +
          `<text class="out" x="624" y="${midY + 50}" text-anchor="middle">${out ? 'robot' : 'no command'}</text>`;
     hud.innerHTML = h;
   }
