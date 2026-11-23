@@ -12,6 +12,8 @@ velocity command sources by priority, freshness and locks.
   with links to the statements.
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
   turtlesim experiment, step by step.
+- [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment
+  on a TurtleBot3 in a furnished apartment in Gazebo, with Nav2.
 
 ## Layout
 
@@ -107,7 +109,7 @@ prints each change together with the theorem that explains it, for example:
 There is also a Gazebo version: a TurtleBot3 in a furnished apartment, with
 either a patrol script (`pixi run gazebo`) or Nav2 (`pixi run gazebo-nav2`)
 as the planner, `pixi run gazebo-teleop` for the keyboard, and the same
-e-stop commands. See step 8 of [docs/TUTORIAL.md](docs/TUTORIAL.md).
+e-stop commands. See [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md).
 
 To see the same demo on upstream's node, pass `mux_package:=twist_mux` to the
 launch file (the theorem names then describe behaviour that upstream shares,

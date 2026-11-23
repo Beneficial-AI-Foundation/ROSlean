@@ -241,98 +241,12 @@ Undo the change afterwards.
 
 ## 8. The same experiment in Gazebo
 
-A more realistic setting: a TurtleBot3 with a lidar in a furnished apartment,
-simulated with physics in Gazebo. Verified on macOS (Apple silicon); not yet
-tried on Linux.
+A more realistic setting: a TurtleBot3 with a lidar in a furnished
+apartment, simulated with physics, with either a patrol script or Nav2 as
+the planner. It has its own tutorial:
+[TUTORIAL_GAZEBO.md](TUTORIAL_GAZEBO.md).
 
-```sh
-pixi run gazebo            # terminal 1
-pixi run gazebo-teleop     # terminal 2: hold i / j / l / , as before
-pixi run demo-estop        # terminal 3
-pixi run demo-release
-```
-
-![The apartment in Gazebo, with the TurtleBot3 near the office chair](images/gazebo.png)
-
-The first launch downloads the furniture models from Gazebo's online library
-(about 100 MB, cached in `~/.gz/fuel`), so the window can take a minute to
-fill in. The robot is the small grey disc in the middle of the room; zoom
-with the scroll wheel and orbit by dragging with the right button.
-
-What differs from turtlesim:
-
-- **The planner is a patrol.** `demo/gazebo/patrol.py` drives a rectangle
-  through the open part of the room. It is a stand-in: it takes the robot's
-  position from the simulator, not from a localisation system, and does not
-  plan around obstacles.
-- **Messages are stamped** (`TwistStamped`), the default on current
-  TurtleBots, so this exercises the other half of the node's interface.
-- **The node runs on simulated time**, so its timeouts follow the simulator's
-  clock.
-- **There is a base watchdog between the mux and the robot.** The mux never
-  sends a stop command; when everything is silent or blocked it publishes
-  nothing (docs/SPEC.md, R13). turtlesim stops on its own after a second
-  without commands, as a real base does. Gazebo's drive does not: it keeps
-  executing the last command, so without the watchdog the robot would roll
-  on with the e-stop engaged. `demo/gazebo/base_watchdog.py` plays the part
-  of the robot's firmware and sends zero velocity after 0.3 s of silence.
-  This is the assumption the proofs leave to the base (SPEC, A3), made
-  visible.
-
-The narrator output and the theorems are the same as in step 6.
-
-### With a real planner: Nav2
-
-```sh
-pixi run gazebo-nav2       # terminal 1, in place of `pixi run gazebo`
-```
-
-Here the low-priority input is Nav2, the standard ROS 2 navigation stack. It
-localises the robot with the lidar on a map of the apartment, plans a path
-around the furniture, and publishes velocity commands on `nav_vel`, which is
-just another input to the mux. A small tour script sends it from place to
-place (desk, kitchen, sofa, bedroom door, bookshelf), so the robot keeps
-moving by itself. Allow about half a minute after the windows appear for
-Nav2 to start.
-
-A second window, RViz, shows what Nav2 knows: the map, the cost it assigns
-around obstacles (purple), the lidar returns, its position estimate (green
-dots) and the planned path (red line).
-
-![RViz with the apartment map, costmap and Nav2's plan](images/rviz.png)
-
-Teleop and the e-stop work as before, with one new effect worth watching:
-hold the robot with either for more than a few seconds and Nav2 notices that
-it is making no progress and gives up on its goal (`did not reach ...; trying
-again` in terminal 1). The mux does not tell Nav2 that it is being
-overridden; Nav2 only sees that the robot is not doing what it asked.
-
-To send goals yourself, start with `tour:=false`. Then either click
-"Nav2 Goal" in the RViz toolbar and click a point on the map (not tried from
-this side: it needs a person at the mouse), or use
-`pixi run gazebo-goal X Y` (map coordinates in metres; the room spans
-x from -4.5 to 4.5 and y from -3.5 to 3.5, and the robot starts at 0 0):
-
-```sh
-pixi run bash -c 'source install/setup.bash && ros2 launch \
-  $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py \
-  planner:=nav2 tour:=false'
-pixi run gazebo-goal -2.3 -2.3
-```
-
-Known limits of the Nav2 variant:
-
-- **RViz prints alarming messages that can be ignored.** On macOS it logs a
-  shader "Validation Failed" error when the map loads, and it aborts when
-  the demo is shut down with Ctrl-C. Neither affects the display. Add
-  `rviz:=false` to the launch command to run without it.
-- **Some goals fail and are retried.** In a four-minute test the tour went
-  round the whole apartment, with about one goal in three needing a second
-  or third attempt.
-- **The map marks the sofa, armchair, bed and dining set as solid.** The
-  lidar sits 17 cm above the floor and sees only their legs; without this,
-  Nav2 drove under the dining table and got stuck between the chair legs.
-  `demo/gazebo/make_map.py` regenerates the map if you move furniture.
+![The apartment in Gazebo](images/gazebo.png)
 
 ## 9. Without pixi: the Docker build (Linux)
 

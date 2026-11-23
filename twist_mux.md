@@ -15,8 +15,8 @@ and the rules that function obeys are Lean theorems. The C++ that remains
 only reads parameters, subscribes, reads the clock and publishes.
 
 **Status (2026-11-20).** Everything in the build plan below is done except the
-Gazebo/Nav2 demo (turtlesim is used) and the optional "silence leads to zero"
-rule. The node accepts the same configurations as upstream `twist_mux` 4.5 (except
+optional "silence leads to zero" rule. There are two demos: turtlesim, and a
+TurtleBot3 in Gazebo with Nav2. The node accepts the same configurations as upstream `twist_mux` 4.5 (except
 non-finite or absurdly large timeouts, SPEC D5) and
 makes the same decisions in every comparison run so far; the one known
 exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
@@ -37,7 +37,7 @@ On Linux, or to get an image to run on a robot, `docker build -f docker/Dockerfi
 
 **Reading order.**
 
-0. [docs/TUTORIAL.md](docs/TUTORIAL.md) if you want to run it first: from an empty machine to the turtlesim experiment.
+0. [docs/TUTORIAL.md](docs/TUTORIAL.md) if you want to run it first: from an empty machine to the turtlesim experiment. [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md) does the same in Gazebo with a TurtleBot3 and Nav2.
 1. The rest of this file: why `twist_mux`, what the package does, what was to
    be proved.
 2. [docs/SPEC.md](docs/SPEC.md): the rules R1–R16 as read from the upstream
@@ -169,7 +169,7 @@ Decisions taken:
 - [x] Silence: match the original (publish nothing). A timer and a zero command stay a possible extension.
 - [x] Equal priorities: reproduce the original (first live input in handle order wins).
 
-Still open: a Gazebo/Nav2 demo, and CI for the ROS packages (the GitHub workflows check the Lean proofs only).
+Still open: CI for the ROS packages (the GitHub workflows check the Lean proofs only).
 
 ## Sources
 
