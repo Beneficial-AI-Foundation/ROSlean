@@ -230,3 +230,117 @@ the installed 1.3.12 header: identical); `lake build ROSlean` with Mathlib
 Linux; `docs.nav2.org`. There is no Lean node yet, so nothing was compared
 end to end.
 
+## CM3/CM4 — collision monitor C interface and node
+
+No conversion, refusal, ownership or signature defect was found, and on the
+same messages the node decides as upstream does up to D4 and D11; the defects
+are around the node: the shipped example switches the frame check off, a
+parameter change at run time is accepted and ignored, and the theorems about
+event sequences do not cover a history that contains an unusable scan.
+
+Findings are ordered by severity. Each names the smallest input that shows
+it. Scripts are in `review/collision_monitor/`; "side by side" means both
+nodes running at once on the same topics, parameter file and simulated clock
+(`side_by_side.py`), upstream being version 1.3.12 from the pixi environment.
+
+| # | Finding | Outcome |
+| --- | --- | --- |
+| 1 | **The example configuration switches the frame check off.** `config/example.yaml` contains `roslean_sensor_pose: [0.0, 0.0, 0.0]`. With the parameter set, a scan is used whatever its `frame_id` (D11), and a pose of zero means "the sensor is the base frame". Side by side (`example_pose`), with a stop box ahead of the robot, a scan in `laser_link` and a transform that says the sensor is mounted backwards: an obstacle 0.3 m ahead of the robot stops upstream (0.0) and passes the Lean node (0.5); an obstacle behind stops the Lean node only. This is CM1/CM2 finding 2 again, behind an opt-in that the file people copy takes for them. The node logs nothing at start-up when the pose is set, and nothing when a scan then arrives in another frame. `smoke_node.py` has no case with a zero pose | open |
+| 2 | **A parameter change at run time is accepted and ignored.** The node allows undeclared parameters and has no callback for changes. Start with `Zone.enabled: false`, one point at 0.2 m in a 0.5 m stop circle, then set `Zone.enabled` to `true` through the parameter service (`dynamic`): both nodes answer "accepted"; upstream then stops, the Lean node keeps passing 0.5. Any name is accepted, misspelt ones included. D2 says parameters are read once, but the operator is told the change succeeded. The opposite change (`enabled` to `false`) leaves the Lean node stopping, which is the safe side. Smallest fix: reject every change after start-up | open |
+| 3 | **A history with an unusable scan is outside every theorem about sequences.** `Monitor.dropScan` is not `step` on an event, so `foldl_exec` needs "every scan usable", and `cm_out_after` and `cm_readBack_after` are stated on `List.foldl Monitor.apply` over events, not on the exported functions. Size of the gap: all of `Trace.lean` (`run_stop`, `run_stale`, `run_pass_through`, `run_silent_last_published_zero`, `zero_period`, `run_scan`) and the two end-to-end theorems. Three consequences. (a) The theorems that read the state from the history are false of the node once such a scan occurred: after `[usable scan with nothing near, unusable scan, command]`, `run_pass_through` on the usable events says `pass`, and the node publishes a stop (kind 4; the safe side). (b) What A3 rests on, "a finite command that gets no answer was preceded by a published zero", is not proved for these histories. `InterfaceChecks.lean` reaches the state "no scan, previous velocity not zero, stop stamp 4 s", which `run` from `State.init` cannot reach under that configuration. By inspection the statement still holds, because `dropScan` leaves `prevZero` and `stopStamp` alone; no wrong behaviour was found. (c) What remains proved for such a history is one step: `dropScan_stop` and the theorems about `step` for an arbitrary state; "until a usable scan arrives" is prose. Smallest sound fix: a third event, `Event.scanUnusable now`, with `step` returning `({ st with scan := none }, .silent)`; then `Call.event` is total, `foldl_exec` loses its hypothesis, `cm_readBack_after` can be stated on `cs.foldl Call.exec`, and each proof by cases on the event gains one case. Proving the trace theorems for a separate reachability relation instead would be more work, not less | open |
+| 4 | **Tests that cannot fail, and what no test covers.** (a) `smoke_conversions`, "a zero pose changes nothing", compares `SensorPose{}` with `SensorPose{0.0, 0.0, 0.0}`, the same value. (b) "1000 readings: single-precision angle accumulation and products" recomputes the shim's expression with the same compiler and flags; it cannot see finding 5. (c) `test_cm_ffi`, "catches reference-count mistakes (leak or double free)": nothing is measured, so a leak passes. `leak_probe.cpp` measures it: peak memory is the same after 20,000 and after 100,000 rounds of every wrapper call. (d) In `smoke_node.py` an expectation of "nothing" is also met by a lost message or a dead node; a dead node would be noticed by a later step, a lost message would not. (e) No test in the suite runs upstream; `smoke_node.py` says so. `side_by_side.py` is the first comparison, by hand, on 88 commands. (f) Not covered at node level: a parameter change at run time, a command of `-0.0`, wall-clock time, a scan of more than five readings, a parameter file in Nav2's layout other than the two shipped ones (the refusals are passed with `-p`), a zero sensor pose | open |
+| 5 | **"Exactly as R3" depends on how the node is compiled, and `pixi run build` compiles it without optimisation.** The build passes no build type, so `collision_monitor_node.cpp` is compiled without `-O` (`build.ninja`: `-std=gnu++17 -arch arm64 -Wall -Wextra -Wpedantic -ffp-contract=off`), and the node calls `cosf` and `sinf`; upstream's library calls `__sincosf_stret`, which an optimising compiler substitutes for the pair (`nm -u` on both). On this machine the two ways give different points for 2,296 of 200,000 coordinates, by one unit in the last place of a `float`, at most 9.5·10⁻⁷ m for ranges up to 12 m (`fp_probe.sh`, `-O0` against `-O2`). No stop can be lost by this (D4 grows every zone by a millimetre or more) and no decision outside D4's band can differ, but the SPEC's "the two agree" for scans in the base frame is not bit for bit, and T2 is larger than "`cos`, `sin`": it includes which library entry the compiler picks. Fused multiply-add: with `-ffp-contract=on`, the compiler's default on arm64, 58 % of the coordinates computed with a sensor pose differ in the last bits and none in whole millimetres; the node's CMake sets `off`, and a second user of `conversions.hpp` would have to as well. x86-64 (under Rosetta): equal to arm64 at `-O2` without a pose, different in the last bits with one. The slowdown products were identical in all seven builds | open |
+| 6 | **The builder's defaults are fail-open, and one refused value is dropped.** Without `set_source` the source timeout is 0, "check off": `add_circle`, `cm_new`, a command with no scan gives `pass`. A vertex that is not finite, added after a circle or before any zone, leaves no mark and the monitor is ok (`foldl_addVertex_refused` covers vertices after `add_polygon` only; THEOREMS says "a refused vertex is never dropped silently"). The node's wrapper produces neither sequence. A builder that is not ok until `set_source` was called, and that records a stray vertex, would make the interface safe against a second shim (`ffi_probe.py`, `InterfaceChecks.lean`) | open |
+| 7 | **Messages at start-up.** (a) `radius: 999.9995` is refused with "must be finite and below 1000 m in magnitude"; the limit is that the rounded radius plus 1 mm is at most 1,000,000 mm, so 999.999 is refused and 999.9989 accepted. (b) Refusals made by the shim name one parameter per run: Nav2's own `collision_monitor_params.yaml` fails on `state_topic`, and on `base_shift_correction` once that is fixed; refusals made by the core are listed together. (c) Nothing is logged for a configuration that protects nothing: `source_timeout: 0.0`, `scan.enabled: False`, `min_points: 0`, `slowdown_ratio: 1.5`, `radius: 0.0` and four collinear vertices all start without a warning (`param_probe.py`; CM1/CM2 finding 15 is still open) | open |
+| 8 | **An output kind the shim does not know is answered with silence.** `on_cmd` logs an error and publishes nothing. `kindOf` cannot return such a value, so this is unreachable; publishing zero would match "fail closed" | open |
+
+Confirmed and not findings:
+
+- Conversions. `coordMm`, `radiusMm`, `vertexMm`, `timeoutNs` and
+  `sourceTimeoutNs`, called through the C interface, equal exact rational
+  references on signed zeros, subnormals, NaN of either sign, infinities, the
+  values three patterns either side of every limit, every whole and half
+  millimetre up to 1 m, and random patterns. No parameter value or scan
+  record was found on which Lean accepts what the SPEC refuses, or on which a
+  zone is smaller than upstream's.
+- Ownership. In the generated C every exported function that was read
+  releases its object arguments (`roslean_cm_on_scan` releases the
+  `ByteArray` on both branches, `roslean_cm_ok` the monitor); the wrapper
+  takes one reference per query; moved-from monitors throw. The prototypes
+  of `ffi.h` compile against the generated ones; `min_points` and `stamp_ns`
+  (Lean `Int64`, `uint64_t` in C) were checked at −1, ±2³¹ and their
+  neighbours, and at the ends of the 64-bit range.
+- `mux.hpp`: the change moves `initialize()` to `runtime.hpp` unchanged;
+  `test_mux_ffi` passes.
+- The node. No command is published without a call into Lean, and no test on
+  a floating-point value of a command is made in C++. What C++ decides is
+  what the SPEC says it does: the comparison of two frame names, whether the
+  pose is zero, and which features are refused. `conversions.hpp` ran on
+  arbitrary bit patterns, poses up to 10³⁰⁰ and 200,000 arbitrary `points`
+  strings under the undefined-behaviour and address sanitizers without a
+  report. A scan with more readings than its angle fields imply, an
+  `angle_increment` of 0 or NaN and an `angle_min` of NaN are treated as
+  upstream treats them.
+- Parameters. Nav2's `collision_monitor_params.yaml` starts once
+  `state_topic` is emptied or removed and `base_shift_correction` is false;
+  unchanged it is refused, as is `nav2_params.yaml` of `nav2_bringup`. For
+  wrong types, a listed zone that is not defined, `points: ""`, an action
+  type in capitals and the older list form of `points`, both nodes refuse
+  and name the same parameter. `polygon_sub_topic` next to static points:
+  upstream creates no subscription (observed), so ignoring it is right.
+- Topics and QoS. Command input and output reliable and volatile, scan best
+  effort, same message types, as upstream reports them. Upstream also has
+  `~/collision_points_marker`, `/tf`, `/tf_static` and the lifecycle topics
+  (D2, D11, D13).
+- Theorems. `lake build ROSlean` succeeds; the twelve interface and
+  conversion theorems that were queried depend on `propext`,
+  `Classical.choice` and `Quot.sound` only; their hypotheses are
+  satisfiable; each is as strong as its row in THEOREMS.md, with the limit
+  of finding 3, which THEOREMS.md states.
+
+Side by side, 88 commands: 78 answered alike, bit for bit, including `-0.0`.
+The ten that differ:
+
+| Case | Lean | Upstream | |
+| --- | --- | --- | --- |
+| Point on a 0.5 m circle, and 0.5 mm outside it | stop | pass | D4 |
+| Point on the front and on the right side of a square (on the left and rear sides and on a corner both stop) | stop | pass | D4 |
+| Point on the circle, sensor pose `[0.1, 0, 0]` against the same transform | stop | pass | D4 |
+| Scan in `laser_link`, transform published, nothing near | stop | pass | D11 |
+| Example's zero pose, obstacle ahead of a backwards sensor; obstacle behind it | pass; stop | stop; pass | finding 1 |
+| `enabled` of a zone set to `true`; to `false` | pass; stop | stop; pass | finding 2 |
+
+Alike, among others: the boundary of `source_timeout: 2.094` (pass at stamp +
+2,093,999,998 ns, stop 1 ns later, in both: R17's double conversion); the
+boundary of `stop_pub_timeout` to the nanosecond; `radius: -0.3`; a scan in
+another frame with no transform, with timeout 2 s (stop) and 0 (pass); a
+zero command in a slowdown zone; ratios 0, 0.3, 0.9 and 1.5; `min_points` 0
+and exactly reached; NaN and infinite readings and limits; `TwistStamped`; a
+scan of 100,000 readings; wall-clock time.
+
+Checks run by the reviewer (macOS arm64, commit `cb25673`):
+
+| Check | Result |
+| --- | --- |
+| `pixi run build`; `lake build ROSlean` | 4 packages finished; 6647 jobs, no error |
+| `test_cm_ffi`, `test_mux_ffi`, `smoke_conversions`, `smoke_timeouts`, `smoke_node.py` (on `ROS_DOMAIN_ID` 92) | all pass; the default of the source's timeout loses 1 ns for 398 of 30,001 values |
+| `ffi_probe.py`: conversions against exact references | 624,522 patterns each for coordinates, radii and timeouts, 412,222 for vertices, 230,050 for each of the two source timeouts: 0 differences |
+| `ffi_probe.py`, `InterfaceChecks.lean`: the raw interface with flags and codes the wrapper does not produce, call orders, limits | as the SPEC says, except finding 6 |
+| `leak_probe.cpp` | no growth |
+| `side_by_side.py`, 12 groups of cases | above |
+| `param_probe.py`, 32 parameter files on both nodes | above; findings 7b, 7c |
+| `fp_probe.sh`: seven builds of `conversions.hpp`, and one with sanitizers | finding 5; no sanitizer report |
+
+Not run or not checked: Linux, and x86-64 other than `conversions.hpp` under
+Rosetta; `colcon test` as such (the test programs were run directly, the
+node test on another domain than the one CMake sets); the twist_mux
+`scenario` and `random_diff` tests after the change to `mux.hpp`; a scan of
+1,000,000 readings over ROS (the middleware dropped it for both nodes; the
+wrapper test covers that size); a scan stamp with negative seconds (upstream
+ends, as CM1/CM2 found); upstream with `base_shift_correction: true`; a
+real lidar or a simulator; the source of `rclcpp`; the generated C of the
+builder functions was not read line by line (the memory measurement covers
+them). Upstream waits for a missing transform in node time, so under a
+frozen simulated clock it never answers; in those two cases the clock was
+moved on after the command.
+
