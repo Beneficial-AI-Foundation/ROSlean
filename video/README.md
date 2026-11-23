@@ -66,6 +66,11 @@ video/make_video.sh video/web/gazebo.html site/media/twist_mux_gazebo.mp4
 video/make_video.sh video/web/generated.html site/media/twist_mux_generated.mp4
 ```
 
+The end card of `twist_mux_gazebo.mp4` was later changed in the finished
+video (the old text removed from its last seven seconds and the new card
+drawn in), because the take's frames were no longer at hand. Rendering it
+again from a take gives the same card without that step.
+
 To add a soundtrack, give `make_video.sh` a sound file and the second of it
 at which the video should begin; it fades in and out at the ends. No sound
 file is kept in this repository.
