@@ -14,6 +14,8 @@ velocity command sources by priority, freshness and locks.
   turtlesim experiment, step by step.
 - [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment
   on a TurtleBot3 in a furnished apartment in Gazebo, with Nav2.
+- [docs/BENCHMARK.md](docs/BENCHMARK.md): run-time comparison with upstream
+  `twist_mux`, and what it means on a robot.
 
 ## Layout
 
@@ -25,6 +27,7 @@ velocity command sources by priority, freshness and locks.
 | `docker/` | Linux build and run-time image. |
 | `ros/roslean_twist_mux` | The node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
+| `bench/` | Benchmarks against upstream (`pixi run bench`). Not part of the normal build. |
 
 ## Quick start
 

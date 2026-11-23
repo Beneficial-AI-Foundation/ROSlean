@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>roslean_bench</name>
+  <version>0.1.0</version>
+  <description>Run-time comparison of the Lean-backed twist_mux with upstream twist_mux.</description>
+  <maintainer email="noreply@example.com">ROSlean</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>roslean_core</depend>
+  <exec_depend>roslean_twist_mux</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
