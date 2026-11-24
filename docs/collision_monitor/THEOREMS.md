@@ -300,6 +300,12 @@ demanded) would remove it. With the extension the state topic does say
 `deactivate` followed by `activate` starts a new period
 (`run_after_activation`).
 
+The user has decided to keep upstream's behaviour here (tasks/PLAN.md,
+"Decisions"). Why the theorem is therefore weaker than "a demanded stop is
+published", with the sequence, how much it matters and what would
+strengthen it, is written up in
+[`findings/stop_pub_timeout_theorem.md`](../../findings/stop_pub_timeout_theorem.md).
+
 The invariant needs the run to start at `State.init cfg`. From an arbitrary
 state with `prevZero` set, a velocity can be withheld with nothing published
 before.

@@ -35,12 +35,10 @@ emulation. The comparison with upstream has not been run on Linux at all.
 
 ## Tasks
 
-**On hold (2026-11-24).** The user has asked that no further task is started
-until they have decided the open questions under "Decisions". T02, already
-running, finishes; T03, T06 and T07 wait.
-
-Run a task when everything in "Needs" is merged into `collision-monitor`. Tasks in the
-same row group can run at the same time.
+**Decisions reviewed by the user on 2026-11-24** ("Decisions" below): every
+default stands; for `stop_pub_timeout` a note explains why the theorem is
+weaker (`findings/stop_pub_timeout_theorem.md`, linked from THEOREMS.md).
+Tasks start again as their needs are merged.
 
 | Task | What | Needs | Runs in cloud | Status |
 | --- | --- | --- | --- | --- |
@@ -98,12 +96,12 @@ Taken:
 - With pieces 1 to 3: the sensor pose comes from TF, `state_topic` is
   published, the node is a lifecycle node.
 
-Open, with the default that tasks follow until the user decides:
+Reviewed by the user on 2026-11-24; the second column is the decision:
 
-| Question | Default |
+| Question | Decision |
 | --- | --- |
 | Stop on structurally invalid scans (fail-closed)? | As upstream: readings are filtered one by one |
-| Publish zero for as long as a stop is demanded, not only for `stop_pub_timeout`? This removes the never-published stop (THEOREMS.md, "What the robot receives"). | As upstream |
+| Publish zero for as long as a stop is demanded, not only for `stop_pub_timeout`? This removes the never-published stop (THEOREMS.md, "What the robot receives"). | As upstream. Add a note for why the theorem needs to be weaker |
 | A timer that publishes zero when commands cease? | As upstream: none |
 | Scan age by arrival time instead of header stamp? | As upstream: header stamp |
 | Publish zero for a non-finite command? | As upstream: ignored |
