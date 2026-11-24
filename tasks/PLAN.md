@@ -49,11 +49,11 @@ same row group can run at the same time.
 | [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | merged 39ad5e1 |
 | [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | merged c2d5f85 |
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | merged 259589a |
-| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | running |
+| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | merged 91a7c3c |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | merged 56ac73b |
-| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
+| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | running (started from T03's pushed branch, before T03's merge) |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | open |
@@ -119,8 +119,12 @@ Decided by the user on 2026-11-24:
 | (T05b) After the move to C++ a command still costs more than before the extension (1080 readings: 207 µs for two circles against 18 µs; 628 µs for two polygons against 0.41 ms), because the conversion to millimetres now runs per command on patterns that are big numbers when the sign bit is set. Who fixes it? | T03, with its item 2: decode sign and magnitude apart, proved equal |
 | (T07) After a backward clock jump upstream forgets all `/tf` transforms (observed); with base shift correction that means stops until new odometry arrives (inferred). The Lean node? | As upstream; listed among what the documentation does not say |
 | (T07) The Linux container image lacks `nav2_bringup` and the lifecycle manager, so five footprint scenarios and half the bond test do not run there. Add them? | Yes, T08 adds them to `bench/cm_linux/Dockerfile` when it runs the Lean node through the scenarios |
+| (T03) The no-clock step: a transition `stepNoClock` beside `step` (every existing theorem stands; the trace theorems do not speak about no-clock commands), or a constructor of `Event` (several theorems restated)? | Beside `step`, as T03 built it. T08 reviews whether the trace theorems should cover it |
+| (T03) Without a usable clock reading the node answers every command with a stop, also with `source_timeout: 0` or a disabled source. | Keep: there is no "as upstream" here, upstream's process ends (D15) |
+| (T03) `main` catches every exception that leaves a callback and goes on, with an error in the log. | Keep for now; T08 reviews it (an exception caught and ignored can hide a fault) |
+| (T03) `roslean_cmd_cost` is a run-time threshold inside `test-quick`. | Keep it there; if it proves flaky on a loaded machine it gets `LABELS long` |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
-| (T02) The cost of a command: target? | Not decided. T03 measures after T05b and proposes a budget per command; until then T02's `roslean_cmd_cost` (25 ns per reading and zone) stays an expected failure |
+| (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
 | (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
