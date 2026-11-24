@@ -1064,8 +1064,13 @@ class Run:
             self.tags.append(tag)
             steps = [transition('configure', f'[{tag}: {why}] the configuration is refused',
                                 ok=False)]
-        side.start(params_file, params, self.log_path)
         self.d = d = Driver('scenario_nav2_driver', [side], False)
+        # The node of the previous scenario had the same name. Until its
+        # endpoints have left the graph, "the node has subscribed to /clock"
+        # below could be true of the old process, and the first clock
+        # message would be sent to nobody.
+        d.spin_until(lambda: not d.endpoints_of(side, '/clock', False), 10.0)
+        side.start(params_file, params, self.log_path)
         try:
             for topic in sc.get('watch', []):
                 d.watch_polygon(side, topic)
@@ -1077,7 +1082,8 @@ class Run:
             else:
                 # The node's clock subscription exists from start-up; a clock
                 # message sent before it is matched would be lost.
-                if not d.spin_until(lambda: d.clock_pub.get_subscription_count() >= 1, 20.0):
+                if not d.spin_until(lambda: d.clock_pub.get_subscription_count() >= 1
+                                    and len(d.endpoints_of(side, '/clock', False)) == 1, 20.0):
                     raise RuntimeError('the node did not subscribe to /clock')
                 d.spin_for(0.3)
                 if sc.get('start', 'active') == 'active' and 'refused' not in self.expect:
