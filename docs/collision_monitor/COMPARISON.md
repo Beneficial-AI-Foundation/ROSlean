@@ -1235,6 +1235,65 @@ integration branch changed; there is no memory curve of that node from
 this work. The in-process soak (`bench_cm --soak`) was not completed
 either; see below.
 
+## The Nav2 extension (review CM5, task T08)
+
+Run on 2026-11-24 on macOS arm64 (18 cores), the node of commit `e481459`
+(lifecycle node, transforms from TF, zones fed by a topic, state topic)
+beside upstream 1.3.12 from the pixi environment. The sections above
+describe the node before the extension where they speak of D2, D11, D13 and
+of `roslean_sensor_pose`; the numbers here are the node as it is now.
+Findings: `docs/REVIEWS.md`, "CM5".
+
+| Run | Command (in `ros/roslean_collision_monitor/test`, `NODE` the Lean node, `UP` upstream) | Result |
+| --- | --- | --- |
+| Fixed scenarios | `scenario.py NODE --profile profile_roslean` | 0 failures in 318 checks, 73 scenario runs; stated differences that occurred: D1 1, D4 20, D5 3, D6 1, D8 1, D9 2, D10 2 |
+| The same with state messages compared | a copy of the profile with `STATE_TOPIC = True` | 32 failures in 318 checks, all state messages, no velocity (classified below) |
+| Scenarios of the extension | `scenario_nav2.py NODE --profile profile_roslean_nav2` | 0 failures in 246 checks, 35 scenario runs, 2 not run (`footprint-approach-unchanged`, `shift-interpolation`); ND4 2, ND5 1, ND6 2, ND11 3 |
+| Random cases | `random_diff.py NODE UP a b --roslean`, seeds 0 to 299 in six processes of 50 (`review/collision_monitor/nav2/run_review_random.sh diff OUT 6 50 180`) | 300 cases, 26,951 commands, 16,092 scans: 0 cases outside the bounds of D4, 0 passed only on the slow retry |
+| Random cases of the extension | `random_nav2.py NODE UP a b`, seeds 0 to 299 in six processes of 50 (`run_review_random.sh nav2 OUT 6 50 180`) | 300 cases, 16,797 commands: 0 cases in which either node disagrees with the model of N4–N7, N13, N23–N27, N32–N35 (velocities and state messages), 0 retried |
+
+**Classification of every difference between the two nodes.**
+
+| Where | Differences | Class |
+| --- | --- | --- |
+| `scenario.py` | 30 checks with another velocity | stated: D1 1, D4 20, D5 3, D6 1, D8 1, D9 2, D10 2 |
+| `scenario.py`, state messages on | 32 state checks: 18 at a check whose velocity is a stated difference (D4 16, D6 1, D8 1), 14 at the check after one (D4 13, D6 1), where upstream announces a stop that the Lean node announced one check earlier | stated (consequences of D4, D6, D8); the profile's format cannot express them, so `STATE_TOPIC` stays `False` |
+| `scenario_nav2.py` | 8 checks | stated: ND4 2, ND5 1, ND6 2, ND11 3 |
+| `random_diff.py` | 586 commands with different demanded velocities (2.17 % of all; 761 published differently), each decided by a point in a growth band: 323 by a circle (farthest 2.056 mm outside upstream's zone), 263 by a polygon (farthest 3.044 mm); the Lean node the more restrictive one every time | stated: D4 (bounds 3.5 mm and 4.4 mm) |
+| `random_nav2.py` | none: both nodes gave the model's answer to all 16,797 commands (the generator stays 0.1 mm away from zone boundaries, so D4 does not occur) | |
+| unrecorded difference, defect of the node or model, defect of the harness | none in these runs | |
+
+No case in these runs has upstream stopping or slowing and the Lean node
+not. The two cases the review found where it happens or where the node
+hangs are outside what the scenarios and the generators produce (a polygon
+message with a NaN vertex other than the one arrangement of `polygon-topic`;
+a backward clock jump during a wait for a transform): REVIEWS.md, CM5,
+findings 1 and 2, with `review/collision_monitor/nav2/review_probe.py
+nan-vertex` and `wait-clock-reset`.
+
+**Nav2's own launch file** (`review/collision_monitor/nav2/run_bringup.sh OUT
+node|component`): `navigation_launch.py` of `nav2_bringup` 1.3.12 with
+`package='roslean_collision_monitor'` in the monitor's `Node` action
+(`use_composition:=False`), or package and plugin
+(`roslean_collision_monitor::CollisionMonitorNode`) changed in its
+`ComposableNode` and loaded into `component_container_isolated`;
+`nav2_params.yaml` with the fixed-polygon edit of SPEC_NAV2 8.6; wall clock;
+static transforms and a scan from a test script, no simulator. In both forms
+Nav2's lifecycle manager configured, activated and bonded the node with the
+other servers ("Managed nodes are active"); a command of 0.2 m/s sent to
+`cmd_vel_nav` arrived on `cmd_vel` through the velocity smoother and the
+monitor; with twenty readings at 0.15 m it became zero with state
+`('FootprintStop', STOP)`; with the scan clear again it passed, state
+normal. No robot model, no localisation and no navigation goal were
+involved.
+
+**Gazebo** (`pixi run cm-check`, with a display): passed in 75 s (27 s
+simulated), every check ok.
+
+Not run in this review: the Linux container (`bench/cm_linux`), so its
+image was not changed either; soaks; benchmarks; `component_container` and
+`component_container_mt`.
+
 ## What was not tested
 
 - **Linux on its own hardware, x86-64.** The Linux runs are a container in
