@@ -26,6 +26,15 @@ while read -r wt; do
   [ "$wt" = "$main" ] && continue
   branch="$(git -C "$wt" branch --show-current 2>/dev/null)"
   case "$branch" in claude/*) ;; *) continue ;; esac
+  # A worktree whose head is already in the integration branch and whose git
+  # state has not moved for an hour belongs to a finished, merged task: skip
+  # it, so that the scan below stays fast when many worktrees exist.
+  gd="$(git -C "$wt" rev-parse --absolute-git-dir)"
+  if git -C "$wt" merge-base --is-ancestor HEAD origin/collision-monitor 2>/dev/null \
+     && [ $(( (now - $(mtime "$gd/logs/HEAD")) / 60 )) -ge 60 ] \
+     && ! ps -eo command= | grep -F "$wt" | grep -qv -e 'grep -F' -e 'tasks/watch.sh'; then
+    continue
+  fi
   # Newest file: sources, colcon logs, the project's own Lean build, git's state.
   newest="$( { find "$wt" -type f \
         -not -path '*/.pixi/*' -not -path '*/.lake/packages/*' -not -path '*/node_modules/*' \
