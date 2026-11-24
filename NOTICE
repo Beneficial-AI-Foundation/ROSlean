@@ -1,0 +1,9 @@
+ROSlean
+Copyright 2026 Beneficial AI Foundation
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+roslean_twist_mux reimplements the arbitration rules of twist_mux
+(https://github.com/ros-teleop/twist_mux), which is also licensed under the
+Apache License, Version 2.0. The rules were read from the upstream source;
+docs/SPEC.md lists them and every deliberate difference.
