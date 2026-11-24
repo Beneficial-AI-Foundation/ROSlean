@@ -108,6 +108,51 @@ Open, with the default that tasks follow until the user decides:
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
 | Keep the extra 1 mm on circle radii? | Keep |
 
+## Watching the tasks
+
+A task session can stop without saying so: a test that never returns, a
+process that waits for input, an agent that waits for a build that died.
+Whoever orchestrates keeps a check running for as long as any task is
+running. In the orchestrating Claude Code session, in the main checkout:
+
+```
+/loop 15m Run tasks/watch.sh and act on it as tasks/PLAN.md "Watching the tasks" says.
+```
+
+`tasks/watch.sh` looks at every worktree on a task branch and prints, for
+each, when a file last changed (sources, colcon logs, the Lean build, git),
+what is running there, and a verdict. What the loop does with it:
+
+| Verdict | Meaning | Action |
+| --- | --- | --- |
+| `active` | A file changed in the last 20 minutes, or its processes use the processor. | None. Check that the newest file is a different one from the last round, or that the same test has moved on (its log grows); the same file and the same process for three rounds running is treated as `waiting`. |
+| `waiting` | Nothing changed, but processes exist. | Look at the process list: a test with a timeout of its own (the `TIMEOUT` in the CMakeLists) may wait; anything older than its timeout, or a process that waits for a terminal, is killed by PID, and the task session is told what was killed and why. |
+| `STUCK` | Nothing changed for 20 minutes and nothing runs. | Ask the task session for its state. If it does not answer or cannot say what it is waiting for, the orchestrator takes the task back: commits what is in the worktree as a WIP commit on the task's branch, records the state in the status column below, and either restarts the task from that branch with a note on where it stopped, or finishes it itself. |
+| `done` | Head pushed, tree clean, nothing running. | Read the report, rebuild, merge (README, "Merging"). |
+
+The loop also asks, every round: has each running task moved towards what
+its task file asks for since the last round (a commit, a new section of its
+deliverable, a build or test further along)? A task that is busy but has
+shown nothing new for an hour is asked what it is doing, and is taken back
+like a `STUCK` one if the answer is not a concrete next step. The loop ends
+when no task is running.
+
+So that the check has something to see, every task session, in addition to
+[README.md](README.md):
+
+- appends one line to `tasks/reports/T??.progress` (time, what was just
+  finished, what comes next) whenever it finishes a step of its task file
+  and before it starts anything that takes more than five minutes;
+- commits to its branch after each finished step (work in progress is
+  fine; the last commit is the one that counts) and pushes;
+- starts long commands in the background with a time limit of its own
+  (`timeout`, or the tool's limit), and reads their log when they end rather
+  than waiting without a limit;
+- gives up on a step after three failed attempts at the same thing, writes
+  down what it tried, and goes on with the next step or, if nothing else can
+  be done, finishes with the report: an honest "not done, because" is a
+  result, a session that sits is not.
+
 ## After each merge
 
 Update the status column above (`open`, `running`, `branch pushed`,

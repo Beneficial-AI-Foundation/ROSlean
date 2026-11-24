@@ -91,23 +91,29 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" "${_reference}"
       --no-tf --skip negative-stamp)
   # Domains of their own, so that other ROS traffic on the machine cannot interfere.
-  set_tests_properties(reference_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=95" TIMEOUT 1800)
+  # LABELS long: a test that takes more than about a minute. `pixi run
+  # test-quick` leaves these out; `pixi run test` runs everything.
+  set_tests_properties(reference_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=95" TIMEOUT 1800
+    LABELS long)
 
   if(nav2_collision_monitor_FOUND)
     # Fixed scenarios with the outputs observed from upstream.
     add_test(NAME upstream_scenario
       COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" ${_upstream})
-    set_tests_properties(upstream_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=89" TIMEOUT 3600)
+    set_tests_properties(upstream_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=89" TIMEOUT 3600
+      LABELS long)
     # Random configurations and event sequences: upstream against itself
     # (which measures nondeterminism) and against the Python model.
     add_test(NAME upstream_random_diff
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" ${_upstream} ${_upstream} 0 20)
-    set_tests_properties(upstream_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=90" TIMEOUT 2400)
+    set_tests_properties(upstream_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=90" TIMEOUT 2400
+      LABELS long)
     # The same with two different implementations side by side.
     add_test(NAME reference_random_diff
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" "${_reference}" ${_upstream} 0 5
         --no-tf)
-    set_tests_properties(reference_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=96" TIMEOUT 1200)
+    set_tests_properties(reference_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=96" TIMEOUT 1200
+      LABELS long)
   else()
     message(WARNING "nav2_collision_monitor not found: the tests against upstream are not registered")
   endif()
