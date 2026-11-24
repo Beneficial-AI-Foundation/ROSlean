@@ -19,6 +19,13 @@ one of the model's integers is here, in exact integer arithmetic: there is no
 "Refused" is `none`: the builder then marks the configuration as not accepted
 (`ROSleanCore.CollisionMonitorFFI`).
 
+Since the model applies a transform to every scan point
+(`Xform.pointMm`, `ROSleanCore.CollisionMonitorXform`), `coordMm` is no
+longer on the path of a scan: it remains as the reference for the identity
+transform (`Xform.identity.pointMm x y = (coordMm x, coordMm y)` for finite
+coordinates, proved in `ROSlean/CollisionMonitor/Transform.lean`) and as the
+exported query `roslean_cm_coord_mm`.
+
 A finite binary64 value with pattern `b` has magnitude
 `F64.mant b * 2 ^ F64.shift b / 2 ^ 1075`, and a finite binary32 value has
 magnitude `F32.mant b * 2 ^ F32.shift b / 2 ^ 150`. The first three conversions
@@ -33,54 +40,9 @@ namespace ROSleanCore.CollisionMonitorFFI
 
 open ROSleanCore.CollisionMonitor
 
-/-! ## Decoding bit patterns -/
-
-namespace F64
-
-/-- The sign bit. -/
-def neg (b : Nat) : Bool := b / 0x8000000000000000 % 2 == 1
-
-/-- The exponent field, 0 to 2047. -/
-def expField (b : Nat) : Nat := b / 0x10000000000000 % 0x800
-
-/-- The fraction field. -/
-def frac (b : Nat) : Nat := b % 0x10000000000000
-
-/-- Neither infinite nor NaN. -/
-def finite (b : Nat) : Bool := expField b != 0x7FF
-
-def isNaN (b : Nat) : Bool := expField b == 0x7FF && frac b != 0
-
-/-- The significand as an integer: with the implicit leading bit for a normal
-number, without it for a subnormal one. -/
-def mant (b : Nat) : Nat := if expField b = 0 then frac b else frac b + 0x10000000000000
-
-/-- For a finite pattern the magnitude is `mant b * 2 ^ shift b / 2 ^ 1075`. -/
-def shift (b : Nat) : Nat := if expField b = 0 then 1 else expField b
-
-/-- The denominator's exponent in the formula of `shift`. -/
-def bias : Nat := 1075
-
-end F64
-
-namespace F32
-
-def neg (b : Nat) : Bool := b / 0x80000000 % 2 == 1
-
-def expField (b : Nat) : Nat := b / 0x800000 % 0x100
-
-def frac (b : Nat) : Nat := b % 0x800000
-
-def finite (b : Nat) : Bool := expField b != 0xFF
-
-def mant (b : Nat) : Nat := if expField b = 0 then frac b else frac b + 0x800000
-
-/-- For a finite pattern the magnitude is `mant b * 2 ^ shift b / 2 ^ 150`. -/
-def shift (b : Nat) : Nat := if expField b = 0 then 1 else expField b
-
-def bias : Nat := 150
-
-end F32
+/-! The reading of a bit pattern (`F64.mant`, `F64.shift`, `F32.mant`, …) is
+in `ROSleanCore.CollisionMonitorXform`, because the model's transform needs
+it too. -/
 
 /-! ## Scan coordinates -/
 

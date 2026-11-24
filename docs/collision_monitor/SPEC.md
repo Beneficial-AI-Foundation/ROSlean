@@ -15,6 +15,20 @@ input, circle zones and fixed polygon zones, the `stop` and `slowdown`
 actions. Rules are stated for that subset; what upstream does beyond it is
 listed under "Excluded features".
 
+**State of this document (after task T05).** The sections "The model" and
+"Properties" below describe the Lean model as it is now, which includes the
+Nav2 extension of [SPEC_NAV2.md](SPEC_NAV2.md) (rules `N…`, differences
+`ND…`, events `E1`–`E8`): the lifecycle, transforms that arrive with each
+command, zones whose shape arrives on a topic, and the report for the state
+topic. The other sections (the rules, "Shim boundary", "Excluded features",
+the differences, the trusted parts) still describe the node before the
+extension; SPEC_NAV2.md, section 9, lists the edits they get when the C
+interface and the node follow (task T06). Until then the node's calls are
+read in the extended model as `core/ROSleanCore/CollisionMonitorFFI.lean`
+says at its head: the monitor starts in the active phase, a scan reported
+unusable is a scan whose commands carry no transform, and every other
+command carries the identity.
+
 ## Rules as implemented upstream
 
 **Triggers**
@@ -372,101 +386,182 @@ amplification" for a hand-written multiplication is a project of its own.
 ## The model
 
 `core/ROSleanCore/CollisionMonitor.lean`, namespace
-`ROSleanCore.CollisionMonitor`.
+`ROSleanCore.CollisionMonitor`; points, bit patterns and transforms in
+`core/ROSleanCore/CollisionMonitorXform.lean`. The design is SPEC_NAV2.md,
+section 3; where a name or a detail differs from the proposal there, it is
+said here and corrected there.
 
 - `Config`: `zones : List Zone`, `sourceEnabled`, `sourceTimeout`,
-  `stopPubTimeout`. `Zone`: `shape` (`circle radius` or `polygon vertices`),
-  `action` (`stop` or `slowdown ratio`), `minPoints`, `enabled`.
-- `State`: `scan : Option Scan` (R5), `prevZero : Bool`, `stopStamp : Nat`
-  (R15). `State.init` is no scan, `false`, 0.
-- `Event`: `scan now s`, `cmd now v`, or `scanUnusable now`: a scan arrived
-  that the node cannot place in the base frame (D11); nothing of its content
-  enters the model. `Scan` is `stamp`, `rangeMin`, `rangeMax` and `beams`,
-  each beam a range pattern with its point. `Twist` is six patterns.
-- `Output`: `silent` or `publish a`, with `a : Action` one of `pass`,
-  `slowdown zone ratio`, `stopZone zone`, `stopSource`.
-- `step : Config → State → Event → State × Output`, and `run` over a list of
-  events. On `scan now s` the scan is stored; on `scanUnusable now` the
-  stored scan is discarded (`scan := none`), so that the source has no data
-  until the next usable scan (R8); both leave `prevZero` and `stopStamp`
-  alone and publish nothing. On a command, see below.
+  `stopPubTimeout`. `Zone`: `shape`, `action` (`stop` or `slowdown ratio`),
+  `minPoints`, `enabled`. A zone's `shape` is a `ZoneShape`: `fixed s` with
+  `s : Shape` (`circle radius` or `polygon vertices`), or `topic`: the shape
+  arrives in polygon messages and is held in the state.
+- `Xform`: six binary64 patterns `qx qy qz qw ox oy`, a quaternion and the x
+  and y of a translation, as tf2 hands a transform over. `Xform.usable`: all
+  six finite and the quaternion not zero. `Xform.identity`.
+  `Xform.pointMm t x y` and `Xform.vertexMm t x y`: N25 in exact arithmetic
+  (below).
+- `Scan` is `stamp`, `rangeMin`, `rangeMax` and `beams`; a `Beam` is a range
+  pattern and the two coordinates of its point **in the scan's frame** as
+  binary64 patterns. `Twist` is six patterns.
+- `TopicShape`: `raw` (the vertices as received, binary32 patterns),
+  `foreign` (the message's frame is not the base frame), `current` (the
+  vertices in the base frame, in millimetres).
+- `Phase`: `unconfigured`, `inactive`, `active`, `finalized`.
+  `Report`: `normal`, `stop zone`, `slowdown zone`, `source`.
+- `State`: `phase`, `scan : Option Scan` (R5), `shapes : List (Option
+  TopicShape)` with one entry per zone, `prevZero : Bool`, `stopStamp : Nat`
+  (R15), `prevReport : Report` (N13). `State.init cfg` is unconfigured, no
+  scan, `none` for every zone, `false`, 0, `normal`. (It takes the
+  configuration, so that the shapes have one entry per zone from the
+  start.)
+- `Event`: `configure`, `activate`, `deactivate`, `cleanup`, `shutdown`
+  (E1–E5); `scan now s` (E6); `shape k verts place` with `place` either
+  `base` or `foreign tf`, `tf : Option Xform` (E7); `cmd now v scanTf
+  zoneTfs` with `scanTf : Option Xform` and `zoneTfs : List (Option Xform)`
+  (E8). A missing transform is not an event: it is `scanTf = none`. The
+  event `scanUnusable` of the node before the extension is gone: a scan is
+  not usable or unusable when it arrives; whether it can be placed is decided
+  at each command by `scanTf`.
+- `Output`: `silent`, or `answer velocity report` with `velocity : Option
+  Action` and `report : Option Report`. An `Action` is one of `pass`,
+  `slowdown zone ratio`, `stopZone zone`, `stopSource`. `answer none _` is a
+  processed command whose velocity is withheld (R15); it differs from
+  `silent`, for which nothing at all is published (N16). `Output.velocity`
+  and `Output.report` read the two parts (`none` for `silent`).
+- `step : Config → State → Event → State × Output`, total, and `run` over a
+  list of events.
 
-The third event was added after the review CM3/CM4 (finding 3). Before, an
-unusable scan was a transition of the C interface outside the model, and no
-theorem about sequences covered a history that contained one.
+`step` by event (SPEC_NAV2, 3.2):
 
-`step` on a command is built from named parts, so that properties can be
-stated on each:
+| Event | In which phase it acts | What it does | Output |
+| --- | --- | --- | --- |
+| `configure` | unconfigured | phase := inactive | `silent` |
+| `activate` | inactive | phase := active | `silent` |
+| `deactivate` | active | phase := inactive, `prevZero := false`, `prevReport := normal` | `silent` |
+| `cleanup` | inactive | phase := unconfigured, `scan := none`, every shape := `none` | `silent` |
+| `shutdown` | any | phase := finalized; from there nothing changes any more | `silent` |
+| `scan now s` | inactive, active | `scan := some s` | `silent` |
+| `shape k verts place` | inactive, active | if accepted (`acceptShape`), entry `k` of the shapes := the new shape | `silent` |
+| `cmd …` | active, and `v` finite | below | `answer velocity report` |
+
+In every other phase the event changes nothing and the output is `silent`.
+
+A shape message is accepted iff zone `k` exists and is a topic zone, `verts`
+has at least three entries, all finite, `place` is `base` or `foreign (some
+t)` with `t` usable, and every vertex `t.vertexMm x y` (the identity for
+`base`) is within `coordLimit − 3` of both axes (N33, ND6, ND7).
+
+`step` on a processed command is built from named parts, so that properties
+can be stated on each:
 
 | Definition | Meaning | Rules |
 | --- | --- | --- |
-| `Scan.points s` | points of the valid readings | R4 |
-| `sourcePoints cfg st now` | `some pts`: the points to test; `none`: invalid source | R5–R8 |
-| `Shape.contains`, `Zone.count`, `Zone.triggered` | zone tests | R9–R11, D3, D4 |
+| `Xform.pointMm t x y` | the image of the scan-frame point `(x, y, 0)` in the base frame, projected on its x–y plane, exactly, in millimetres truncated toward zero and saturated at ±`coordLimit`; `Point.far`, which is `(coordLimit, coordLimit)`, if `t` is not usable or a coordinate is not finite | N25, ND1, D12 |
+| `Xform.vertexMm t x y` | the same for a vertex with binary32 coordinates, rounded to the nearest millimetre, a half away from zero, and not saturated (a vertex beyond the limit is refused by `acceptShape` and by the refresh) | N33, N34 |
+| `Scan.points s t` | the points of the valid readings under `t` | R4, N25 |
+| `sourcePoints cfg st now scanTf` | `some pts`: the points to test; `none`: invalid source | R5–R8, N22, N27 |
+| `refreshShapes cfg shapes zoneTfs`, `TopicShape.refresh` | every enabled topic zone's shape, if it is in another frame, with its current vertices recomputed under that zone's transform when it is usable and keeps them within the limit | N34, ND3 |
+| `liveConfig cfg st zoneTfs` | the zones as tested: the configuration with each topic zone given its refreshed shape as a polygon, or left without shape | N32, N34 |
+| `Shape.contains`, `Zone.count`, `Zone.triggered` | zone tests; a zone without shape is never triggered | R9–R11, D3, D4, N32 |
 | `firstStop`, `bestSlowdown`, `zonesAction cfg pts` | action for given points | R12–R14 |
-| `evaluate cfg st now` | action for a command at `now`; independent of the command | R8, R12–R14 |
+| `evaluate cfg st now scanTf zoneTfs` | action for a command; independent of its velocity: `stopSource` if the source is invalid, else `zonesAction (liveConfig …) pts` | R8, R12–R14 |
+| `shapesAfter …` | the shapes after the command: refreshed, or unchanged if the source is invalid | N34 |
 | `Action.yieldsZero a v` | the velocity to publish is zero | R15, D6 |
-| `Config.ok` | the configuration is accepted | D5, D12, R10 |
+| `Action.report a v` | `source` for `stopSource`, `stop k` for `stopZone k`, for `slowdown k _` `slowdown k` unless `v` is zero in the three published components, then `normal`; `normal` for `pass` | N13, N14 |
+| `Config.ok` | the configuration is accepted; a topic zone needs only an accepted action | D5, D12, R10 |
+
+For a processed command: `a := evaluate …`; the velocity of the output is
+`none` if `a.yieldsZero v` and `st.prevZero` and `st.stopStamp +
+stopPubTimeout < now`, else `some a`; the report of the output is `some r`
+with `r := a.report v` if `r ≠ st.prevReport`, else `none`; the new state has
+the shapes of `shapesAfter`, `prevZero := a.yieldsZero v`, `stopStamp := now`
+if that is true and `st.prevZero` was not, and `prevReport := r`.
 
 ## Properties
 
 Proved about `step` and lifted to `run` in `ROSlean/CollisionMonitor/`; the
 theorem for each is named in [THEOREMS.md](THEOREMS.md). `cfg`, `st`, `now`,
-`v` are arbitrary unless restricted; no property needs `Config.ok`. "The
-output of the command" is `(step cfg st (.cmd now v)).2`. A zone *is
-triggered by `pts`* means `z.triggered pts = true`.
+`v`, the transforms are arbitrary unless restricted; no property needs
+`Config.ok` unless it says so. "The output of the command" is
+`(step cfg st (.cmd now v scanTf zoneTfs)).2`; its *velocity* and its
+*report* are the two parts, both `none` for `silent`. A zone *is triggered
+by `pts`* means `z.triggered pts = true`, for `z` one of the zones in force,
+`(liveConfig cfg st zoneTfs).zones`. *The source is invalid* means:
+`cfg.sourceEnabled`, `0 < cfg.sourceTimeout`, and either `st.scan = none`,
+or `st.scan = some s` with `s.stamp + cfg.sourceTimeout < now`, or `scanTf`
+is `none` or not usable.
 
-**Output.** The output of a command is `.silent` iff `v` is not finite, or
-`(evaluate cfg st now).yieldsZero v` and `st.prevZero` and `st.stopStamp +
-cfg.stopPubTimeout < now`; otherwise it is `.publish (evaluate cfg st now)`.
-The properties below that end in "or `.silent`" are to be read with this:
-silence occurs in these two cases and in no other.
+**Processed.** The output of an event is not `silent` iff the event is a
+command, `st.phase = active` and `v.finite`. Every other event, and every
+event in another phase, gives `silent`.
 
-**Only if.** `evaluate cfg st now` is `.stopSource` iff the source is
-invalid; `.stopZone k` iff the source is valid and `k` is the first
-triggered stop zone; `.slowdown k r` iff the source is valid, no stop zone is
+**Inactive.** If `st.phase ≠ active`, the output of every event is `silent`,
+and a command leaves the state unchanged. On runs from `State.init cfg`: no
+output before the first `activate` is other than `silent`; none after a
+`shutdown` is; none between a `deactivate` and the next `activate` is.
+
+**Velocity.** For a processed command the velocity is `none` iff `(evaluate
+…).yieldsZero v` and `st.prevZero` and `st.stopStamp + cfg.stopPubTimeout <
+now`; otherwise it is `some (evaluate …)`. The properties below that end in
+"or withheld" are to be read with this: a processed command has no velocity
+in this one case and in no other.
+
+**Report.** For a processed command the report is `some r` iff `r = (evaluate
+…).report v` and `r ≠ st.prevReport`; the new `prevReport` is `(evaluate
+…).report v` in both cases. A report is made also when the velocity is
+withheld.
+
+**Only if.** `evaluate …` is `.stopSource` iff the source is invalid;
+`.stopZone k` iff the source is not invalid and `k` is the first triggered
+stop zone; `.slowdown k r` iff the source is not invalid, no stop zone is
 triggered, and `k` is the first triggered slowdown zone with the smallest
-ratio pattern `r`, which is below `F64.one`; `.pass` iff the source is valid
-and neither kind is triggered.
+ratio pattern `r`, which is below `F64.one`; `.pass` iff the source is not
+invalid and neither kind is triggered.
 
-**State.** After a finite command, `prevZero` is whether the demanded
+**State.** After a processed command, `prevZero` is whether the demanded
 velocity was zero, and `stopStamp` is `now` if it was zero and the previous
-one was not, and unchanged otherwise. On runs from `State.init`: if a finite
-command gets no answer, the message published last before it was a zero.
-(Not: "a stop is published whenever it is demanded". After zero commands
-for longer than `stop_pub_timeout`, an obstacle entering a stop zone together
-with a non-zero command is answered with silence; the last published message
-is the earlier zero. Example in `Examples.lean`.)
+one was not, and unchanged otherwise. On runs from `State.init cfg`: if a
+processed command gets no velocity, the velocity published last before it
+was a zero. (Not: "a stop is published whenever it is demanded". After zero
+commands for longer than `stop_pub_timeout`, an obstacle entering a stop
+zone together with a non-zero command gets no velocity; the last published
+one is the earlier zero. Example in `Examples.lean`. The state message does
+report the stop.)
 
 **Monotonicity.** Adding points never turns a stop into anything else,
 and never turns a slowdown into `pass` or into a slowdown with a larger
 ratio.
 
-**Stop.** If `sourcePoints cfg st now = some pts` and some zone of
-`cfg.zones` with action `stop` is triggered by `pts`, then
-`evaluate cfg st now = .stopZone k`, where `k` is the index of the first such
-zone; and the output of the command is `.publish (.stopZone k)` or
-`.silent`, the latter exactly in the two cases of **Output**. In particular
-it is never `.publish .pass` or `.publish (.slowdown …)`.
+**Stop.** If `st.phase = active`, `v.finite`, `sourcePoints cfg st now scanTf
+= some pts` and some zone in force with action `stop` is triggered by `pts`,
+then `evaluate … = .stopZone k`, where `k` is the index of the first such
+zone; and the velocity of the output is `some (.stopZone k)` or withheld,
+the latter exactly in the case of **Velocity**. In particular it is never
+`some .pass` or `some (.slowdown …)`.
 
-In words: if at least `min_points` valid points of the stored scan lie in an
-enabled stop zone, the node publishes exactly zero or nothing. "Nothing"
-occurs for a non-finite command (R2) and after `stop_pub_timeout` of
-continuous zero (R15). The literal statement "the output velocity is exactly
-zero" is therefore **false for upstream and for the model** when read as
-"zero is published": counterexample in `Examples.lean`, the command at
-2001 ms in the `stop_pub_timeout` example. See A3.
+In words: if at least `min_points` valid points of the stored scan, placed
+by the command's transform, lie in an enabled stop zone that has a shape, an
+active node publishes exactly zero or no velocity. "No velocity" occurs
+after `stop_pub_timeout` of continuous zero (R15); nothing at all is
+published for a non-finite command (R2) and while the node is not active
+(N4). The literal statement "the output velocity is exactly zero" is
+therefore **false for upstream and for the model** when read as "zero is
+published": counterexample in `Examples.lean`, the command at 2001 ms in the
+`stop_pub_timeout` example. See A3.
 
 The hypothesis `sourcePoints … = some pts` unfolds to: the source is enabled,
-a scan `s` is stored, it is not too old, and `pts = s.points`; or the source
-is disabled or (timeout 0 and no scan) and `pts = []`, in which case only a
-zone with `minPoints = 0` triggers.
+a scan `s` is stored, it is not too old, and either `scanTf = some t` with
+`t` usable and `pts = s.points t`, or there is no usable transform, the
+timeout is 0 and `pts = []`; or the source is disabled or (timeout 0 and no
+scan) and `pts = []`. With `pts = []` only a zone with `minPoints = 0`
+triggers.
 
-**Stale data.** If `cfg.sourceEnabled`, `0 < cfg.sourceTimeout`, and either
-`st.scan = none` or `st.scan = some s` with `s.stamp + cfg.sourceTimeout <
-now`, then `evaluate cfg st now = .stopSource`, and the output of the command
-is `.publish .stopSource` or `.silent`, the latter exactly in the two cases
-of **Output**.
+**Stale data.** If `st.phase = active`, `v.finite`, `cfg.sourceEnabled`,
+`0 < cfg.sourceTimeout`, and either `st.scan = none` or `st.scan = some s`
+with `s.stamp + cfg.sourceTimeout < now`, then, whatever `scanTf` is,
+`evaluate … = .stopSource`, and the velocity of the output is `some
+.stopSource` or withheld, the latter exactly in the case of **Velocity**.
 
 "Older than `source_timeout`" is by header stamp (R7), and "newest scan" is
 the scan received last (R5). The property is **false without the two
@@ -474,63 +569,121 @@ hypotheses on the configuration**: with `source_timeout: 0` or a disabled
 source, stale or missing data does not stop the robot (examples
 `cfgNoTimeout`, `cfgSourceOff`). That is upstream's documented way of
 switching the check off. On event sequences: after `run`, `st.scan` is the
-scan in force: that of the scan event received last if it was a `scan`,
-`none` if it was a `scanUnusable`, and `none` if there was no scan event
-(`lastScan`, `run_scan`). So after an unusable scan, with the source enabled
-and a non-zero timeout, every command is answered with `stopSource` (or with
-silence under R15) until a usable scan arrives, whatever preceded it
-(`run_scanUnusable_stop`). The statements "on runs" hold for every sequence
-of the three kinds of event.
+scan in force: that of the scan event received last while the node was
+inactive or active, unless a cleanup that took effect followed it
+(`lastScan`, `run_scan`).
+
+**No transform.** If `st.phase = active`, `v.finite`, `cfg.sourceEnabled`,
+`0 < cfg.sourceTimeout`, and `scanTf` is `none` or not usable, then, whatever
+scan is stored, `evaluate … = .stopSource`, and the velocity of the output is
+`some .stopSource` or withheld, the latter exactly in the case of
+**Velocity**. It is **false without the two hypotheses on the
+configuration**, as Stale data is: with `source_timeout: 0` a missing
+transform means "no obstacle" (N27). Counterexample in `Examples.lean`: with
+timeout 0, a scan with two points in the stop zone stops the robot when the
+command carries the identity and lets it pass when the command carries no
+transform. This is upstream's behaviour and it is fail-open.
 
 **Bad data.** The rule is R4 for readings (`Scan.validBeam`: a reading counts
 iff `F32.le rangeMin range && F32.le range rangeMax`), R2 for commands
 (`Twist.finite`), and D8 for a negative stamp. Statements: (a) readings that
 are not valid never change a decision: the output of every command is the
-same when they are removed from the stored scan, whatever points they carry
-(the earlier wording, "does not occur in `Scan.points`", was the definition
-restated, and false for a point shared with a valid reading);
-(b) the output of a command that is not finite is `.silent` and the state is
-unchanged; (c) `step` is total, and so are the conversions of the C interface
+same when they are removed from the stored scan, whatever coordinates they
+carry and whatever the transform; (b) the output of a command that is not
+finite is `.silent` and the state is unchanged; (c) `step` is total, and so
+are `Xform.pointMm`, `Xform.vertexMm` and the conversions of the C interface
 (a byte array of any length is a scan). Upstream itself does not satisfy
 "never crashes": see D8.
 
-**No amplification.** If the output of a command is `.publish a`, then `a`
-is `.pass`, `.stopZone _`, `.stopSource`, or `.slowdown k r` with
-`r < F64.one`; in the last case zone `k` of `cfg.zones` exists and has action
-`.slowdown r`. With the table of the previous section and T1 this gives: on
-each of the three axes the published magnitude is at most the commanded one
-and the sign does not flip; the other three axes are 0. This holds for every
-configuration, because a ratio pattern above `F64.one` (a ratio above 1,
-negative, infinite or NaN) is never selected. It is **false for upstream**
-with a negative ratio: `slowdown_ratio: -0.5` publishes `−0.5 ×` the command
-(D5).
+**No amplification.** If the velocity of the output of any event is `some
+a`, then `a` is `.pass`, `.stopZone _`, `.stopSource`, or `.slowdown k r`
+with `r < F64.one`; in the last case zone `k` of `cfg.zones` exists and has
+action `.slowdown r`. With the table of the previous section and T1 this
+gives: on each of the three axes the published magnitude is at most the
+commanded one and the sign does not flip; the other three axes are 0. This
+holds for every configuration, because a ratio pattern above `F64.one` (a
+ratio above 1, negative, infinite or NaN) is never selected. It is **false
+for upstream** with a negative ratio: `slowdown_ratio: -0.5` publishes
+`−0.5 ×` the command (D5).
 
-**Slowdown bound.** If `sourcePoints cfg st now = some pts`, and a zone of
-`cfg.zones` with action `.slowdown rz` is triggered by `pts`, and
-`rz < F64.one`, then `evaluate cfg st now` is `.stopZone _`, or
-`.slowdown k r` with `r ≤ rz`. Moreover `r` is the smallest ratio pattern
-among the triggered slowdown zones and `k` the first zone that has it. With
-T1: the published magnitude on each axis is at most that of `command × rz`
-computed in floating point, for *every* triggered slowdown zone. If
-`rz = F64.one` the action may be `.pass`, which satisfies the bound with
-equality.
+**Slowdown bound.** If `sourcePoints cfg st now scanTf = some pts`, and a
+zone in force with action `.slowdown rz` is triggered by `pts`, and
+`rz < F64.one`, then `evaluate …` is `.stopZone _`, or `.slowdown k r` with
+`r ≤ rz`. Moreover `r` is the smallest ratio pattern among the triggered
+slowdown zones and `k` the first zone that has it. With T1: the published
+magnitude on each axis is at most that of `command × rz` computed in
+floating point, for *every* triggered slowdown zone. If `rz = F64.one` the
+action may be `.pass`, which satisfies the bound with equality.
 
-**Pass-through.** If `v.finite`, `sourcePoints cfg st now = some pts` and no
-zone of `cfg.zones` is triggered by `pts`, then `evaluate cfg st now =
-.pass`, and the output of the command is `.publish .pass`, unless
+**Pass-through.** If `st.phase = active`, `v.finite`, `sourcePoints cfg st
+now scanTf = some pts` and no zone in force is triggered by `pts`, then
+`evaluate … = .pass`, and the velocity of the output is `some .pass`, unless
 `v.planarZero` and `st.prevZero` and `st.stopStamp + cfg.stopPubTimeout <
-now`, in which case it is `.silent`. In particular a non-zero command is
+now`, in which case it is withheld. In particular a non-zero command is
 always published unchanged. This rules out the always-stop node. The
 exception is upstream's: a zero command is dropped like any other zero after
-`stop_pub_timeout` (R15; example with `halt`).
+`stop_pub_timeout` (R15; example with `halt`). When a scan is stored and the
+timeout is not 0, a usable `scanTf` is part of the hypothesis on
+`sourcePoints`.
+
+**Transform.** For usable `t` and finite `x`, `y`, writing `(X, Y)` for the
+exact image in millimetres (N25: the first two rows of the rotation matrix
+of the quaternion, each entry divided by `|q|²`, applied to `(x, y, 0)`,
+plus the translation): each coordinate of `t.pointMm x y` is that of `(X,
+Y)` truncated toward zero and saturated at ±`coordLimit`; so its magnitude
+is at most that of the exact one and, unless saturated, less than 1 short of
+it. Each coordinate of `t.vertexMm x y` (binary32 `x`, `y`) is within 1/2 of
+the exact one. `Xform.identity.pointMm x y = (coordMm x, coordMm y)` for
+finite `x`, `y`, so that a scan in the base frame without correction is
+treated exactly as before the extension. (For a coordinate that is not
+finite the point is `Point.far`, where `coordMm` gives ±`coordLimit` on
+that axis only; both are in no accepted zone.) For a quaternion of unit
+length the exact image is the rotation it denotes followed by the
+translation; for any usable quaternion it is that of its normalisation.
+
+**Shape accepted.** A `shape k verts place` event is accepted iff the
+conditions of "The model" hold. If it is not accepted the state is
+unchanged. If it is, entry `k` of the shapes becomes the new shape (the
+vertices as received, whether the frame is foreign, the placed vertices) and
+nothing else changes: not the other entries, not `scan`, `prevZero`,
+`stopStamp`, `prevReport`, `phase`. So the state changes only if the message
+is accepted. (Not "iff": an accepted message that carries the shape the zone
+already has changes nothing.)
+
+**No shape.** If zone `k` is a topic zone and the state holds no shape for
+it, zone `k` is not triggered by any points, and no output names it, as a
+velocity action or in a report. On runs from `State.init cfg`: after any
+history that leaves the node unconfigured (start-up, or a cleanup that took
+effect), and any events that follow among which there is no shape message
+for zone `k`, no output names zone `k`. This is upstream's behaviour (N32)
+and it is **not** fail-safe: a stop zone without shape does not stop.
+
+**Replacing a shape affects that zone only.** For two lists of shapes that
+agree on every zone but `k`, and any points: every zone other than `k` is
+the same zone under both; hence the actions differ only if zone `k` is
+triggered under one and not under the other.
+
+**Lifecycle invariants.** In every state reachable from `State.init cfg`: if
+the phase is unconfigured or inactive then `prevZero = false` and
+`prevReport = normal`; if it is unconfigured then `scan = none` and every
+entry of `shapes` is `none`; `shapes` has one entry per zone and a shape only
+at a topic zone; every stored shape has at least three vertices, as many
+current ones as received ones, all within `coordLimit − 3` of both axes.
+(Not claimed for the finalized phase: a node shut down from the active phase
+keeps `prevZero` and `prevReport` as they were. They are never read again.)
+
+**After activation.** If the node is inactive in a reachable state, then
+after `activate` it is active, and for a finite command that comes next the
+velocity is `some (evaluate …)`, also when it is zero, and the report is
+`some r` unless `r = normal`. A stop is never withheld right after an
+activation (N6).
+
+**Saturated points.** With `Config.ok`, in a reachable state, every zone in
+force lies within the coordinate limit, so a saturated point and `Point.far`
+are in no zone and do not change the action.
 
 **Totality.** `step` and `run` are total functions; Lean accepts them without
 `partial` or `unsafe`.
-
-Two more statements are needed to connect these to event sequences and are
-cheap: `(step cfg st (.scan now s)).1.scan = some s` and
-`(step cfg st (.scanUnusable now)).1.scan = none`, each with the other fields
-unchanged, and `(step cfg st (.cmd now v)).1.scan = st.scan`.
 
 ## Shim boundary
 

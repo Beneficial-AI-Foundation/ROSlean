@@ -1,28 +1,39 @@
-import ROSlean.CollisionMonitor.Properties
+import ROSlean.CollisionMonitor.Lifecycle
 
 /-!
 # The collision monitor over event sequences
 
-Lifts the single-step theorems of `ROSlean.CollisionMonitor.Properties` to
-`run`.
+Lifts the single-step theorems of `ROSlean.CollisionMonitor.Properties` and
+`ROSlean.CollisionMonitor.Lifecycle` to `run`. The node starts in
+`State.init cfg`, which is unconfigured: every statement "from start-up" is
+about an arbitrary list of events from that state, lifecycle transitions
+included, in any order (a transition the lifecycle does not allow is a
+no-op).
 
 * `run_getElem?` is the trace invariant: the `n`-th output of any run is the
   single-step output for the `n`-th event in the state reached after the
   first `n` events. Every single-step theorem therefore holds at every point
   of every run.
-* `run_scan` ties the state to the history: the stored scan is the one of
-  the scan event received last if that scan was usable, and none if it was
-  unusable or if there was no scan event (R5, D11). The history may contain
-  all three kinds of event in any order. With it the properties of the SPEC are restated for a
-  command that arrives after an arbitrary sequence of events since start-up,
-  with hypotheses about the events only (`run_stop`, `run_stale`,
-  `run_pass_through`, `run_slowdown_bound`, `run_no_amplification`).
-* `stop_pub_timeout` (R15) is the one place where the node is silent while a
-  stop is demanded. `run_silent_last_published_zero` says what makes that
-  acceptable: whenever a finite command gets no answer, the message
-  published last before it was a zero. `run_zero_streak` and `zero_period`
-  say what `prevZero` and `stopStamp` are during a period of zero and exactly
-  when its zeros are published.
+* `run_phase`, `run_scan` tie the state to the history: the phase is the
+  fold of `nextPhase` over the events, and the stored scan is the one of the
+  scan event received last while the node was inactive or active, unless a
+  cleanup came after it (`lastScan`). `reachable_inv`: every reachable state
+  satisfies the invariants `Inv`.
+* **Inactive** (`run_silent_before_activate`, `run_silent_after_shutdown`,
+  `run_silent_after_deactivate`): no output before the first `activate`,
+  none after a `shutdown`, none between a `deactivate` and the next
+  `activate`.
+* The properties of the SPEC for a command that arrives after an arbitrary
+  history (`run_stop`, `run_stale`, `run_no_transform`, `run_pass_through`,
+  `run_slowdown_bound`, `run_no_amplification`).
+* **No shape** (`run_no_shape`, `run_output_of_no_shape`) and **After
+  activation** (`run_after_activation`).
+* `stop_pub_timeout` (R15) is the one place where an active node withholds a
+  velocity while a stop is demanded. `run_withheld_last_published_zero` says
+  what makes that acceptable: whenever a processed command gets no velocity,
+  the velocity published last before it was a zero. `run_zero_streak` and
+  `zero_period` say what `prevZero` and `stopStamp` are during a period of
+  zero and exactly when its zeros are published.
 
 Nothing is assumed about the clock (A2).
 -/
@@ -80,6 +91,12 @@ theorem run_getElem? (cfg : Config) (st : State) (es : List Event) (n : Nat) :
     | zero => simp [run_cons, run_nil]
     | succ n => simp [run_cons, ih]
 
+/-- The `n`-th output, given the `n`-th event. -/
+theorem run_output (cfg : Config) (st : State) (es : List Event) (n : Nat) (e : Event)
+    (h : es[n]? = some e) :
+    (run cfg st es).2[n]? = some (step cfg (run cfg st (es.take n)).1 e).2 := by
+  rw [run_getElem?, h]; rfl
+
 /-- The state after the first `n + 1` events is one step from the state after
 the first `n`. -/
 theorem run_take_succ (cfg : Config) (st : State) (es : List Event) (n : Nat) (e : Event)
@@ -87,193 +104,362 @@ theorem run_take_succ (cfg : Config) (st : State) (es : List Event) (n : Nat) (e
     (run cfg st (es.take (n + 1))).1 = (step cfg (run cfg st (es.take n)).1 e).1 := by
   rw [List.take_add_one, h, Option.toList_some, run_concat]
 
-/-- The whole run is total and the function of the events it is defined to
-be: nothing but the events enters. Scan events never produce output (R1). -/
-theorem run_scan_output (cfg : Config) (st : State) (es : List Event) (n now : Nat) (s : Scan)
-    (h : es[n]? = some (.scan now s)) : (run cfg st es).2[n]? = some .silent := by
-  rw [run_getElem?, h]
-  rfl
-
-/-- Nor do unusable scans (R1, D11). -/
-theorem run_scanUnusable_output (cfg : Config) (st : State) (es : List Event) (n now : Nat)
-    (h : es[n]? = some (.scanUnusable now)) : (run cfg st es).2[n]? = some .silent := by
-  rw [run_getElem?, h]
-  rfl
-
-/-- **Only commands are answered.** If position `n` of a run has a published
-output, the event there is a command. -/
-theorem run_publish_is_cmd (cfg : Config) (st : State) (es : List Event) (n : Nat) (a : Action)
-    (h : (run cfg st es).2[n]? = some (.publish a)) : ∃ now v, es[n]? = some (.cmd now v) := by
+/-- **Only processed commands are answered.** If position `n` of a run has an
+output other than `silent`, the event there is a finite command and the node
+was active when it arrived. -/
+theorem run_processed (cfg : Config) (st : State) (es : List Event) (n : Nat) (o : Output)
+    (h : (run cfg st es).2[n]? = some o) (ho : o ≠ .silent) :
+    ∃ now v scanTf zoneTfs, es[n]? = some (.cmd now v scanTf zoneTfs) ∧
+      (run cfg st (es.take n)).1.phase = .active ∧ v.finite = true := by
   rw [run_getElem?] at h
   cases he : es[n]? with
   | none => simp [he] at h
   | some e =>
-    cases e with
-    | cmd now v => exact ⟨now, v, rfl⟩
-    | scan now s => simp [he, step_scan] at h
-    | scanUnusable now => simp [he, step_scanUnusable] at h
+    rw [he] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    subst h
+    obtain ⟨now, v, scanTf, zoneTfs, rfl, hp, hf⟩ := (processed_iff _ _ _).mp ho
+    exact ⟨now, v, scanTf, zoneTfs, rfl, hp, hf⟩
 
-/-! ## The stored scan is the one received last (R5) -/
+/-! ## The phase, the invariants, the stored scan -/
 
-/-- The scan in force after the sequence: the scan of its last scan event if
-that scan was usable, none if it was unusable (D11), and `d` if the sequence
-has no scan event of either kind. The last *received*, whatever the stamps
-say. -/
-def lastScan : List Event → Option Scan → Option Scan
-  | [], d => d
-  | .scan _ s :: es, _ => lastScan es (some s)
-  | .scanUnusable _ :: es, _ => lastScan es none
-  | .cmd _ _ :: es, d => lastScan es d
+/-- The phase after a sequence of events. -/
+def phaseAfter (p : Phase) (es : List Event) : Phase := es.foldl nextPhase p
 
-/-- After any run, over any events, the stored scan is the one in force:
-that of the scan event received last if it was usable, none if it was
-unusable. Commands, finite or not, do not touch it. -/
-theorem run_scan (cfg : Config) (st : State) (es : List Event) :
-    (run cfg st es).1.scan = lastScan es st.scan := by
+theorem phaseAfter_cons (p : Phase) (e : Event) (es : List Event) :
+    phaseAfter p (e :: es) = phaseAfter (nextPhase p e) es := rfl
+
+/-- The phase after a run is a function of the phase before it and the
+lifecycle events in it. -/
+theorem run_phase (cfg : Config) (st : State) (es : List Event) :
+    (run cfg st es).1.phase = phaseAfter st.phase es := by
   induction es generalizing st with
   | nil => rfl
+  | cons e es ih => rw [run_cons, ih, step_phase, phaseAfter_cons]
+
+/-- The invariants hold after any run from a state in which they hold. -/
+theorem run_inv (cfg : Config) (st : State) (es : List Event) (h : Inv cfg st) :
+    Inv cfg (run cfg st es).1 := by
+  induction es generalizing st with
+  | nil => exact h
+  | cons e es ih => rw [run_cons]; exact ih _ (inv_step cfg st e h)
+
+/-- **Lifecycle invariants.** Every state reachable from start-up satisfies
+`Inv`. -/
+theorem reachable_inv (cfg : Config) (es : List Event) : Inv cfg (run cfg (State.init cfg) es).1 :=
+  run_inv cfg _ es (inv_init cfg)
+
+/-- Once finalized, always finalized. -/
+theorem phaseAfter_finalized (es : List Event) : phaseAfter .finalized es = .finalized := by
+  induction es with
+  | nil => rfl
   | cons e es ih =>
-    rw [run_cons, ih]
-    cases e with
-    | scan now s => rfl
-    | scanUnusable now => rfl
-    | cmd now v => rw [step_cmd_scan]; rfl
+    rw [phaseAfter_cons]
+    have : nextPhase .finalized e = .finalized := by cases e <;> simp [nextPhase]
+    rw [this, ih]
 
-/-- After an unusable scan no scan is in force, whatever came before. -/
-theorem lastScan_append_scanUnusable (es : List Event) (now : Nat) (d : Option Scan) :
-    lastScan (es ++ [.scanUnusable now]) d = none := by
-  induction es generalizing d with
+/-- Without an `activate`, a node that is not active does not become
+active. -/
+theorem phaseAfter_ne_active (p : Phase) (es : List Event) (hp : p ≠ .active)
+    (h : ∀ e ∈ es, e ≠ .activate) : phaseAfter p es ≠ .active := by
+  induction es generalizing p with
+  | nil => exact hp
+  | cons e es ih =>
+    rw [phaseAfter_cons]
+    apply ih
+    · have he := h e List.mem_cons_self
+      cases e <;> simp only [nextPhase] <;> first | exact hp | (split <;> simp_all) | simp_all
+    · exact fun e' he' => h e' (List.mem_cons_of_mem _ he')
+
+/-- The scan in force after one event: a scan event replaces it while the
+node is inactive or active (N4), a cleanup in the inactive phase discards it
+(N7), nothing else touches it. -/
+def scanAfter (p : Phase) (d : Option Scan) : Event → Option Scan
+  | .scan _ s => if p = .inactive ∨ p = .active then some s else d
+  | .cleanup => if p = .inactive then none else d
+  | _ => d
+
+/-- The scan in force after the sequence, from phase `p` and scan `d`: that
+of the scan event received last while the node was inactive or active,
+unless a cleanup followed it. The last *received*, whatever the stamps
+say. -/
+def lastScan : List Event → Phase → Option Scan → Option Scan
+  | [], _, d => d
+  | e :: es, p, d => lastScan es (nextPhase p e) (scanAfter p d e)
+
+theorem step_scan_field (cfg : Config) (st : State) (e : Event) :
+    (step cfg st e).1.scan = scanAfter st.phase st.scan e := by
+  cases e with
+  | cmd now v scanTf zoneTfs => exact (step_cmd_scan cfg st now v scanTf zoneTfs).1
+  | shape k verts place =>
+    simp only [step, scanAfter]
+    split <;> rfl
+  | scan now s =>
+    simp only [step, scanAfter]
+    split <;> rfl
+  | cleanup =>
+    simp only [step, scanAfter]
+    split <;> rfl
+  | shutdown => rfl
+  | _ =>
+    simp only [step, scanAfter]
+    split <;> rfl
+
+/-- After any run, over any events, the stored scan is the one in force.
+Commands and shape messages do not touch it. -/
+theorem run_scan (cfg : Config) (st : State) (es : List Event) :
+    (run cfg st es).1.scan = lastScan es st.phase st.scan := by
+  induction es generalizing st with
   | nil => rfl
-  | cons e es ih => cases e <;> simp [lastScan, ih]
+  | cons e es ih => rw [run_cons, ih, step_phase, step_scan_field]; rfl
 
-/-- Events that follow the last scan event, usable or not, are commands: the
-scan in force is decided by the part of the history up to that event. -/
-theorem lastScan_append_cmds (es cmds : List Event) (d : Option Scan)
-    (h : ∀ e ∈ cmds, ∃ now v, e = .cmd now v) : lastScan (es ++ cmds) d = lastScan es d := by
-  induction es generalizing d with
-  | nil =>
-    induction cmds with
-    | nil => rfl
-    | cons c cs ih =>
-      obtain ⟨now, v, rfl⟩ := h _ List.mem_cons_self
-      simpa [lastScan] using ih (fun e he => h e (List.mem_cons_of_mem _ he))
-  | cons e es ih => cases e <;> simp [lastScan, ih]
-
-theorem lastScan_append_scan (es : List Event) (now : Nat) (s : Scan) (d : Option Scan) :
-    lastScan (es ++ [.scan now s]) d = some s := by
-  induction es generalizing d with
+theorem lastScan_append (es es' : List Event) (p : Phase) (d : Option Scan) :
+    lastScan (es ++ es') p d = lastScan es' (phaseAfter p es) (lastScan es p d) := by
+  induction es generalizing p d with
   | nil => rfl
-  | cons e es ih => cases e <;> simp [lastScan, ih]
+  | cons e es ih => simp only [List.cons_append, lastScan, ih, phaseAfter_cons]
 
-theorem lastScan_append_cmd (es : List Event) (now : Nat) (v : Twist) (d : Option Scan) :
-    lastScan (es ++ [.cmd now v]) d = lastScan es d := by
-  induction es generalizing d with
-  | nil => rfl
-  | cons e es ih => cases e <;> simp [lastScan, ih]
+/-- A scan that arrives while the node is inactive or active is the one in
+force afterwards, whatever came before. -/
+theorem lastScan_append_scan (es : List Event) (now : Nat) (s : Scan) (p : Phase)
+    (d : Option Scan) (h : phaseAfter p es = .inactive ∨ phaseAfter p es = .active) :
+    lastScan (es ++ [.scan now s]) p d = some s := by
+  rw [lastScan_append]
+  simp [lastScan, scanAfter, h]
 
-/-- The action demanded after any events since start-up depends on the
-history only through the scan received last. -/
-theorem run_evaluate (cfg : Config) (es : List Event) (now : Nat) :
-    evaluate cfg (run cfg State.init es).1 now =
-      evaluate cfg { State.init with scan := lastScan es none } now :=
-  evaluate_congr _ _ _ _ (run_scan cfg State.init es)
+/-- Commands and shape messages do not change the scan in force. -/
+theorem lastScan_append_cmd (es : List Event) (now : Nat) (v : Twist) (scanTf : Option Xform)
+    (zoneTfs : List (Option Xform)) (p : Phase) (d : Option Scan) :
+    lastScan (es ++ [.cmd now v scanTf zoneTfs]) p d = lastScan es p d := by
+  rw [lastScan_append]
+  rfl
 
 /-- The points tested after any events since start-up, from the history
-alone (R5 to R8): `pts` iff the source is disabled and `pts = []`; or the
-timeout is 0, no scan has arrived and `pts = []`; or the scan received last
-is not too old at `now` and `pts` are its valid points. -/
+alone (R5 to R8, N27). -/
 theorem run_sourcePoints_eq_some_iff (cfg : Config) (es : List Event) (now : Nat)
-    (pts : List Point) :
-    sourcePoints cfg (run cfg State.init es).1 now = some pts ↔
+    (scanTf : Option Xform) (pts : List Point) :
+    sourcePoints cfg (run cfg (State.init cfg) es).1 now scanTf = some pts ↔
       (cfg.sourceEnabled = false ∧ pts = []) ∨
-      (cfg.sourceEnabled = true ∧ lastScan es none = none ∧ cfg.sourceTimeout = 0 ∧ pts = []) ∨
-      (cfg.sourceEnabled = true ∧ ∃ s, lastScan es none = some s ∧
-        ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) ∧ pts = s.points) := by
+      (cfg.sourceEnabled = true ∧ lastScan es .unconfigured none = none ∧
+        cfg.sourceTimeout = 0 ∧ pts = []) ∨
+      (cfg.sourceEnabled = true ∧ ∃ s, lastScan es .unconfigured none = some s ∧
+        ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) ∧
+        ((∃ t, scanTf = some t ∧ t.usable = true ∧ pts = s.points t) ∨
+          (NoTransform scanTf ∧ cfg.sourceTimeout = 0 ∧ pts = []))) := by
   rw [sourcePoints_eq_some_iff, run_scan]
   rfl
 
+/-! ## Inactive: when nothing is published -/
+
+/-- **Inactive, over a run.** From a state that is not active, over events
+without an `activate`, every output is `silent` and the node stays not
+active. -/
+theorem run_silent_of_no_activate (cfg : Config) (st : State) (es : List Event)
+    (hp : st.phase ≠ .active) (h : ∀ e ∈ es, e ≠ .activate) :
+    (run cfg st es).1.phase ≠ .active ∧ ∀ o ∈ (run cfg st es).2, o = .silent := by
+  refine ⟨by rw [run_phase]; exact phaseAfter_ne_active _ _ hp h, ?_⟩
+  intro o ho
+  obtain ⟨n, hn⟩ := List.mem_iff_getElem?.mp ho
+  by_contra hne
+  obtain ⟨now, v, scanTf, zoneTfs, he, hact, -⟩ := run_processed cfg st es n o hn hne
+  rw [run_phase] at hact
+  exact phaseAfter_ne_active _ _ hp
+    (fun e' he' => h e' (List.mem_of_mem_take he')) hact
+
+/-- **No output before the first `activate`.** In any run from start-up, if
+no event before position `n` is an `activate`, the output at position `n` is
+`silent`. -/
+theorem run_silent_before_activate (cfg : Config) (es : List Event) (n : Nat) (e : Event)
+    (he : es[n]? = some e) (hno : ∀ m, m < n → es[m]? ≠ some .activate) :
+    (run cfg (State.init cfg) es).2[n]? = some .silent := by
+  rw [run_output _ _ _ _ _ he]
+  congr 1
+  apply output_of_not_active
+  rw [run_phase]
+  apply phaseAfter_ne_active
+  · simp [State.init]
+  · intro e' he' hc
+    obtain ⟨m, hm⟩ := List.mem_iff_getElem?.mp he'
+    rw [List.getElem?_take] at hm
+    split at hm
+    · rename_i hlt
+      exact hno m hlt (by rw [hm, hc])
+    · cases hm
+
+/-- The phase after the first `n` events, if one of them is a `shutdown`. -/
+theorem phaseAfter_take_of_shutdown (p : Phase) (es : List Event) (m n : Nat) (hmn : m < n)
+    (h : es[m]? = some .shutdown) : phaseAfter p (es.take n) = .finalized := by
+  induction es generalizing p m n with
+  | nil => simp at h
+  | cons e es ih =>
+    cases n with
+    | zero => omega
+    | succ n =>
+      rw [List.take_succ_cons, phaseAfter_cons]
+      cases m with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+        subst h
+        exact phaseAfter_finalized _
+      | succ m => exact ih _ m n (by omega) (by simpa using h)
+
+/-- **No output after a `shutdown`.** In any run, from any state, every
+output after a `shutdown` event is `silent`, whatever follows it (ND4). -/
+theorem run_silent_after_shutdown (cfg : Config) (st : State) (es : List Event) (m n : Nat)
+    (e : Event) (hmn : m < n) (hm : es[m]? = some .shutdown) (he : es[n]? = some e) :
+    (run cfg st es).2[n]? = some .silent := by
+  rw [run_output _ _ _ _ _ he]
+  congr 1
+  apply output_of_not_active
+  rw [run_phase, phaseAfter_take_of_shutdown _ es m n hmn hm]
+  simp
+
+/-- The phase after the first `n` events, if one of them is a `deactivate`
+and no `activate` follows it. -/
+theorem phaseAfter_take_of_deactivate (p : Phase) (es : List Event) (m n : Nat) (hmn : m < n)
+    (h : es[m]? = some .deactivate) (hno : ∀ j, m < j → j < n → es[j]? ≠ some .activate) :
+    phaseAfter p (es.take n) ≠ .active := by
+  induction es generalizing p m n with
+  | nil => simp at h
+  | cons e es ih =>
+    cases n with
+    | zero => omega
+    | succ n =>
+      rw [List.take_succ_cons, phaseAfter_cons]
+      cases m with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+        subst h
+        apply phaseAfter_ne_active
+        · simp only [nextPhase]; split <;> simp_all
+        · intro e' he' hc
+          obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp he'
+          rw [List.getElem?_take] at hj
+          split at hj
+          · rename_i hlt
+            exact hno (j + 1) (by omega) (by omega) (by simpa [hc] using hj)
+          · cases hj
+      | succ m =>
+        exact ih _ m n (by omega) (by simpa using h)
+          (fun j hj1 hj2 => by simpa using hno (j + 1) (by omega) (by omega))
+
+/-- **No output between a `deactivate` and the next `activate`.** In any run,
+from any state, if position `m` is a `deactivate` and no `activate` lies
+strictly between `m` and `n`, the output at position `n` is `silent`. -/
+theorem run_silent_after_deactivate (cfg : Config) (st : State) (es : List Event) (m n : Nat)
+    (e : Event) (hmn : m < n) (hm : es[m]? = some .deactivate) (he : es[n]? = some e)
+    (hno : ∀ j, m < j → j < n → es[j]? ≠ some .activate) :
+    (run cfg st es).2[n]? = some .silent := by
+  rw [run_output _ _ _ _ _ he]
+  congr 1
+  apply output_of_not_active
+  rw [run_phase]
+  exact phaseAfter_take_of_deactivate _ es m n hmn hm hno
+
 /-! ## The properties of the SPEC, after any events since start-up
 
-In each statement `es` is an arbitrary sequence of events of all three kinds
-(scans, unusable scans, commands), and the command `(now, v)` arrives next.
-`lastScan es none` is the scan in force: `some s` means that the scan event
-received last was usable and carried `s`; `none` means that it was unusable,
-or that no scan has arrived. By `run_concat` its output is the last element of
-`(run cfg State.init (es ++ [.cmd now v])).2`. -/
+In each statement `es` is an arbitrary sequence of events of all kinds, and
+the command `(now, v, scanTf, zoneTfs)` arrives next. `phaseAfter
+.unconfigured es` is the phase reached, `lastScan es .unconfigured none` the
+scan in force. By `run_concat` the command's output is the last element of
+`(run cfg (State.init cfg) (es ++ [.cmd now v scanTf zoneTfs])).2`.
 
-/-- **Stop, over a run.** After any events since start-up: if the source is
-enabled, the scan received last is not too old and has at least `min_points`
-valid points in an enabled stop zone, then the output of the next command is
-`publish (stopZone k)` for the first such zone, unless the command is not
-finite or zero has already been demanded for more than `stop_pub_timeout`
-(see `run_silent_last_published_zero` for what was published then). -/
-theorem run_stop (cfg : Config) (es : List Event) (now : Nat) (v : Twist) (s : Scan) (z : Zone)
-    (he : cfg.sourceEnabled = true) (hlast : lastScan es none = some s)
+A zone named in a hypothesis is a zone with a fixed shape: such a zone is in
+force in every state (`liveConfig_of_fixed`). For topic zones the
+single-step theorems apply at every point of a run, with the shape the state
+holds. -/
+
+/-- A zone with a fixed shape stands in the zones in force as it is
+configured, in every state. -/
+theorem liveConfig_of_fixed (cfg : Config) (st : State) (zoneTfs : List (Option Xform)) (k : Nat)
+    (z : Zone) (s : Shape) (hz : cfg.zones[k]? = some z) (hs : z.shape = .fixed s) :
+    (liveConfig cfg st zoneTfs).zones[k]? = some z := by
+  unfold liveConfig
+  rw [withShapes_getElem?, hz]
+  simp [withShape_of_fixed z _ s hs]
+
+/-- **Stop, over a run.** After any events since start-up that leave the node
+active: if the source is enabled, the scan in force is not too old, the
+command carries a usable transform `t` for it, and at least `min_points` of
+the scan's points under `t` are in an enabled stop zone with a fixed shape,
+then the velocity published for a finite command is `stopZone k` for the
+first triggered stop zone, unless zero has already been demanded for more
+than `stop_pub_timeout` (see `run_withheld_last_published_zero` for what was
+published then). -/
+theorem run_stop (cfg : Config) (es : List Event) (now : Nat) (v : Twist) (t : Xform)
+    (zoneTfs : List (Option Xform)) (s : Scan) (j : Nat) (z : Zone) (sh : Shape)
+    (hact : phaseAfter .unconfigured es = .active) (hf : v.finite = true)
+    (he : cfg.sourceEnabled = true) (hlast : lastScan es .unconfigured none = some s)
     (hfresh : ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now))
-    (hz : z ∈ cfg.zones) (hs : z.action = .stop) (ht : z.triggered s.points = true) :
-    ∃ k, IsFirstStop cfg.zones s.points k ∧
-      (step cfg (run cfg State.init es).1 (.cmd now v)).2 =
-        if v.finite = true ∧ ¬ ((run cfg State.init es).1.prevZero = true ∧
-          (run cfg State.init es).1.stopStamp + cfg.stopPubTimeout < now)
-        then .publish (.stopZone k) else .silent := by
-  have hpts : sourcePoints cfg (run cfg State.init es).1 now = some s.points :=
-    (run_sourcePoints_eq_some_iff cfg es now _).mpr (Or.inr (Or.inr ⟨he, s, hlast, hfresh, rfl⟩))
-  obtain ⟨k, hk, -, hout⟩ := stop cfg _ now v s.points z hpts hz hs ht
+    (hu : t.usable = true) (hz : cfg.zones[j]? = some z) (hfix : z.shape = .fixed sh)
+    (hs : z.action = .stop) (ht : z.triggered (s.points t) = true) :
+    ∃ k, IsFirstStop (liveConfig cfg (run cfg (State.init cfg) es).1 zoneTfs).zones
+        (s.points t) k ∧
+      (step cfg (run cfg (State.init cfg) es).1 (.cmd now v (some t) zoneTfs)).2.velocity =
+        if (run cfg (State.init cfg) es).1.prevZero = true ∧
+          (run cfg (State.init cfg) es).1.stopStamp + cfg.stopPubTimeout < now
+        then none else some (.stopZone k) := by
+  have hpts : sourcePoints cfg (run cfg (State.init cfg) es).1 now (some t) = some (s.points t) :=
+    (run_sourcePoints_eq_some_iff cfg es now _ _).mpr
+      (Or.inr (Or.inr ⟨he, s, hlast, hfresh, Or.inl ⟨t, rfl, hu, rfl⟩⟩))
+  have hp : (run cfg (State.init cfg) es).1.phase = .active := by rw [run_phase]; exact hact
+  obtain ⟨k, hk, -, hout⟩ := stop cfg _ now v (some t) zoneTfs (s.points t) z hp hf hpts
+    (List.mem_of_getElem? (liveConfig_of_fixed cfg _ zoneTfs j z sh hz hfix)) hs ht
   exact ⟨k, hk, hout⟩
 
-/-- **Stale data, over a run.** After any events since start-up: if the
-source is enabled with a non-zero timeout, and no scan is in force (none has
-arrived, or the one received last was unusable, D11) or the stamp of the
-scan received last is more than the timeout before `now`, the
-output of the next command is `publish stopSource`, unless the command is
-not finite or zero has already been demanded for more than
+/-- **Stale data, over a run.** After any events since start-up that leave
+the node active: if the source is enabled with a non-zero timeout, and no
+scan is in force (none has arrived since the last cleanup) or the stamp of
+the scan in force is more than the timeout before `now`, the velocity
+published for a finite command is `stopSource`, whatever transform the
+command carries, unless zero has already been demanded for more than
 `stop_pub_timeout`. -/
 theorem run_stale (cfg : Config) (es : List Event) (now : Nat) (v : Twist)
+    (scanTf : Option Xform) (zoneTfs : List (Option Xform))
+    (hact : phaseAfter .unconfigured es = .active) (hf : v.finite = true)
     (he : cfg.sourceEnabled = true) (ht : 0 < cfg.sourceTimeout)
-    (hs : lastScan es none = none ∨
-      ∃ s, lastScan es none = some s ∧ s.stamp + cfg.sourceTimeout < now) :
-    (step cfg (run cfg State.init es).1 (.cmd now v)).2 =
-      if v.finite = true ∧ ¬ ((run cfg State.init es).1.prevZero = true ∧
-        (run cfg State.init es).1.stopStamp + cfg.stopPubTimeout < now)
-      then .publish .stopSource else .silent := by
-  refine (stale cfg _ now v he ht ?_).2
+    (hs : lastScan es .unconfigured none = none ∨
+      ∃ s, lastScan es .unconfigured none = some s ∧ s.stamp + cfg.sourceTimeout < now) :
+    (step cfg (run cfg (State.init cfg) es).1 (.cmd now v scanTf zoneTfs)).2.velocity =
+      if (run cfg (State.init cfg) es).1.prevZero = true ∧
+        (run cfg (State.init cfg) es).1.stopStamp + cfg.stopPubTimeout < now
+      then none else some .stopSource := by
+  refine (stale cfg _ now v scanTf zoneTfs (by rw [run_phase]; exact hact) hf he ht ?_).2
   rw [run_scan]
   exact hs
 
-/-- **Unusable scan, over a run (D11).** After any events since start-up, an
-unusable scan, and then any commands: if the source is enabled with a
-non-zero timeout, the output of the next command is `publish stopSource`,
-unless the command is not finite or zero has already been demanded for more
-than `stop_pub_timeout`. This lasts until the next usable scan, and what
-preceded the unusable scan does not matter. -/
-theorem run_scanUnusable_stop (cfg : Config) (es cmds : List Event) (t now : Nat) (v : Twist)
-    (he : cfg.sourceEnabled = true) (ht : 0 < cfg.sourceTimeout)
-    (hc : ∀ e ∈ cmds, ∃ now v, e = .cmd now v) :
-    (step cfg (run cfg State.init (es ++ .scanUnusable t :: cmds)).1 (.cmd now v)).2 =
-      if v.finite = true ∧
-        ¬ ((run cfg State.init (es ++ .scanUnusable t :: cmds)).1.prevZero = true ∧
-          (run cfg State.init (es ++ .scanUnusable t :: cmds)).1.stopStamp +
-            cfg.stopPubTimeout < now)
-      then .publish .stopSource else .silent := by
-  refine run_stale cfg _ now v he ht (.inl ?_)
-  have : es ++ .scanUnusable t :: cmds = (es ++ [.scanUnusable t]) ++ cmds := by simp
-  rw [this, lastScan_append_cmds _ _ _ hc, lastScan_append_scanUnusable]
+/-- **No transform, over a run.** After any events since start-up that leave
+the node active: if the source is enabled with a non-zero timeout and the
+command carries no usable transform for the scan, the velocity published
+for a finite command is `stopSource`, whatever scan is in force, unless zero
+has already been demanded for more than `stop_pub_timeout`. This repeats at
+every command until one carries a transform (N22). -/
+theorem run_no_transform (cfg : Config) (es : List Event) (now : Nat) (v : Twist)
+    (scanTf : Option Xform) (zoneTfs : List (Option Xform))
+    (hact : phaseAfter .unconfigured es = .active) (hf : v.finite = true)
+    (he : cfg.sourceEnabled = true) (ht : 0 < cfg.sourceTimeout) (hn : NoTransform scanTf) :
+    (step cfg (run cfg (State.init cfg) es).1 (.cmd now v scanTf zoneTfs)).2.velocity =
+      if (run cfg (State.init cfg) es).1.prevZero = true ∧
+        (run cfg (State.init cfg) es).1.stopStamp + cfg.stopPubTimeout < now
+      then none else some .stopSource :=
+  (no_transform cfg _ now v scanTf zoneTfs (by rw [run_phase]; exact hact) hf he ht hn).2
 
 /-- **Bad data (b), over a run.** A command with an infinite or NaN
 component leaves no trace: the run with it is the run without it, with one
 `silent` more. -/
 theorem run_cmd_of_not_finite (cfg : Config) (st : State) (es es' : List Event) (now : Nat)
-    (v : Twist) (h : v.finite = false) :
-    run cfg st (es ++ .cmd now v :: es') =
+    (v : Twist) (scanTf : Option Xform) (zoneTfs : List (Option Xform)) (h : v.finite = false) :
+    run cfg st (es ++ .cmd now v scanTf zoneTfs :: es') =
       ((run cfg st (es ++ es')).1,
         (run cfg st es).2 ++ .silent :: (run cfg (run cfg st es).1 es').2) := by
-  rw [run_append, run_cons, step_cmd_of_not_finite _ _ _ _ h, run_append]
+  rw [run_append, run_cons, step_cmd_of_not_finite _ _ _ _ _ _ h, run_append]
 
-/-- **No amplification, over a run.** Every action published anywhere in any
-run, from any state, is `pass`, a stop, or a slowdown whose ratio pattern is
-below `F64.one` and is the configured ratio of the zone it names. -/
-theorem run_no_amplification (cfg : Config) (st : State) (es : List Event) (a : Action)
-    (h : .publish a ∈ (run cfg st es).2) :
+/-- **No amplification, over a run.** Every velocity action published
+anywhere in any run, from any state, is `pass`, a stop, or a slowdown whose
+ratio pattern is below `F64.one` and is the configured ratio of the zone it
+names. -/
+theorem run_no_amplification (cfg : Config) (st : State) (es : List Event) (o : Output)
+    (a : Action) (h : o ∈ (run cfg st es).2) (ha : o.velocity = some a) :
     a = .pass ∨ (∃ k, a = .stopZone k) ∨ a = .stopSource ∨
       ∃ k r, a = .slowdown k r ∧ r < F64.one ∧
         ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r := by
@@ -284,151 +470,305 @@ theorem run_no_amplification (cfg : Config) (st : State) (es : List Event) (a : 
   | some e =>
     rw [he] at hn
     simp only [Option.map_some, Option.some.injEq] at hn
-    cases e with
-    | scan now s => simp [step_scan] at hn
-    | scanUnusable now => simp [step_scanUnusable] at hn
-    | cmd now v => exact no_amplification cfg _ now v a hn
+    subst hn
+    exact no_amplification cfg _ e a ha
 
 /-- **Slowdown bound, over a run.** After any events since start-up: if the
-source is enabled, the scan received last is not too old, and its valid
-points trigger a slowdown zone with ratio pattern `rz` below that of 1.0,
-then the action demanded for the next command is a stop by a zone or a
-slowdown with ratio pattern at most `rz`. -/
-theorem run_slowdown_bound (cfg : Config) (es : List Event) (now : Nat) (s : Scan) (z : Zone)
-    (rz : Nat) (he : cfg.sourceEnabled = true) (hlast : lastScan es none = some s)
+source is enabled, the scan in force is not too old, the command carries a
+usable transform `t`, and the scan's points under `t` trigger a slowdown
+zone with a fixed shape and ratio pattern `rz` below that of 1.0, then the
+action demanded for the next command is a stop by a zone or a slowdown with
+ratio pattern at most `rz`. -/
+theorem run_slowdown_bound (cfg : Config) (es : List Event) (now : Nat) (t : Xform)
+    (zoneTfs : List (Option Xform)) (s : Scan) (j : Nat) (z : Zone) (sh : Shape) (rz : Nat)
+    (he : cfg.sourceEnabled = true) (hlast : lastScan es .unconfigured none = some s)
     (hfresh : ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now))
-    (hz : z ∈ cfg.zones) (ha : z.action = .slowdown rz) (ht : z.triggered s.points = true)
-    (hlt : rz < F64.one) :
-    (∃ k, evaluate cfg (run cfg State.init es).1 now = .stopZone k) ∨
-      ∃ k r, evaluate cfg (run cfg State.init es).1 now = .slowdown k r ∧ r ≤ rz ∧
-        IsBestSlowdown cfg.zones s.points k r :=
-  slowdown_bound cfg _ now s.points z rz
-    ((run_sourcePoints_eq_some_iff cfg es now _).mpr (Or.inr (Or.inr ⟨he, s, hlast, hfresh, rfl⟩)))
-    hz ha ht hlt
+    (hu : t.usable = true) (hz : cfg.zones[j]? = some z) (hfix : z.shape = .fixed sh)
+    (ha : z.action = .slowdown rz) (ht : z.triggered (s.points t) = true) (hlt : rz < F64.one) :
+    (∃ k, evaluate cfg (run cfg (State.init cfg) es).1 now (some t) zoneTfs = .stopZone k) ∨
+      ∃ k r, evaluate cfg (run cfg (State.init cfg) es).1 now (some t) zoneTfs = .slowdown k r ∧
+        r ≤ rz ∧
+        IsBestSlowdown (liveConfig cfg (run cfg (State.init cfg) es).1 zoneTfs).zones
+          (s.points t) k r :=
+  slowdown_bound cfg _ now (some t) zoneTfs (s.points t) z rz
+    ((run_sourcePoints_eq_some_iff cfg es now _ _).mpr
+      (Or.inr (Or.inr ⟨he, s, hlast, hfresh, Or.inl ⟨t, rfl, hu, rfl⟩⟩)))
+    (List.mem_of_getElem? (liveConfig_of_fixed cfg _ zoneTfs j z sh hz hfix)) ha ht hlt
 
-/-- **Pass-through, over a run.** After any events since start-up: if the
-scan received last is not too old and its valid points trigger no zone, a
-finite command that is not zero in the published components is published
-unchanged. -/
-theorem run_pass_through (cfg : Config) (es : List Event) (now : Nat) (v : Twist) (s : Scan)
+/-- **Pass-through, over a run.** After any events since start-up that leave
+the node active: if the scan in force is not too old, the command carries a
+usable transform `t`, and the scan's points under `t` trigger none of the
+zones in force, a finite command that is not zero in the published
+components is published unchanged. -/
+theorem run_pass_through (cfg : Config) (es : List Event) (now : Nat) (v : Twist) (t : Xform)
+    (zoneTfs : List (Option Xform)) (s : Scan)
+    (hact : phaseAfter .unconfigured es = .active)
     (hf : v.finite = true) (hnz : v.planarZero = false)
-    (he : cfg.sourceEnabled = true) (hlast : lastScan es none = some s)
+    (he : cfg.sourceEnabled = true) (hlast : lastScan es .unconfigured none = some s)
     (hfresh : ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now))
-    (hno : ∀ z ∈ cfg.zones, z.triggered s.points = false) :
-    (step cfg (run cfg State.init es).1 (.cmd now v)).2 = .publish .pass :=
-  pass_through_of_nonzero cfg _ now v s.points hf hnz
-    ((run_sourcePoints_eq_some_iff cfg es now _).mpr (Or.inr (Or.inr ⟨he, s, hlast, hfresh, rfl⟩)))
+    (hu : t.usable = true)
+    (hno : ∀ z ∈ (liveConfig cfg (run cfg (State.init cfg) es).1 zoneTfs).zones,
+      z.triggered (s.points t) = false) :
+    (step cfg (run cfg (State.init cfg) es).1 (.cmd now v (some t) zoneTfs)).2.velocity =
+      some .pass :=
+  pass_through_of_nonzero cfg _ now v (some t) zoneTfs (s.points t)
+    (by rw [run_phase]; exact hact) hf hnz
+    ((run_sourcePoints_eq_some_iff cfg es now _ _).mpr
+      (Or.inr (Or.inr ⟨he, s, hlast, hfresh, Or.inl ⟨t, rfl, hu, rfl⟩⟩)))
     hno
+
+/-! ## No shape, over a run (N32) -/
+
+/-- An event other than a shape message for zone `k` does not give zone `k`
+a shape. -/
+theorem step_no_shape (cfg : Config) (st : State) (e : Event) (k : Nat)
+    (hn : st.shapes.getD k none = none) (he : ∀ verts place, e ≠ .shape k verts place) :
+    (step cfg st e).1.shapes.getD k none = none := by
+  cases e with
+  | cmd now v scanTf zoneTfs =>
+    by_cases hp : st.phase = .active
+    · cases hf : v.finite
+      · rw [step_cmd_of_not_finite _ _ _ _ _ _ hf]; exact hn
+      · rw [step_cmd_shapes _ _ _ _ _ _ hp hf]
+        unfold shapesAfter
+        split
+        · exact hn
+        · exact (refreshShapes_getD_eq_none_iff cfg st.shapes zoneTfs k).mpr hn
+    · rw [step_cmd_of_not_active _ _ _ _ _ _ hp]; exact hn
+  | shape j verts place =>
+    rw [step_shape]
+    split
+    · have hjk : j ≠ k := by
+        rintro rfl
+        exact he verts place rfl
+      simp only [List.getD_eq_getElem?_getD] at hn ⊢
+      rw [List.getElem?_set_ne hjk]
+      exact hn
+    · exact hn
+  | cleanup =>
+    rw [step_cleanup]
+    split
+    · simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
+      cases st.shapes[k]? <;> rfl
+    · exact hn
+  | configure => rw [step_configure]; split <;> exact hn
+  | activate => rw [step_activate]; split <;> exact hn
+  | deactivate => rw [step_deactivate]; split <;> exact hn
+  | shutdown => exact hn
+  | scan now s => rw [step_scan]; split <;> exact hn
+
+/-- **No shape, over a run.** From a state that holds no shape for zone `k`,
+over events none of which is a shape message for zone `k`, the state still
+holds none. (An accepted shape message for zone `k` is the only way to give
+it one; a cleanup is the only way to take it away.) -/
+theorem run_no_shape (cfg : Config) (st : State) (es : List Event) (k : Nat)
+    (hn : st.shapes.getD k none = none)
+    (he : ∀ e ∈ es, ∀ verts place, e ≠ .shape k verts place) :
+    (run cfg st es).1.shapes.getD k none = none := by
+  induction es generalizing st with
+  | nil => exact hn
+  | cons e es ih =>
+    rw [run_cons]
+    exact ih _ (step_no_shape cfg st e k hn (he e List.mem_cons_self))
+      (fun e' he' => he e' (List.mem_cons_of_mem _ he'))
+
+/-- A reachable unconfigured state holds no shape: at start-up, and after
+every cleanup that took effect. -/
+theorem no_shape_of_unconfigured (cfg : Config) (st : State) (k : Nat) (hinv : Inv cfg st)
+    (hp : st.phase = .unconfigured) : st.shapes.getD k none = none := by
+  rw [List.getD_eq_getElem?_getD]
+  cases h : st.shapes[k]? with
+  | none => rfl
+  | some o =>
+    have := (hinv.empty hp).2 o (List.mem_of_getElem? h)
+    simp [this]
+
+/-- **No shape: no output names the zone, over a run.** Let `pre` be any
+events since start-up after which the node is unconfigured (none at all, or
+a history that ends with a cleanup that took effect), and `mid` any events
+that follow, none of them a shape message for the topic zone `k`. Then the
+output for the next event names zone `k` neither as a velocity action nor in
+a report.
+
+So before the first accepted shape message for zone `k` after the last
+cleanup, zone `k` never acts. This is upstream's behaviour (N32) and it is
+**not** fail-safe: a stop zone without shape does not stop. -/
+theorem run_output_of_no_shape (cfg : Config) (pre mid : List Event) (e : Event) (k : Nat)
+    (z0 : Zone) (h0 : cfg.zones[k]? = some z0) (ht : z0.shape = .topic)
+    (hpre : phaseAfter .unconfigured pre = .unconfigured)
+    (hmid : ∀ e' ∈ mid, ∀ verts place, e' ≠ .shape k verts place) :
+    let o := (step cfg (run cfg (State.init cfg) (pre ++ mid)).1 e).2
+    o.velocity ≠ some (.stopZone k) ∧ (∀ r, o.velocity ≠ some (.slowdown k r)) ∧
+      o.report ≠ some (.stop k) ∧ o.report ≠ some (.slowdown k) := by
+  intro o
+  apply output_of_no_shape cfg _ e k z0 h0 ht
+  rw [run_append]
+  apply run_no_shape _ _ _ _ _ hmid
+  exact no_shape_of_unconfigured cfg _ k (reachable_inv cfg pre) (by rw [run_phase]; exact hpre)
+
+/-! ## After activation, over a run (N6) -/
+
+/-- **After activation, over a run.** After any events since start-up that
+leave the node inactive, an `activate` makes it active, and a finite command
+that comes next is answered with a velocity, also when that velocity is
+zero and `stop_pub_timeout` had run out before the node was deactivated: a
+stop is never withheld right after an activation. Its report is published
+unless it is `normal`. -/
+theorem run_after_activation (cfg : Config) (es : List Event) (now : Nat) (v : Twist)
+    (scanTf : Option Xform) (zoneTfs : List (Option Xform))
+    (hin : phaseAfter .unconfigured es = .inactive) (hf : v.finite = true) :
+    let st := (run cfg (State.init cfg) es).1
+    let st' := (run cfg (State.init cfg) (es ++ [.activate])).1
+    st'.phase = .active ∧
+      (step cfg st' (.cmd now v scanTf zoneTfs)).2.velocity =
+        some (evaluate cfg st now scanTf zoneTfs) ∧
+      (step cfg st' (.cmd now v scanTf zoneTfs)).2.report =
+        if (evaluate cfg st now scanTf zoneTfs).report v = .normal then none
+        else some ((evaluate cfg st now scanTf zoneTfs).report v) := by
+  intro st st'
+  have hst' : st' = (step cfg st .activate).1 := by
+    simp only [st', st, run_concat]
+  rw [hst']
+  exact after_activation_of_inv cfg st now v scanTf zoneTfs (reachable_inv cfg es)
+    (by simp only [st]; rw [run_phase]; exact hin) hf
 
 /-! ## `stop_pub_timeout`: what the state records, and what silence means -/
 
-/-- R15: a finite command for which zero is demanded, after a command for
+/-- R15: a processed command for which zero is demanded, after a command for
 which it was not, starts a period of zero: it is published, and the stop
 stamp becomes its time. -/
-theorem step_zero_start (cfg : Config) (st : State) (t : Nat) (v : Twist) (hf : v.finite = true)
-    (hp : st.prevZero = false) (hz : (evaluate cfg st t).yieldsZero v = true) :
-    (step cfg st (.cmd t v)).2 = .publish (evaluate cfg st t) ∧
-      (step cfg st (.cmd t v)).1.prevZero = true ∧ (step cfg st (.cmd t v)).1.stopStamp = t := by
-  refine ⟨output_of_not_prevZero cfg st t v hf hp, ?_, ?_⟩
-  · rw [step_cmd_prevZero _ _ _ _ hf, hz]
-  · rw [step_cmd_stopStamp _ _ _ _ hf]
+theorem step_zero_start (cfg : Config) (st : State) (t : Nat) (v : Twist) (scanTf : Option Xform)
+    (zoneTfs : List (Option Xform)) (hact : st.phase = .active) (hf : v.finite = true)
+    (hp : st.prevZero = false) (hz : (evaluate cfg st t scanTf zoneTfs).yieldsZero v = true) :
+    (step cfg st (.cmd t v scanTf zoneTfs)).2.velocity =
+        some (evaluate cfg st t scanTf zoneTfs) ∧
+      (step cfg st (.cmd t v scanTf zoneTfs)).1.prevZero = true ∧
+      (step cfg st (.cmd t v scanTf zoneTfs)).1.stopStamp = t ∧
+      (step cfg st (.cmd t v scanTf zoneTfs)).1.phase = .active := by
+  refine ⟨velocity_of_not_prevZero cfg st t v scanTf zoneTfs hact hf hp, ?_, ?_, ?_⟩
+  · rw [step_cmd_prevZero _ _ _ _ _ _ hact hf, hz]
+  · rw [step_cmd_stopStamp _ _ _ _ _ _ hact hf]
     simp [hz, hp]
+  · rw [(step_cmd_scan _ _ _ _ _ _).2, hact]
 
-/-- R15: during a period of zero the state does not move. If the previous
-demanded velocity was zero, and every action published during `mid` yields
-zero for its command, then afterwards the previous demanded velocity is
-still zero and the stop stamp is unchanged. Scans, unusable scans, ignored
-commands and commands that get no answer may occur in `mid`. -/
+/-- An event that is neither a command nor a `deactivate` leaves the record
+of zeros (R15) alone. -/
+theorem step_zero_record (cfg : Config) (st : State) (e : Event)
+    (hc : ∀ now v scanTf zoneTfs, e ≠ .cmd now v scanTf zoneTfs) (hd : e ≠ .deactivate) :
+    (step cfg st e).1.prevZero = st.prevZero ∧ (step cfg st e).1.stopStamp = st.stopStamp := by
+  cases e with
+  | cmd now v scanTf zoneTfs => exact absurd rfl (hc now v scanTf zoneTfs)
+  | deactivate => exact absurd rfl hd
+  | shape k verts place => rw [step_shape]; split <;> exact ⟨rfl, rfl⟩
+  | shutdown => exact ⟨rfl, rfl⟩
+  | configure => rw [step_configure]; split <;> exact ⟨rfl, rfl⟩
+  | activate => rw [step_activate]; split <;> exact ⟨rfl, rfl⟩
+  | cleanup => rw [step_cleanup]; split <;> exact ⟨rfl, rfl⟩
+  | scan now s => rw [step_scan]; split <;> exact ⟨rfl, rfl⟩
+
+/-- R15: during a period of zero the record does not move. If the previous
+demanded velocity was zero, no `deactivate` occurs in `mid`, and every
+velocity action published during `mid` yields zero for its command, then
+afterwards the previous demanded velocity is still zero and the stop stamp
+is unchanged. Scans, shape messages, other lifecycle events, ignored
+commands and commands whose velocity is withheld may occur in `mid`. -/
 theorem run_zero_streak (cfg : Config) (st : State) (mid : List Event)
-    (hp : st.prevZero = true)
-    (hz : ∀ (j now : Nat) (v : Twist) (a : Action), mid[j]? = some (.cmd now v) →
-      (run cfg st mid).2[j]? = some (.publish a) → a.yieldsZero v = true) :
+    (hp : st.prevZero = true) (hd : ∀ e ∈ mid, e ≠ .deactivate)
+    (hz : ∀ (j now : Nat) (v : Twist) (scanTf : Option Xform) (zoneTfs : List (Option Xform))
+      (o : Output) (a : Action), mid[j]? = some (.cmd now v scanTf zoneTfs) →
+      (run cfg st mid).2[j]? = some o → o.velocity = some a → a.yieldsZero v = true) :
     (run cfg st mid).1.prevZero = true ∧ (run cfg st mid).1.stopStamp = st.stopStamp := by
   induction mid generalizing st with
   | nil => exact ⟨hp, rfl⟩
   | cons e es ih =>
     have hstep : (step cfg st e).1.prevZero = true ∧
         (step cfg st e).1.stopStamp = st.stopStamp := by
-      cases e with
-      | scan now s => exact ⟨hp, rfl⟩
-      | scanUnusable now => exact ⟨hp, rfl⟩
-      | cmd now v =>
-        by_cases hf : v.finite = true
-        · have hyz : (evaluate cfg st now).yieldsZero v = true := by
-            rcases output_eq_silent_or_publish cfg st now v with h | h
-            · rw [output_eq_silent_iff] at h
-              rcases h with h | h
-              · rw [hf] at h
-                exact absurd h (by simp)
-              · exact h.1
-            · exact hz 0 now v _ rfl (by rw [run_cons]; simpa using h)
-          rw [step_cmd_prevZero _ _ _ _ hf, step_cmd_stopStamp _ _ _ _ hf]
-          simp [hyz, hp]
-        · rw [step_cmd_of_not_finite _ _ _ _ (by simpa using hf)]
-          exact ⟨hp, rfl⟩
-    have := ih (step cfg st e).1 hstep.1 (fun j now v a hj ho =>
-      hz (j + 1) now v a (by simpa using hj) (by rw [run_cons]; simpa using ho))
+      by_cases hc : ∃ now v scanTf zoneTfs, e = .cmd now v scanTf zoneTfs
+      · obtain ⟨now, v, scanTf, zoneTfs, rfl⟩ := hc
+        by_cases hact : st.phase = .active
+        · cases hf : v.finite
+          · rw [step_cmd_of_not_finite _ _ _ _ _ _ hf]; exact ⟨hp, rfl⟩
+          · have hyz : (evaluate cfg st now scanTf zoneTfs).yieldsZero v = true := by
+              rcases velocity_eq_none_or cfg st now v scanTf zoneTfs with h | h
+              · rw [velocity_eq_none_iff] at h
+                rcases h with h | h | h
+                · exact absurd hact h
+                · rw [hf] at h; cases h
+                · exact h.1
+              · exact hz 0 now v scanTf zoneTfs _ _ rfl (by rw [run_cons]; rfl) h
+            rw [step_cmd_prevZero _ _ _ _ _ _ hact hf, step_cmd_stopStamp _ _ _ _ _ _ hact hf]
+            simp [hyz, hp]
+        · rw [step_cmd_of_not_active _ _ _ _ _ _ hact]; exact ⟨hp, rfl⟩
+      · have := step_zero_record cfg st e (fun now v s z he => hc ⟨now, v, s, z, he⟩)
+          (hd e List.mem_cons_self)
+        exact ⟨by rw [this.1]; exact hp, this.2⟩
+    have := ih (step cfg st e).1 hstep.1 (fun e' he' => hd e' (List.mem_cons_of_mem _ he'))
+      (fun j now v scanTf zoneTfs o a hj ho =>
+        hz (j + 1) now v scanTf zoneTfs o a (by simpa using hj) (by rw [run_cons]; simpa using ho))
     rw [run_cons]
     exact ⟨this.1, this.2.trans hstep.2⟩
 
-/-- **A period of zero (R15).** Suppose a finite command at time `t` is the
-first for which zero is demanded (the previous demanded velocity was not
-zero), and every action published during the events `mid` that follow
-yields zero for its command. Then a finite command at `now'` after `mid` is
-answered with the demanded action, except when that action yields zero and
-`t + stop_pub_timeout < now'`: then nothing is published.
+/-- **A period of zero (R15).** Suppose a processed command at time `t` is
+the first for which zero is demanded (the previous demanded velocity was not
+zero), no `deactivate` occurs in the events `mid` that follow, and every
+velocity action published during `mid` yields zero for its command. Then a
+finite command at `now'` after `mid`, with the node still active, gets the
+demanded action as its velocity, except when that action yields zero and
+`t + stop_pub_timeout < now'`: then the velocity is withheld.
 
 So zeros are published from `t` up to and including `t + stop_pub_timeout`,
 whatever their cause (a stop zone, an invalid source, a zero command, a zero
 ratio), and a non-zero demand is always published. -/
-theorem zero_period (cfg : Config) (st : State) (t : Nat) (v : Twist) (mid : List Event)
-    (now' : Nat) (v' : Twist) (hf : v.finite = true) (hp : st.prevZero = false)
-    (hz : (evaluate cfg st t).yieldsZero v = true)
-    (hmid : ∀ (j now₁ : Nat) (v₁ : Twist) (a : Action), mid[j]? = some (.cmd now₁ v₁) →
-      (run cfg (step cfg st (.cmd t v)).1 mid).2[j]? = some (.publish a) →
-        a.yieldsZero v₁ = true)
+theorem zero_period (cfg : Config) (st : State) (t : Nat) (v : Twist) (scanTf : Option Xform)
+    (zoneTfs : List (Option Xform)) (mid : List Event) (now' : Nat) (v' : Twist)
+    (scanTf' : Option Xform) (zoneTfs' : List (Option Xform))
+    (hact : st.phase = .active) (hf : v.finite = true) (hp : st.prevZero = false)
+    (hz : (evaluate cfg st t scanTf zoneTfs).yieldsZero v = true)
+    (hd : ∀ e ∈ mid, e ≠ .deactivate)
+    (hmid : ∀ (j now₁ : Nat) (v₁ : Twist) (s₁ : Option Xform) (z₁ : List (Option Xform))
+      (o : Output) (a : Action), mid[j]? = some (.cmd now₁ v₁ s₁ z₁) →
+      (run cfg (step cfg st (.cmd t v scanTf zoneTfs)).1 mid).2[j]? = some o →
+        o.velocity = some a → a.yieldsZero v₁ = true)
+    (hact' : (run cfg (step cfg st (.cmd t v scanTf zoneTfs)).1 mid).1.phase = .active)
     (hf' : v'.finite = true) :
-    (step cfg (run cfg (step cfg st (.cmd t v)).1 mid).1 (.cmd now' v')).2 =
-      if (evaluate cfg (run cfg (step cfg st (.cmd t v)).1 mid).1 now').yieldsZero v' = true ∧
-        t + cfg.stopPubTimeout < now'
-      then .silent
-      else .publish (evaluate cfg (run cfg (step cfg st (.cmd t v)).1 mid).1 now') := by
-  obtain ⟨-, hp1, hs1⟩ := step_zero_start cfg st t v hf hp hz
-  obtain ⟨hp2, hs2⟩ := run_zero_streak cfg _ mid hp1 hmid
+    (step cfg (run cfg (step cfg st (.cmd t v scanTf zoneTfs)).1 mid).1
+        (.cmd now' v' scanTf' zoneTfs')).2.velocity =
+      if (evaluate cfg (run cfg (step cfg st (.cmd t v scanTf zoneTfs)).1 mid).1 now' scanTf'
+          zoneTfs').yieldsZero v' = true ∧ t + cfg.stopPubTimeout < now'
+      then none
+      else some (evaluate cfg (run cfg (step cfg st (.cmd t v scanTf zoneTfs)).1 mid).1 now'
+        scanTf' zoneTfs') := by
+  obtain ⟨-, hp1, hs1, -⟩ := step_zero_start cfg st t v scanTf zoneTfs hact hf hp hz
+  obtain ⟨hp2, hs2⟩ := run_zero_streak cfg _ mid hp1 hd hmid
   rw [hs1] at hs2
-  split
-  · rename_i h
-    rw [output_eq_silent_iff]
-    exact Or.inr ⟨h.1, hp2, by rw [hs2]; exact h.2⟩
-  · rename_i h
-    rw [output_eq_publish_iff]
-    refine ⟨hf', rfl, fun hc => h ⟨hc.1, ?_⟩⟩
-    rw [← hs2]
-    exact hc.2.2
+  rw [velocity_cmd _ _ _ _ _ _ hact' hf', hp2, hs2]
+  simp
 
-/-- The message published last before position `n` of the run from start-up
-over `es` was a zero: some earlier command got an action that yields zero
-for it, and nothing was published between it and position `n`. -/
+/-- The velocity published last before position `n` of the run from start-up
+over `es` was a zero: some earlier command got a velocity action that yields
+zero for it, and no velocity was published between it and position `n`. -/
 def ZeroPublishedLast (cfg : Config) (es : List Event) (n : Nat) : Prop :=
-  ∃ m now v a, m < n ∧ es[m]? = some (.cmd now v) ∧
-    (run cfg State.init es).2[m]? = some (.publish a) ∧ a.yieldsZero v = true ∧
-    ∀ j, m < j → j < n → ∀ b, (run cfg State.init es).2[j]? ≠ some (.publish b)
+  ∃ m now v scanTf zoneTfs o a, m < n ∧ es[m]? = some (.cmd now v scanTf zoneTfs) ∧
+    (run cfg (State.init cfg) es).2[m]? = some o ∧ o.velocity = some a ∧
+    a.yieldsZero v = true ∧
+    ∀ j, m < j → j < n → ∀ o', (run cfg (State.init cfg) es).2[j]? = some o' → o'.velocity = none
 
 private theorem ZeroPublishedLast.succ {cfg : Config} {es : List Event} {n : Nat}
     (h : ZeroPublishedLast cfg es n)
-    (hn : ∀ b, (run cfg State.init es).2[n]? ≠ some (.publish b)) :
+    (hn : ∀ o', (run cfg (State.init cfg) es).2[n]? = some o' → o'.velocity = none) :
     ZeroPublishedLast cfg es (n + 1) := by
-  obtain ⟨m, now, v, a, hm, he, ho, hz, hbetween⟩ := h
-  refine ⟨m, now, v, a, by omega, he, ho, hz, ?_⟩
-  intro j hj hj' b
+  obtain ⟨m, now, v, scanTf, zoneTfs, o, a, hm, he, ho, hv, hz, hbetween⟩ := h
+  refine ⟨m, now, v, scanTf, zoneTfs, o, a, by omega, he, ho, hv, hz, ?_⟩
+  intro j hj hj' o' ho'
   by_cases hjn : j = n
-  · rw [hjn]; exact hn b
-  · exact hbetween j hj (by omega) b
+  · subst hjn; exact hn o' ho'
+  · exact hbetween j hj (by omega) o' ho'
 
 /-- What `prevZero` means in a run from start-up: if it is set after the
-first `n` events, the message published last was a zero. -/
+first `n` events, the velocity published last was a zero. -/
 theorem prevZero_zeroPublishedLast (cfg : Config) (es : List Event) (n : Nat)
-    (h : (run cfg State.init (es.take n)).1.prevZero = true) : ZeroPublishedLast cfg es n := by
+    (h : (run cfg (State.init cfg) (es.take n)).1.prevZero = true) :
+    ZeroPublishedLast cfg es n := by
   induction n with
   | zero => simp [run_nil, State.init] at h
   | succ n ih =>
@@ -436,81 +776,95 @@ theorem prevZero_zeroPublishedLast (cfg : Config) (es : List Event) (n : Nat)
     | none =>
       rw [List.take_add_one, he, Option.toList_none, List.append_nil] at h
       refine (ih h).succ ?_
-      intro b
-      rw [run_getElem?, he]
-      simp
+      intro o' ho'
+      rw [run_getElem?, he] at ho'
+      cases ho'
     | some e =>
-      have hout : (run cfg State.init es).2[n]? =
-          some (step cfg (run cfg State.init (es.take n)).1 e).2 := by
-        rw [run_getElem?, he]; rfl
+      have hout := run_output cfg (State.init cfg) es n e he
       rw [run_take_succ cfg _ es n e he] at h
-      cases e with
-      | scan now s =>
-        refine (ih h).succ ?_
-        intro b
-        rw [hout]
-        simp [step_scan]
-      | scanUnusable now =>
-        refine (ih h).succ ?_
-        intro b
-        rw [hout]
-        simp [step_scanUnusable]
-      | cmd now v =>
-        by_cases hf : v.finite = true
-        · rw [step_cmd_prevZero _ _ _ _ hf] at h
-          rcases output_eq_silent_or_publish cfg (run cfg State.init (es.take n)).1 now v
-            with hs | hp
-          · have hprev := ((output_eq_silent_iff _ _ _ _).mp hs).resolve_left (by simp [hf])
-            refine (ih hprev.2.1).succ ?_
-            intro b
-            rw [hout, hs]
-            simp
-          · exact ⟨n, now, v, _, Nat.lt_succ_self n, he, by rw [hout, hp], h,
-              fun j hj hj' => by omega⟩
-        · have hnf : v.finite = false := by simpa using hf
-          rw [step_cmd_of_not_finite _ _ _ _ hnf] at h
+      by_cases hc : ∃ now v scanTf zoneTfs, e = .cmd now v scanTf zoneTfs
+      · obtain ⟨now, v, scanTf, zoneTfs, rfl⟩ := hc
+        by_cases hact : (run cfg (State.init cfg) (es.take n)).1.phase = .active
+        · cases hf : v.finite
+          · rw [step_cmd_of_not_finite _ _ _ _ _ _ hf] at h hout
+            refine (ih h).succ ?_
+            intro o' ho'
+            rw [hout] at ho'
+            cases ho'
+            rfl
+          · rw [step_cmd_prevZero _ _ _ _ _ _ hact hf] at h
+            rcases velocity_eq_none_or cfg (run cfg (State.init cfg) (es.take n)).1 now v scanTf
+              zoneTfs with hs | hp
+            · have hprev := (velocity_eq_none_iff _ _ _ _ _ _).mp hs
+              rcases hprev with hprev | hprev | hprev
+              · exact absurd hact hprev
+              · rw [hf] at hprev; cases hprev
+              · refine (ih hprev.2.1).succ ?_
+                intro o' ho'
+                rw [hout] at ho'
+                cases ho'
+                exact hs
+            · exact ⟨n, now, v, scanTf, zoneTfs, _, _, Nat.lt_succ_self n, he, hout, hp, h,
+                fun j hj hj' => by omega⟩
+        · rw [step_cmd_of_not_active _ _ _ _ _ _ hact] at h hout
           refine (ih h).succ ?_
-          intro b
-          rw [hout, step_cmd_of_not_finite _ _ _ _ hnf]
-          simp
+          intro o' ho'
+          rw [hout] at ho'
+          cases ho'
+          rfl
+      · have hsil : (step cfg (run cfg (State.init cfg) (es.take n)).1 e).2 = .silent :=
+          output_of_not_cmd cfg _ e (fun now v s z he' => hc ⟨now, v, s, z, he'⟩)
+        have hprev : (run cfg (State.init cfg) (es.take n)).1.prevZero = true := by
+          by_cases hd : e = .deactivate
+          · subst hd
+            rw [step_deactivate] at h
+            split at h
+            · simp at h
+            · exact h
+          · rw [(step_zero_record cfg _ e (fun now v s z he' => hc ⟨now, v, s, z, he'⟩) hd).1] at h
+            exact h
+        refine (ih hprev).succ ?_
+        intro o' ho'
+        rw [hout, hsil] at ho'
+        cases ho'
+        rfl
 
-/-- **Silence follows a published zero.** In any run from start-up, over
-events of all three kinds, if a finite command gets no answer, then the message published last before it
-was a zero: an earlier command was answered with an action that yields zero
-for it (a stop, a zero command passed on, or a zero ratio), and nothing has
-been published since.
+/-- **A withheld velocity follows a published zero.** In any run from
+start-up, over events of all kinds, if a command is processed and gets no
+velocity (the output is `answer none _`), then the velocity published last
+before it was a zero: an earlier command was answered with an action that
+yields zero for it (a stop, a zero command passed on, or a zero ratio), and
+no velocity has been published since, nor has the node been deactivated
+since.
 
-This is what the robot's base has received when the node goes silent under
+This is what the robot's base has received when the node withholds under
 R15, also when the cause of the zero changes in between: after a zero
 command has been repeated for longer than `stop_pub_timeout`, an obstacle
-that enters a stop zone together with a non-zero command is answered with
-silence, not with a stop message; the last message the base received is the
+that enters a stop zone together with a non-zero command gets no velocity
+message, not a stop message; the last message the base received is the
 earlier zero. A base that holds its last command stays stopped; a base that
 needs a fresh zero to stay stopped needs its own watchdog (SPEC, A3). -/
-theorem run_silent_last_published_zero (cfg : Config) (es : List Event) (n now : Nat)
-    (v : Twist) (he : es[n]? = some (.cmd now v)) (hf : v.finite = true)
-    (hs : (run cfg State.init es).2[n]? = some .silent) : ZeroPublishedLast cfg es n := by
-  rw [run_getElem?, he] at hs
-  simp only [Option.map_some, Option.some.injEq] at hs
-  have hprev := ((output_eq_silent_iff _ _ _ _).mp hs).resolve_left (by simp [hf])
-  exact prevZero_zeroPublishedLast cfg es n hprev.2.1
+theorem run_withheld_last_published_zero (cfg : Config) (es : List Event) (n : Nat)
+    (rep : Option Report) (hs : (run cfg (State.init cfg) es).2[n]? = some (.answer none rep)) :
+    ZeroPublishedLast cfg es n := by
+  obtain ⟨now, v, scanTf, zoneTfs, he, hact, hf⟩ :=
+    run_processed cfg _ es n _ hs (by simp)
+  rw [run_output _ _ _ _ _ he] at hs
+  simp only [Option.some.injEq] at hs
+  have hv : (step cfg (run cfg (State.init cfg) (es.take n)).1
+      (.cmd now v scanTf zoneTfs)).2.velocity = none := by rw [hs]; rfl
+  rcases (velocity_eq_none_iff _ _ _ _ _ _).mp hv with h | h | h
+  · exact absurd hact h
+  · rw [hf] at h; cases h
+  · exact prevZero_zeroPublishedLast cfg es n h.2.1
 
-/-- The first finite command after start-up is always answered: there is no
-earlier zero that could excuse silence. -/
-theorem run_first_command_answered (cfg : Config) (es : List Event) (n now : Nat) (v : Twist)
-    (he : es[n]? = some (.cmd now v)) (hf : v.finite = true)
-    (hfirst : ∀ m now' v', m < n → es[m]? = some (.cmd now' v') → v'.finite = false) :
-    ∃ a, (run cfg State.init es).2[n]? = some (.publish a) := by
-  have hout : (run cfg State.init es).2[n]? =
-      some (step cfg (run cfg State.init (es.take n)).1 (.cmd now v)).2 := by
-    rw [run_getElem?, he]; rfl
-  rcases output_eq_silent_or_publish cfg (run cfg State.init (es.take n)).1 now v with h | h
-  · exfalso
-    obtain ⟨m, now', v', a, hm, hem, hom, -, -⟩ :=
-      run_silent_last_published_zero cfg es n now v he hf (by rw [hout, h])
-    have hnf := hfirst m now' v' hm hem
-    rw [run_getElem?, hem] at hom
-    simp [step_cmd_of_not_finite _ _ _ _ hnf] at hom
-  · exact ⟨_, by rw [hout, h]⟩
+/-- No velocity is withheld before one has been published: the first
+processed command after start-up always gets a velocity. -/
+theorem run_withheld_after_published (cfg : Config) (es : List Event) (n : Nat)
+    (rep : Option Report) (hs : (run cfg (State.init cfg) es).2[n]? = some (.answer none rep)) :
+    ∃ m o a, m < n ∧ (run cfg (State.init cfg) es).2[m]? = some o ∧ o.velocity = some a := by
+  obtain ⟨m, -, -, -, -, o, a, hm, -, ho, hv, -⟩ :=
+    run_withheld_last_published_zero cfg es n rep hs
+  exact ⟨m, o, a, hm, ho, hv⟩
 
 end ROSlean.CollisionMonitor

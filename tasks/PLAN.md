@@ -35,6 +35,10 @@ emulation. The comparison with upstream has not been run on Linux at all.
 
 ## Tasks
 
+**On hold (2026-11-24).** The user has asked that no further task is started
+until they have decided the open questions under "Decisions". T02, already
+running, finishes; T03, T06 and T07 wait.
+
 Run a task when everything in "Needs" is merged into `collision-monitor`. Tasks in the
 same row group can run at the same time.
 
@@ -45,7 +49,7 @@ same row group can run at the same time.
 | [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | merged c2d5f85 |
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | running |
 | [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02 | yes | open |
-| [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | running |
+| [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | open |
 | [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05 | yes | open |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
@@ -113,6 +117,8 @@ Open, with the default that tasks follow until the user decides:
 | (T04) Reproduce upstream's wait for a transform inside the command callback? | Yes |
 | (T04) After shutdown from the active state: silent (ours, ND4) or keep forwarding (upstream)? | Silent |
 | (T04) Stand-alone process if the node cannot be loaded into Nav2's component container? | Acceptable; T06 tries composition first |
+| (T05) Should `shutdown` also clear `prevZero` and `prevReport`, so that the lifecycle invariant holds in the finalized phase too? Nothing observable depends on it. | No: as SPEC_NAV2 E5 |
+| (T05) `test_cm_ffi` now takes 169 s (its leak test places a scan 650,000 times through the exact transform). | T06 reworks the C interface: it reduces the rounds or moves the leak test under `LABELS long`, so that `test-quick` stays short |
 | (T04) Which Nav2 parameter edit to document? | The footprint as a fixed polygon; the two-line `polygon_sub_topic` change is mentioned |
 
 ## Watching the tasks
