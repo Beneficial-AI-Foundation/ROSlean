@@ -253,7 +253,10 @@ zone contains, and never treats data as fresher than it is.
   nanosecond (R7, R17), so the two nodes have the same boundary. That value
   is a truncation of a rounded product, as upstream's is.
 - **Scan points.** The shim computes each point in metres in floating point
-  exactly as R3 does. Lean converts each coordinate to millimetres and
+  by the operations of R3, in the same order and precision. Whether the
+  result is upstream's bit for bit depends on how both were compiled; "Scan
+  event" below says for which builds it is, and gives the bound otherwise
+  (one unit in the last place of a `float` coordinate). Lean converts each coordinate to millimetres and
   truncates toward zero, in exact arithmetic. A point therefore never moves
   away from the base frame's origin, and moves by less than 1 mm per axis
   (`coordMm_abs_le`, `coordMm_abs_gt`).
@@ -334,7 +337,9 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   a `slowdown` action always carries a pattern below `F64.one`.
 - T2. *The scan conversion.* The computation of R3 in floating point (angle
   accumulation, `cos`, `sin`, the product, the fixed sensor pose of D11),
-  giving each point in metres. The core sees the result only. The conversion
+  giving each point in metres, including which library entry the compiler
+  calls for `cos` and `sin` ("Scan event" says when the result is upstream's
+  bit for bit). The core sees the result only. The conversion
   of those metres to saturated integer millimetres is **not** trusted: it is
   done in Lean (`coordMm`) and proved to truncate toward zero.
 - T3. *The configuration.* The parsing of the `points` text into `float`s
@@ -354,7 +359,10 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   the compiler's `float` and `double` are binary32 and binary64.
 - T5. *The shim* delivers every message as one event with one clock reading,
   passes the fields named under "Shim boundary" unaltered, and publishes what
-  the table above says and nothing else.
+  the table above says and nothing else. The table itself is one function,
+  `apply_answer` in `conversions.hpp`, tested on its own
+  (`smoke_conversions`), including what it does with a kind the core cannot
+  return ("Command event").
 
 T1 could be removed later by multiplying in the core on bit patterns (a
 correctly rounded binary64 product in integer arithmetic, about fifty lines)
@@ -371,13 +379,21 @@ amplification" for a hand-written multiplication is a project of its own.
   `action` (`stop` or `slowdown ratio`), `minPoints`, `enabled`.
 - `State`: `scan : Option Scan` (R5), `prevZero : Bool`, `stopStamp : Nat`
   (R15). `State.init` is no scan, `false`, 0.
-- `Event`: `scan now s` or `cmd now v`. `Scan` is `stamp`, `rangeMin`,
-  `rangeMax` and `beams`, each beam a range pattern with its point. `Twist` is
-  six patterns.
+- `Event`: `scan now s`, `cmd now v`, or `scanUnusable now`: a scan arrived
+  that the node cannot place in the base frame (D11); nothing of its content
+  enters the model. `Scan` is `stamp`, `rangeMin`, `rangeMax` and `beams`,
+  each beam a range pattern with its point. `Twist` is six patterns.
 - `Output`: `silent` or `publish a`, with `a : Action` one of `pass`,
   `slowdown zone ratio`, `stopZone zone`, `stopSource`.
 - `step : Config → State → Event → State × Output`, and `run` over a list of
-  events.
+  events. On `scan now s` the scan is stored; on `scanUnusable now` the
+  stored scan is discarded (`scan := none`), so that the source has no data
+  until the next usable scan (R8); both leave `prevZero` and `stopStamp`
+  alone and publish nothing. On a command, see below.
+
+The third event was added after the review CM3/CM4 (finding 3). Before, an
+unusable scan was a transition of the C interface outside the model, and no
+theorem about sequences covered a history that contained one.
 
 `step` on a command is built from named parts, so that properties can be
 stated on each:
@@ -458,7 +474,13 @@ hypotheses on the configuration**: with `source_timeout: 0` or a disabled
 source, stale or missing data does not stop the robot (examples
 `cfgNoTimeout`, `cfgSourceOff`). That is upstream's documented way of
 switching the check off. On event sequences: after `run`, `st.scan` is the
-scan of the last `scan` event, or `none` if there was none.
+scan in force: that of the scan event received last if it was a `scan`,
+`none` if it was a `scanUnusable`, and `none` if there was no scan event
+(`lastScan`, `run_scan`). So after an unusable scan, with the source enabled
+and a non-zero timeout, every command is answered with `stopSource` (or with
+silence under R15) until a usable scan arrives, whatever preceded it
+(`run_scanUnusable_stop`). The statements "on runs" hold for every sequence
+of the three kinds of event.
 
 **Bad data.** The rule is R4 for readings (`Scan.validBeam`: a reading counts
 iff `F32.le rangeMin range && F32.le range rangeMax`), R2 for commands
@@ -506,7 +528,8 @@ exception is upstream's: a zero command is dropped like any other zero after
 `partial` or `unsafe`.
 
 Two more statements are needed to connect these to event sequences and are
-cheap: `(step cfg st (.scan now s)).1.scan = some s` with the other fields
+cheap: `(step cfg st (.scan now s)).1.scan = some s` and
+`(step cfg st (.scanUnusable now)).1.scan = none`, each with the other fields
 unchanged, and `(step cfg st (.cmd now v)).1.scan = st.scan`.
 
 ## Shim boundary
@@ -536,6 +559,30 @@ value of a number. It also refuses a `roslean_sensor_pose` that is not three
 finite numbers, since that parameter is used only by the shim's own
 floating-point code (T2).
 
+**All refusals are reported together.** The shim does not stop at the first
+parameter it refuses: it reads everything, builds the monitor, asks the core
+which values it refused (each timeout through `roslean_cm_timeout_ns`, each
+zone through `roslean_cm_zone_error`), and ends with one fatal message of the
+form "N parameters refused: parameter 'a': …; parameter 'b': …". One reason
+is given per parameter and, from the core, one per zone (the first of
+`radius` or `points`, `slowdown_ratio`, with a refused raw value before
+either).
+
+**Parameters are read once (D2).** After start-up every change through the
+parameter service is rejected with a reason that says so, and a name that
+was not given at start-up is not declared and cannot be set. Before the
+review CM3/CM4 (finding 2) a change was answered "successful" and ignored.
+
+**Warnings at start-up.** For an accepted configuration that protects
+nothing, or less than it seems to, the node logs one warning each: a source
+timeout of 0; a disabled source; a zone with `min_points` of 0 or less; a
+slowdown zone whose ratio is not below 1; a circle of radius 0; a polygon
+without area (computed exactly on the millimetre vertices the core uses);
+no zones (which a parameter file cannot express: rcl rejects an empty list).
+These are warnings, not refusals; see "Open decisions", 5 and 9. If
+`<source>.roslean_sensor_pose` is set the node warns once, with the pose,
+that scans are then used whatever their `frame_id`.
+
 Integer conversions on the Lean side: `stamp_ns` is converted with
 `.toInt.toNat`, so a negative value becomes 0 (D8); unsigned arguments are
 converted with `.toNat`. A flag is true iff the byte is not 0.
@@ -547,15 +594,15 @@ features" tells it to refuse, and calls:
 
 | Call | Arguments | Meaning |
 | --- | --- | --- |
-| `roslean_cm_builder_new` | `()` | Empty builder: no zones, source enabled, both timeouts 0 |
-| `roslean_cm_builder_set_source` | builder, `enabled : uint8`, `node_timeout_bits : uint64`, `has_own : uint8`, `own_timeout_bits : uint64` | `sourceEnabled`, `sourceTimeout` |
-| `roslean_cm_builder_set_stop_pub_timeout` | builder, `timeout_bits : uint64` | `stopPubTimeout` |
+| `roslean_cm_builder_new` | `()` | Empty builder: no zones, `stop_pub_timeout` 0, and the source not set. Its monitor is **not ok** until `set_source` has been called |
+| `roslean_cm_builder_set_source` | builder, `enabled : uint8`, `node_timeout_bits : uint64`, `has_own : uint8`, `own_timeout_bits : uint64` | `sourceEnabled`, `sourceTimeout`. Required. A refusal recorded by an earlier call stays |
+| `roslean_cm_builder_set_stop_pub_timeout` | builder, `timeout_bits : uint64` | `stopPubTimeout`. A refusal recorded by an earlier call stays |
 | `roslean_cm_builder_add_circle` | builder, `radius_bits : uint64`, `action : uint8`, `ratio_bits : uint64`, `min_points : int64`, `enabled : uint8` | Appends a circle zone |
 | `roslean_cm_builder_add_polygon` | builder, `action : uint8`, `ratio_bits : uint64`, `min_points : int64`, `enabled : uint8` | Appends a polygon zone with no vertices yet |
-| `roslean_cm_builder_add_vertex` | builder, `x_bits : uint32`, `y_bits : uint32` | Appends a vertex to the zone added last; no effect if that is not a polygon |
+| `roslean_cm_builder_add_vertex` | builder, `x_bits : uint32`, `y_bits : uint32` | Appends a vertex to the zone added last. If that is not a polygon, or there is no zone, the vertex belongs to nothing and the monitor will not be ok (code 6) |
 | `roslean_cm_new` | builder | The monitor, in `State.init`, output `silent` |
 | `roslean_cm_ok` | monitor | `uint8`: the configuration is accepted. If 0 the node logs a fatal error and exits |
-| `roslean_cm_error` | monitor | `uint8`: 0 accepted; 1 `source_timeout`; 2 `<source>.source_timeout`; 3 `stop_pub_timeout`; 4 a zone |
+| `roslean_cm_error` | monitor | `uint8`: 0 accepted; 1 `source_timeout`; 2 `<source>.source_timeout`; 3 `stop_pub_timeout`; 4 a zone; 5 the source was never set; 6 a vertex was added to no polygon |
 | `roslean_cm_zone_error` | monitor, `k : uint32` | `uint8` for zone `k`: 0 accepted; 1 `radius`; 2 `points`; 3 `slowdown_ratio`; 4 `min_points`; 5 no such zone |
 
 `action` is 0 for `stop` and 1 for `slowdown`; any other value is `stop`.
@@ -578,18 +625,30 @@ What Lean does with the raw values (`CollisionMonitorConvert.lean`):
 - **Radius** (`radiusMm`): the magnitude (upstream squares the radius, R9, so
   `radius: -0.3` is a 0.3 m zone), in millimetres, rounded up, plus 1.
   Refused: NaN, infinities, and any value whose result exceeds 1,000,000 mm
-  (D12).
+  (D12). The largest accepted magnitude is therefore 999.999 m exactly, not
+  "below 1000 m": the double written `999.999` lies just above it and is
+  refused, `999.9989` is accepted. The node's message says this.
 - **Vertices** (`vertexMm`): millimetres rounded to nearest, a half away from
-  zero. Refused: NaN and infinities; a refused vertex marks its polygon, it
-  is not dropped. Whether the polygon has four vertices inside the coordinate
-  limit is `Shape.ok`.
+  zero. Refused: NaN and infinities; a refused vertex marks its polygon, or
+  the builder if the zone added last is not a polygon; it is never dropped.
+  Whether the polygon has four vertices inside the coordinate limit is
+  `Shape.ok`.
 - **`slowdown_ratio`**: the bits, unchanged. Refused if the sign bit is set
   (`ZoneAction.ok`, D5).
 - **`min_points`** (`minPointsOfRaw`): negative values become 0. Refused
   outside −2³¹ … 2³¹ − 1 (D10).
 
-The monitor is ok iff nothing was refused and `Config.ok` holds
-(`cmOk_iff`).
+The monitor is ok iff the source was set, nothing was refused, no vertex was
+given to no polygon, and `Config.ok` holds (`cmOk_iff`).
+
+**The builder is fail-closed** (review CM3/CM4, finding 6). There is no
+default source timeout: without `set_source` the monitor is not ok
+(`not_ok_without_set_source`). A refused value makes the monitor not ok
+wherever in the sequence of calls it occurs and whatever follows it
+(`not_ok_of_refused_call`): a second `set_source` with a good value does not
+clear a refused timeout, and a refused vertex counts also after a circle or
+before any zone. The node's own call sequence produced none of these cases;
+the rule is for any other caller of the interface.
 
 **Fail closed.** `roslean_cm_ok` is not advisory. A monitor that is not ok
 ignores scans and answers **every** command with `stopSource`: finite or not,
@@ -611,13 +670,16 @@ into 0, which would mean "check disabled" (review finding 7a).
   Lean (D8).
 - `usable`: 1 iff the scan's points can be placed in the base frame, which
   the shim decides by comparing two strings (D11): `header.frame_id ==
-  base_frame_id`, or `<source>.roslean_sensor_pose` is set. If 0, Lean does
-  not store the scan and **discards the stored one** (`Monitor.dropScan`), so
+  base_frame_id`, or `<source>.roslean_sensor_pose` is set. If 0, the call
+  is `step` on the event `scanUnusable now` and the other arguments are not
+  looked at: Lean does not store the scan and **discards the stored one**, so
   that the source has no data: with a non-zero `source_timeout` every command
   is then stopped by the source rule until a usable scan arrives
-  (`dropScan_stop`), as upstream stops when it has no transform (R8); with
-  timeout 0 the source contributes no points, also as upstream. The shim logs
-  an error naming both frames, at most once in 5 s.
+  (`run_scanUnusable_stop`), as upstream stops when it has no transform (R8);
+  with timeout 0 the source contributes no points, also as upstream. The shim
+  logs an error naming both frames, at most once in 5 s. If the pose is set
+  and the scan's frame is not the base frame, the scan is used and the shim
+  logs a warning naming both frames and the pose, at most once a minute.
 - `range_min_bits`, `range_max_bits`: the four bytes of the `float` fields.
 - `beams`: a Lean `ByteArray` of `20 × ranges.size()` bytes. Record `i`, at
   offset `20·i`, describes `ranges[i]`:
@@ -658,6 +720,43 @@ are fused. This is `encode_scan` in
 `ros/roslean_collision_monitor/include/roslean_collision_monitor/conversions.hpp`,
 the one file that holds the shim's floating-point code.
 
+**How far these points are upstream's** (review CM3/CM4, finding 5). The
+operations are upstream's; the bits of the result also depend on the
+compiler and on the C library, in two ways.
+
+- *Which library entry computes `cos` and `sin`.* With optimisation a
+  compiler replaces the two calls by one that returns both
+  (`__sincosf_stret` on macOS, `sincosf` with glibc); without, it calls
+  `cosf` and `sinf`. On macOS arm64 the two ways differ in about 1 % of the
+  coordinates, by one unit in the last place of the `float` product: at most
+  9.5·10⁻⁷ m for ranges up to 12 m (measured: 2,296 of 200,000 coordinates
+  by the reviewer, 4,740 of 400,000 by `smoke_conversions`). Upstream's
+  binary from the pixi environment makes the single call. The package
+  therefore builds with optimisation by default: `CMakeLists.txt` sets the
+  build type to `Release` when none is given, and the node then makes the
+  single call too.
+- *Fused multiply-add.* Only the pose computation has a multiplication
+  followed by an addition. `-ffp-contract=off` keeps it unfused; with fusion
+  (the default of clang on arm64) 58 % of the coordinates computed with a
+  pose differ in their last bits, none in whole millimetres (reviewer's
+  measurement). A second user of `conversions.hpp` must set the flag as
+  well. `smoke_conversions` compares the pose computation with a reference
+  that cannot be fused, and fails on arm64 when the flag is missing.
+
+What is true, then:
+
+| Case | Agreement with upstream's points |
+| --- | --- |
+| Scan in the base frame, no pose (or a pose of zero); node built with optimisation (`Release`, the default, or `RelWithDebInfo`); upstream built with optimisation; same machine and C library | Bit for bit, except that upstream's multiplication by the identity transform turns a coordinate of `-0.0` into `+0.0`, which is the same millimetre. Checked by `smoke_conversions` against a copy of upstream's loop compiled with `-O2` (0 of 400,000 coordinates differ on macOS arm64), and across arm64 and x86-64 at `-O2` by the reviewer |
+| The same, node built without optimisation (`Debug`, or `-O0`) | Not bit for bit on macOS arm64: about 1 % of the coordinates differ by one unit in the last place of a `float`, under 10⁻⁶ m for ranges up to 12 m. `smoke_conversions` fails in such a build, on purpose. Not measured for other C libraries |
+| A sensor pose that is not zero | No bit-for-bit claim: upstream applies a transform from TF (a quaternion turned into a matrix, in three dimensions), this node a rotation by `yaw` and a shift. The two are the same map for an upright sensor and differ by rounding |
+
+In every case the difference is far below the millimetre by which D4 grows
+each zone, so no point that upstream counts as inside a zone is lost by it;
+a decision can differ only for a point within D4's band of a boundary, where
+the two nodes differ anyway. T2 is correspondingly larger than "`cos` and
+`sin`": it includes the library entry the compiler chooses.
+
 Nothing is returned that the shim acts on: the output of a scan event is
 always `silent`.
 
@@ -679,9 +778,20 @@ always `silent`.
   is the ratio pattern for kind 2 and 0 otherwise.
 - The shim then publishes as the table in "Where the velocity is computed"
   says: nothing for kind 0; for kind 2 it copies `out_ratio` into a `double`
-  and multiplies. For kinds 2, 3 and 4 it logs the zone name or
-  `invalid source` at debug level. It keeps no state of its own between
-  events.
+  and multiplies (`apply_answer` in `conversions.hpp`). A kind outside 0 to 4
+  cannot be returned (`kindOf`); were it, the shim publishes zero and logs an
+  error, not silence. `smoke_conversions` checks this for every value from 5
+  to 255.
+- Logging. Each *change* of the answer is logged once, as upstream logs each
+  change of its action and in upstream's words: "Robot to continue normal
+  operation", "Robot to slowdown for … percents due to <zone> polygon",
+  "Robot to stop due to <zone> polygon" (INFO), "Robot to stop due to
+  invalid source" (WARN). The text is built from the three numbers Lean
+  returned, and "change" is an integer comparison of those numbers with the
+  ones logged last. A command that gets no answer (kind 0) is logged at
+  debug level and is not a change. The numbers logged last are the only
+  thing the shim remembers between events; nothing but the logging reads
+  them, and no decision depends on them.
 
 ### Queries for tests and logs
 
@@ -695,10 +805,13 @@ compare them with reference computations.
 `ROSlean/CollisionMonitor/FFI.lean` and `Convert.lean`; listed in
 `THEOREMS.md`. In short: the configuration is what the builder calls say; a
 refused value makes the monitor not ok, and a monitor that is not ok stops
-every command; the decoding of `beams` is total and inverts the shim's
-encoding; a sequence of calls yields `run` of the corresponding events; and
-the three numbers read back after a command determine the model's output
-(`cm_readBack_after`).
+every command, wherever in the sequence of builder calls the refused value
+occurs (`not_ok_of_refused_call`); the decoding of `beams` is total and
+inverts the shim's encoding; every call of the two event functions is `step`
+on the event it delivers, so any sequence of calls, with scans usable or
+not, yields `run` of those events (`foldl_exec`); and the three numbers read
+back after a command determine the model's output (`cm_readBack_after`,
+stated on the exported functions in the order the node calls them).
 
 ## Excluded features
 
@@ -731,7 +844,7 @@ exit code 1, before any subscription is created.
 | # | Upstream | ROSlean | Why |
 | --- | --- | --- | --- |
 | D1 | Features in the table above | Refused or ignored as stated | Scope. |
-| D2 | Lifecycle node, inactive until activated; `~/toggle`; `enabled` changeable at run time (R19) | Ordinary node, active from start-up; no toggle; parameters read once | Scope. The events of the model are scans and commands only. A launch file that drives upstream through a lifecycle manager must not list this node. |
+| D2 | Lifecycle node, inactive until activated; `~/toggle`; `enabled` changeable at run time (R19) | Ordinary node, active from start-up; no toggle; parameters read once: a change through the parameter service after start-up is **rejected** with that reason, and a parameter that was not given at start-up cannot be set | Scope. The events of the model are scans (usable or not) and commands only. A change that is accepted and not acted on would tell the operator something false. A launch file that drives upstream through a lifecycle manager must not list this node. |
 | D3 | Points in `double` metres; zone tests in floating point, the polygon test with a division | Points and shapes in integer millimetres; tests exact, the division multiplied out | No floating point in the core. A point within a few millimetres of a boundary can be classified differently; the direction is fixed by D4. |
 | D4 | Zone is the configured shape | Circle radius rounded up plus 1 mm; polygon with a band of √5 mm around its boundary | Makes the rounding of D3 err only towards "inside" ("Safe direction"). Zones grow by up to 3.5 mm (circle) or 4.4 mm (polygon). Upstream's uneven treatment of polygon boundary points (R10) disappears: all boundary points are inside. |
 | D5 | Any `slowdown_ratio` accepted; negative ones reverse the command or do nothing, `-0.0` gives zero | A ratio with the sign bit set is refused at start-up | The reversal is a hazard, and "no amplification" is false with it. The model would treat such a ratio as never selected; refusing avoids a silent difference. Ratios of 1 or more, infinite or NaN are accepted and never take effect, as upstream. |
@@ -740,7 +853,7 @@ exit code 1, before any subscription is created.
 | D8 | A scan stamp with negative seconds ends the process with an uncaught exception when the next command arrives | The stamp is taken as 0: under a non-zero timeout the scan is too old once the node clock is past the timeout (`0 + source_timeout < now`) | The node must not crash on input. The scan is **used** with timeout 0, and also while the node clock is still at or below the timeout (simulated time shortly after start: with `source_timeout: 2.0` and the clock at 1.5 s the scan counts as fresh). The shim's sum does not detect every stamp upstream refuses (`sec = -1` with `nanosec ≥ 10⁹` is positive); see REVIEWS, CM1/CM2 finding 9. |
 | D9 | Negative timeouts accepted (a negative `source_timeout` makes nearly every scan too old; a negative `stop_pub_timeout` publishes zero once); non-finite or huge ones are undefined behaviour in the conversion | Negative, non-finite, and timeouts of 9.2·10⁹ s or more are refused, in Lean (`timeoutNs`); a monitor with a refused timeout stops every command | Keeps times in `Nat`; avoids undefined behaviour. A refused value never becomes 0, which would switch the source check off. Accepted values are upstream's, to the nanosecond, including the default of `<source>.source_timeout` (R17). |
 | D10 | `max_points` overrides `min_points`; `min_points` read into a 32-bit `int`, so `min_points: 4294967297` is 1 | `max_points` refused; `min_points` outside −2³¹ … 2³¹ − 1 refused | One rule for the threshold in the core. Inside the range the two agree; outside it upstream's value is the wrapped one, and taking the number at face value would make a zone that triggers upstream never trigger here. |
-| D11 | Scan points transformed to `base_frame_id` by TF, by default with correction for the robot's motion since the stamp; a failed lookup stops the robot (R8) | No TF. A scan is used if its `header.frame_id` equals `base_frame_id` (default `base_footprint`, as upstream), or if the ROSlean-only parameter `<source>.roslean_sensor_pose: [x, y, yaw]` (metres, radians) is set, in which case its points are moved by that fixed pose whatever the frame name. Any other scan is not used and discards the stored one: the source has no data, and commands are stopped by the source rule (R8) | Scope, fail closed. With `base_shift_correction: false` and scans in the base frame upstream performs no lookup either and the two agree; with a scan in another frame and no pose, both stop (upstream if it has no transform; this node always). A sensor that is not mounted upright cannot be described: `[x, y, yaw]` has no roll or pitch, and a lidar mounted upside down mirrors `y`. Such a sensor **must not be approximated** by a pose; its driver or a relay has to publish the scan in the base frame. |
+| D11 | Scan points transformed to `base_frame_id` by TF, by default with correction for the robot's motion since the stamp; a failed lookup stops the robot (R8) | No TF. A scan is used if its `header.frame_id` equals `base_frame_id` (default `base_footprint`, as upstream), or if the ROSlean-only parameter `<source>.roslean_sensor_pose: [x, y, yaw]` (metres, radians) is set, in which case its points are moved by that fixed pose whatever the frame name: **setting the pose switches the frame check off**, a pose of zero included, and the node warns about it at start-up and when a scan arrives in another frame. The example configuration does not set it. Any other scan is not used and discards the stored one (the event `scanUnusable`): the source has no data, and commands are stopped by the source rule (R8) | Scope, fail closed. With `base_shift_correction: false` and scans in the base frame upstream performs no lookup either and the two compute the same points (bit for bit in an optimised build; see "Scan event"); with a scan in another frame and no pose, both stop (upstream if it has no transform; this node always). A sensor that is not mounted upright cannot be described: `[x, y, yaw]` has no roll or pitch, and a lidar mounted upside down mirrors `y`. Such a sensor **must not be approximated** by a pose; its driver or a relay has to publish the scan in the base frame. |
 | D12 | Coordinates unbounded | Coordinates saturate at ±1000 m; zones must lie inside | Bounded integers at the boundary; see "Safe direction". |
 | D13 | Publishes zone shapes, collision point markers and, if `state_topic` is set, the current action | None of these | Scope. They carry no decision. |
 | D14 | A configuration error fails the lifecycle transition; the process stays up, unconfigured | Fatal log, exit code 1 | As twist_mux D7. |
@@ -803,7 +916,10 @@ For the user. Each is implemented as upstream does it until decided.
    the timeout. Measuring from arrival time instead, or taking the older of
    the two, is a difference; the scan event already carries the arrival time.
 5. **`source_timeout: 0` and `<source>.enabled: false`** switch the
-   protection off. Accept as upstream (now), or refuse at start-up.
+   protection off. Accept as upstream (now, with a warning at start-up), or
+   refuse at start-up. The same question for the other configurations the
+   node warns about: no zones, a circle of radius 0, a polygon without area,
+   a slowdown ratio of 1 or more.
 6. **Pass-through forwards three components.** The task statement asks for
    the received message unchanged; upstream publishes a new message with
    `linear.z`, `angular.x`, `angular.y` set to 0 (R16), and the spec follows
@@ -815,15 +931,17 @@ For the user. Each is implemented as upstream does it until decided.
    `<source>.roslean_sensor_pose`; the alternative is one lookup of the static
    transform at start-up, which would also cover sensors that are not mounted
    upright. Until decided, a scan in a frame other than `base_frame_id`
-   without a configured pose stops the robot (D11). That an unusable scan
-   discards the stored scan is a transition of the C interface
-   (`Monitor.dropScan`), not an event of the model; making it an event
-   (`Event.scanUnusable`) would put it under the theorems about `run`.
+   without a configured pose stops the robot (D11). *Closed, as far as the
+   model goes (review CM3/CM4, finding 3):* that an unusable scan discards
+   the stored scan is now an event of the model, `Event.scanUnusable`, and
+   is under the theorems about `run`; it used to be a transition of the C
+   interface outside the model. The questions of the parameter's name and
+   form, and of a transform lookup at start-up, remain open.
 8. **Zone growth of D4.** Up to 3.5 mm and 4.4 mm. The alternative without
    growth is a model that can miss a point within about 2 mm inside a
    boundary.
-9. **`min_points <= 0`** makes a zone trigger always, as upstream. Refusing
-   it at start-up is the alternative.
+9. **`min_points <= 0`** makes a zone trigger always, as upstream (now with
+   a warning at start-up). Refusing it at start-up is the alternative.
 10. **`state_topic` and `visualize`** are not provided (D13); the example
     configurations of Nav2 set both.
 

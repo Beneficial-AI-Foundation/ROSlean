@@ -44,6 +44,13 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY test DESTINATION share/${PROJECT_NAME} USE_SOURCE_PERMISSIONS
   PATTERN "__pycache__" EXCLUDE)
 
+# --- Gazebo demo (docs/TUTORIAL_COLLISION_MONITOR.md) -------------------------
+# Launch file, monitor configuration, obstacle scripts and narrator. The
+# automated check, demo/gazebo/check_demo.py, is not a colcon test: it needs
+# the simulator with a display and the downloaded furniture (`pixi run cm-check`).
+install(DIRECTORY demo DESTINATION share/${PROJECT_NAME})
+# --- end of Gazebo demo -------------------------------------------------------
+
 if(BUILD_TESTING)
   # The trusted floating-point work of the shim together with the core's
   # conversion to millimetres, without ROS.
@@ -104,23 +111,29 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" "${_reference}"
       --no-tf --skip negative-stamp)
   # Domains of their own, so that other ROS traffic on the machine cannot interfere.
-  set_tests_properties(reference_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=95" TIMEOUT 1800)
+  # LABELS long: a test that takes more than about a minute. `pixi run
+  # test-quick` leaves these out; `pixi run test` runs everything.
+  set_tests_properties(reference_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=95" TIMEOUT 1800
+    LABELS long)
 
   if(nav2_collision_monitor_FOUND)
     # Fixed scenarios with the outputs observed from upstream.
     add_test(NAME upstream_scenario
       COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" ${_upstream})
-    set_tests_properties(upstream_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=89" TIMEOUT 3600)
+    set_tests_properties(upstream_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=89" TIMEOUT 3600
+      LABELS long)
     # Random configurations and event sequences: upstream against itself
     # (which measures nondeterminism) and against the Python model.
     add_test(NAME upstream_random_diff
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" ${_upstream} ${_upstream} 0 20)
-    set_tests_properties(upstream_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=90" TIMEOUT 2400)
+    set_tests_properties(upstream_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=90" TIMEOUT 2400
+      LABELS long)
     # The same with two different implementations side by side.
     add_test(NAME reference_random_diff
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" "${_reference}" ${_upstream} 0 5
         --no-tf)
-    set_tests_properties(reference_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=96" TIMEOUT 1200)
+    set_tests_properties(reference_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=96" TIMEOUT 1200
+      LABELS long)
   else()
     message(WARNING "nav2_collision_monitor not found: the tests against upstream are not registered")
   endif()
@@ -173,5 +186,26 @@ if(BUILD_TESTING)
     set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800)
   endif()
 endif()
+
+# ---- begin: fixes after the review CM3/CM4 (docs/REVIEWS.md) ---------------
+# Finding 5. Without a build type CMake passes no -O flag, and the node then
+# calls cos and sin separately where an optimised build (such as upstream's
+# binary) makes one call for both; on macOS arm64 the two round differently
+# for about 1 % of the coordinates. Build with optimisation unless told
+# otherwise, so that the points of a scan are upstream's bit for bit.
+# CMAKE_BUILD_TYPE is read when the build files are generated, so setting it
+# here, after the targets were declared, takes effect for them.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "roslean_collision_monitor: no build type given, using Release")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+if(BUILD_TESTING)
+  # smoke_conversions compares the shim's points, compiled with the flags of
+  # the node, with upstream's loop in a translation unit of its own that is
+  # compiled with -O2 whatever the build type (see the file).
+  target_sources(smoke_conversions PRIVATE test/upstream_points.cpp)
+  set_source_files_properties(test/upstream_points.cpp PROPERTIES COMPILE_OPTIONS "-O2")
+endif()
+# ---- end: fixes after the review CM3/CM4 ----------------------------------
 
 ament_package()

@@ -10,8 +10,10 @@ Lifts the single-step theorems of `ROSlean.CollisionMonitor.Properties` to
   single-step output for the `n`-th event in the state reached after the
   first `n` events. Every single-step theorem therefore holds at every point
   of every run.
-* `run_scan` ties the state to the history: the stored scan is the one
-  received last (R5). With it the properties of the SPEC are restated for a
+* `run_scan` ties the state to the history: the stored scan is the one of
+  the scan event received last if that scan was usable, and none if it was
+  unusable or if there was no scan event (R5, D11). The history may contain
+  all three kinds of event in any order. With it the properties of the SPEC are restated for a
   command that arrives after an arbitrary sequence of events since start-up,
   with hypotheses about the events only (`run_stop`, `run_stale`,
   `run_pass_through`, `run_slowdown_bound`, `run_no_amplification`).
@@ -92,17 +94,40 @@ theorem run_scan_output (cfg : Config) (st : State) (es : List Event) (n now : N
   rw [run_getElem?, h]
   rfl
 
+/-- Nor do unusable scans (R1, D11). -/
+theorem run_scanUnusable_output (cfg : Config) (st : State) (es : List Event) (n now : Nat)
+    (h : es[n]? = some (.scanUnusable now)) : (run cfg st es).2[n]? = some .silent := by
+  rw [run_getElem?, h]
+  rfl
+
+/-- **Only commands are answered.** If position `n` of a run has a published
+output, the event there is a command. -/
+theorem run_publish_is_cmd (cfg : Config) (st : State) (es : List Event) (n : Nat) (a : Action)
+    (h : (run cfg st es).2[n]? = some (.publish a)) : ∃ now v, es[n]? = some (.cmd now v) := by
+  rw [run_getElem?] at h
+  cases he : es[n]? with
+  | none => simp [he] at h
+  | some e =>
+    cases e with
+    | cmd now v => exact ⟨now, v, rfl⟩
+    | scan now s => simp [he, step_scan] at h
+    | scanUnusable now => simp [he, step_scanUnusable] at h
+
 /-! ## The stored scan is the one received last (R5) -/
 
-/-- The scan of the last scan event of the sequence, or `d` if it has none.
-The last *received*, whatever the stamps say. -/
+/-- The scan in force after the sequence: the scan of its last scan event if
+that scan was usable, none if it was unusable (D11), and `d` if the sequence
+has no scan event of either kind. The last *received*, whatever the stamps
+say. -/
 def lastScan : List Event → Option Scan → Option Scan
   | [], d => d
   | .scan _ s :: es, _ => lastScan es (some s)
+  | .scanUnusable _ :: es, _ => lastScan es none
   | .cmd _ _ :: es, d => lastScan es d
 
-/-- After any run, the stored scan is the one received last. Commands,
-finite or not, do not touch it. -/
+/-- After any run, over any events, the stored scan is the one in force:
+that of the scan event received last if it was usable, none if it was
+unusable. Commands, finite or not, do not touch it. -/
 theorem run_scan (cfg : Config) (st : State) (es : List Event) :
     (run cfg st es).1.scan = lastScan es st.scan := by
   induction es generalizing st with
@@ -111,7 +136,28 @@ theorem run_scan (cfg : Config) (st : State) (es : List Event) :
     rw [run_cons, ih]
     cases e with
     | scan now s => rfl
+    | scanUnusable now => rfl
     | cmd now v => rw [step_cmd_scan]; rfl
+
+/-- After an unusable scan no scan is in force, whatever came before. -/
+theorem lastScan_append_scanUnusable (es : List Event) (now : Nat) (d : Option Scan) :
+    lastScan (es ++ [.scanUnusable now]) d = none := by
+  induction es generalizing d with
+  | nil => rfl
+  | cons e es ih => cases e <;> simp [lastScan, ih]
+
+/-- Events that follow the last scan event, usable or not, are commands: the
+scan in force is decided by the part of the history up to that event. -/
+theorem lastScan_append_cmds (es cmds : List Event) (d : Option Scan)
+    (h : ∀ e ∈ cmds, ∃ now v, e = .cmd now v) : lastScan (es ++ cmds) d = lastScan es d := by
+  induction es generalizing d with
+  | nil =>
+    induction cmds with
+    | nil => rfl
+    | cons c cs ih =>
+      obtain ⟨now, v, rfl⟩ := h _ List.mem_cons_self
+      simpa [lastScan] using ih (fun e he => h e (List.mem_cons_of_mem _ he))
+  | cons e es ih => cases e <;> simp [lastScan, ih]
 
 theorem lastScan_append_scan (es : List Event) (now : Nat) (s : Scan) (d : Option Scan) :
     lastScan (es ++ [.scan now s]) d = some s := by
@@ -148,8 +194,11 @@ theorem run_sourcePoints_eq_some_iff (cfg : Config) (es : List Event) (now : Nat
 
 /-! ## The properties of the SPEC, after any events since start-up
 
-In each statement `es` is an arbitrary sequence of events, and the command
-`(now, v)` arrives next. By `run_concat` its output is the last element of
+In each statement `es` is an arbitrary sequence of events of all three kinds
+(scans, unusable scans, commands), and the command `(now, v)` arrives next.
+`lastScan es none` is the scan in force: `some s` means that the scan event
+received last was usable and carried `s`; `none` means that it was unusable,
+or that no scan has arrived. By `run_concat` its output is the last element of
 `(run cfg State.init (es ++ [.cmd now v])).2`. -/
 
 /-- **Stop, over a run.** After any events since start-up: if the source is
@@ -173,8 +222,9 @@ theorem run_stop (cfg : Config) (es : List Event) (now : Nat) (v : Twist) (s : S
   exact ⟨k, hk, hout⟩
 
 /-- **Stale data, over a run.** After any events since start-up: if the
-source is enabled with a non-zero timeout, and no scan has arrived or the
-stamp of the scan received last is more than the timeout before `now`, the
+source is enabled with a non-zero timeout, and no scan is in force (none has
+arrived, or the one received last was unusable, D11) or the stamp of the
+scan received last is more than the timeout before `now`, the
 output of the next command is `publish stopSource`, unless the command is
 not finite or zero has already been demanded for more than
 `stop_pub_timeout`. -/
@@ -189,6 +239,25 @@ theorem run_stale (cfg : Config) (es : List Event) (now : Nat) (v : Twist)
   refine (stale cfg _ now v he ht ?_).2
   rw [run_scan]
   exact hs
+
+/-- **Unusable scan, over a run (D11).** After any events since start-up, an
+unusable scan, and then any commands: if the source is enabled with a
+non-zero timeout, the output of the next command is `publish stopSource`,
+unless the command is not finite or zero has already been demanded for more
+than `stop_pub_timeout`. This lasts until the next usable scan, and what
+preceded the unusable scan does not matter. -/
+theorem run_scanUnusable_stop (cfg : Config) (es cmds : List Event) (t now : Nat) (v : Twist)
+    (he : cfg.sourceEnabled = true) (ht : 0 < cfg.sourceTimeout)
+    (hc : ∀ e ∈ cmds, ∃ now v, e = .cmd now v) :
+    (step cfg (run cfg State.init (es ++ .scanUnusable t :: cmds)).1 (.cmd now v)).2 =
+      if v.finite = true ∧
+        ¬ ((run cfg State.init (es ++ .scanUnusable t :: cmds)).1.prevZero = true ∧
+          (run cfg State.init (es ++ .scanUnusable t :: cmds)).1.stopStamp +
+            cfg.stopPubTimeout < now)
+      then .publish .stopSource else .silent := by
+  refine run_stale cfg _ now v he ht (.inl ?_)
+  have : es ++ .scanUnusable t :: cmds = (es ++ [.scanUnusable t]) ++ cmds := by simp
+  rw [this, lastScan_append_cmds _ _ _ hc, lastScan_append_scanUnusable]
 
 /-- **Bad data (b), over a run.** A command with an infinite or NaN
 component leaves no trace: the run with it is the run without it, with one
@@ -217,6 +286,7 @@ theorem run_no_amplification (cfg : Config) (st : State) (es : List Event) (a : 
     simp only [Option.map_some, Option.some.injEq] at hn
     cases e with
     | scan now s => simp [step_scan] at hn
+    | scanUnusable now => simp [step_scanUnusable] at hn
     | cmd now v => exact no_amplification cfg _ now v a hn
 
 /-- **Slowdown bound, over a run.** After any events since start-up: if the
@@ -267,8 +337,8 @@ theorem step_zero_start (cfg : Config) (st : State) (t : Nat) (v : Twist) (hf : 
 /-- R15: during a period of zero the state does not move. If the previous
 demanded velocity was zero, and every action published during `mid` yields
 zero for its command, then afterwards the previous demanded velocity is
-still zero and the stop stamp is unchanged. Scans, ignored commands and
-commands that get no answer may occur in `mid`. -/
+still zero and the stop stamp is unchanged. Scans, unusable scans, ignored
+commands and commands that get no answer may occur in `mid`. -/
 theorem run_zero_streak (cfg : Config) (st : State) (mid : List Event)
     (hp : st.prevZero = true)
     (hz : ∀ (j now : Nat) (v : Twist) (a : Action), mid[j]? = some (.cmd now v) →
@@ -281,6 +351,7 @@ theorem run_zero_streak (cfg : Config) (st : State) (mid : List Event)
         (step cfg st e).1.stopStamp = st.stopStamp := by
       cases e with
       | scan now s => exact ⟨hp, rfl⟩
+      | scanUnusable now => exact ⟨hp, rfl⟩
       | cmd now v =>
         by_cases hf : v.finite = true
         · have hyz : (evaluate cfg st now).yieldsZero v = true := by
@@ -379,6 +450,11 @@ theorem prevZero_zeroPublishedLast (cfg : Config) (es : List Event) (n : Nat)
         intro b
         rw [hout]
         simp [step_scan]
+      | scanUnusable now =>
+        refine (ih h).succ ?_
+        intro b
+        rw [hout]
+        simp [step_scanUnusable]
       | cmd now v =>
         by_cases hf : v.finite = true
         · rw [step_cmd_prevZero _ _ _ _ hf] at h
@@ -398,8 +474,8 @@ theorem prevZero_zeroPublishedLast (cfg : Config) (es : List Event) (n : Nat)
           rw [hout, step_cmd_of_not_finite _ _ _ _ hnf]
           simp
 
-/-- **Silence follows a published zero.** In any run from start-up, if a
-finite command gets no answer, then the message published last before it
+/-- **Silence follows a published zero.** In any run from start-up, over
+events of all three kinds, if a finite command gets no answer, then the message published last before it
 was a zero: an earlier command was answered with an action that yields zero
 for it (a stop, a zero command passed on, or a zero ratio), and nothing has
 been published since.

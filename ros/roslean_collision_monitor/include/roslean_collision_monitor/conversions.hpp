@@ -1,7 +1,8 @@
-// The floating-point work of the collision monitor shim, and nothing else.
+// The floating-point work of the collision monitor shim, and what it
+// publishes for the core's answer to a command. Nothing else.
 //
 // Everything here is *trusted*: it is not covered by a theorem about the Lean
-// core (docs/collision_monitor/SPEC.md, T1 to T3). It is kept in this one
+// core (docs/collision_monitor/SPEC.md, T1 to T3 and T5). It is kept in this one
 // header, free of ROS and of Lean, so that it can be read in one sitting and
 // tested on its own (test/smoke_conversions.cpp).
 //
@@ -9,6 +10,7 @@
 //   T2  encode_scan    scan readings to points in the base frame, in metres:
 //                      the angle, cos, sin, the product and the sensor pose
 //   T3  parse_points   the text of the `points` parameter to floats
+//   T5  apply_answer   what is published for the core's answer to a command
 //
 // What is *not* here, because Lean does it in integer arithmetic
 // (core/ROSleanCore/CollisionMonitorConvert.lean): metres to millimetres with
@@ -16,7 +18,9 @@
 // and every refusal of a value. This file contains no cast from a
 // floating-point value to an integer.
 //
-// No function here decides anything about a command or a zone.
+// No function here decides anything about a command or a zone. apply_answer
+// carries out what the core decided; the one thing it settles itself is what
+// to do with an answer it does not know, and that is a stop.
 
 #ifndef ROSLEAN_COLLISION_MONITOR__CONVERSIONS_HPP_
 #define ROSLEAN_COLLISION_MONITOR__CONVERSIONS_HPP_
@@ -63,6 +67,46 @@ inline double scale(double component, uint64_t ratio_bits)
   return component * double_of_bits(ratio_bits);
 }
 
+/// What the shim does with the core's answer to a command.
+enum class Answer
+{
+  Nothing,             ///< publish nothing
+  Publish,             ///< publish the three components
+  PublishUnknownKind   ///< publish zero: the kind is none of the core's
+};
+
+/// T5. The table of the SPEC, "Where the velocity is computed". `kind` and
+/// `ratio_bits` are what `roslean_cm_out_kind` and `roslean_cm_out_ratio`
+/// returned (0 silent, 1 pass, 2 slowdown, 3 stop by a zone, 4 stop by the
+/// source); `cmd` holds linear.x, linear.y and angular.z of the command, and
+/// `out` receives the same three components of the message to publish.
+///
+/// A kind outside 0 to 4 cannot be returned by the core (`kindOf`). Were a
+/// core and a shim of different versions ever linked together, the answer
+/// the shim does not understand is a stop, not silence and not the command:
+/// `out` is zero and the caller publishes it (review CM3/CM4, finding 8).
+inline Answer apply_answer(
+  uint8_t kind, uint64_t ratio_bits, const std::array<double, 3> & cmd,
+  std::array<double, 3> & out)
+{
+  out = {0.0, 0.0, 0.0};
+  switch (kind) {
+    case 0:
+      return Answer::Nothing;
+    case 1:
+      out = cmd;
+      return Answer::Publish;
+    case 2:
+      out = {scale(cmd[0], ratio_bits), scale(cmd[1], ratio_bits), scale(cmd[2], ratio_bits)};
+      return Answer::Publish;
+    case 3:
+    case 4:
+      return Answer::Publish;
+    default:
+      return Answer::PublishUnknownKind;
+  }
+}
+
 /// The fixed pose of the sensor in the base frame: metres and radians (D11).
 struct SensorPose
 {
@@ -88,6 +132,13 @@ inline void put_le(uint8_t * out, uint64_t v, int bytes)
 /// single precision, range * cos(angle) and range * sin(angle) are
 /// single-precision products, widened to double. The core converts the
 /// coordinates to millimetres.
+///
+/// "As upstream" is about the operations. The bits of the result are
+/// upstream's when this file is compiled with optimisation (the package's
+/// default build type is Release) and with -ffp-contract=off, for a scan
+/// without a pose; without optimisation the compiler calls another library
+/// entry for cos and sin, and about 1 % of the coordinates differ by one unit
+/// in the last place of a float (SPEC, "Scan event"; smoke_conversions).
 inline std::vector<uint8_t> encode_scan(
   float angle_min, float angle_increment, const std::vector<float> & ranges,
   const SensorPose & pose)

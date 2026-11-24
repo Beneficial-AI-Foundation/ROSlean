@@ -178,6 +178,10 @@ inductive Event where
   | scan (now : Nat) (s : Scan)
   /-- A velocity command arrived. -/
   | cmd (now : Nat) (v : Twist)
+  /-- A scan arrived that the node cannot place in the base frame (D11): its
+  frame is not the base frame and no sensor pose is configured. Its content is
+  not seen by the model. -/
+  | scanUnusable (now : Nat)
   deriving Repr, DecidableEq
 
 /-- Dynamic state. -/
@@ -361,6 +365,8 @@ inductive Output where
 /-- Process one event.
 
 * A scan replaces the stored one; nothing is published (R5).
+* An unusable scan discards the stored one, so that the source has no data
+  until a usable scan arrives (D11, R8); nothing is published.
 * A command with a non-finite component is ignored: nothing is published and
   the state is unchanged (R2).
 * Otherwise the action is evaluated and published, except that a zero velocity
@@ -368,6 +374,7 @@ inductive Output where
   `stopPubTimeout` without interruption (R15). -/
 def step (cfg : Config) (st : State) : Event → State × Output
   | .scan _ s => ({ st with scan := some s }, .silent)
+  | .scanUnusable _ => ({ st with scan := none }, .silent)
   | .cmd now v =>
     if !v.finite then (st, .silent)
     else

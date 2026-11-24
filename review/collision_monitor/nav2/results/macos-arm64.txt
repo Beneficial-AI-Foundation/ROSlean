@@ -1,0 +1,324 @@
+# nav2_probe.py: rmw_fastrtps_cpp, ROS_DISTRO jazzy, Darwin arm64
+== lifecycle: Interfaces in each lifecycle state; commands and scans in each state.
+  unconfigured:
+      publishers:    ['/collision_monitor/transition_event', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/parameter_events']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description']
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [unconfigured, obstacle at 0.2 m]: velocity none, state none
+  configure: success=True, state now 2 (inactive)
+  inactive:
+      publishers:    ['/StopCircle', '/cm_state', '/cmd_vel_out', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/front_box', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_in', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [inactive, no scan sent since configure]: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [inactive, obstacle at 0.2 m stored]: velocity none, state none
+  cmd (nan, 0.0, 0.0) at 100.000000000 s [inactive, a NaN command]: velocity none, state none
+  activate: success=True, state now 3 (active)
+  ... published by the transition to active: velocity none, state none, polygons [('front_box', 'base_footprint', 100000000000, 4), ('StopCircle', 'base_footprint', 100000000000, 16)]
+  active:
+      publishers:    ['/StopCircle', '/cm_state', '/cmd_vel_out', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/front_box', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_in', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [active, the scan was received while inactive]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)], polygons [('StopCircle', 'base_footprint', 100000000000, 16), ('front_box', 'base_footprint', 100000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [active, again]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('StopCircle', 'base_footprint', 100000000000, 16), ('front_box', 'base_footprint', 100000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [1 s after the first zero: still published]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('front_box', 'base_footprint', 101000000000, 4), ('StopCircle', 'base_footprint', 101000000000, 16)]
+  cmd (0.5, 0.0, 0.0) at 101.000000001 s [1 s + 1 ns after the first zero: withheld]: velocity none, state none, polygons [('front_box', 'base_footprint', 101000000001, 4), ('StopCircle', 'base_footprint', 101000000001, 16)]
+  deactivate: success=True, state now 2 (inactive)
+  ... published by the transition to inactive: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 101.000000001 s [inactive again]: velocity none, state none
+  activate: success=True, state now 3 (active)
+  ... published by the second activation: velocity none, state none, polygons [('front_box', 'base_footprint', 101000000001, 4), ('StopCircle', 'base_footprint', 101000000001, 16)]
+  cmd (0.5, 0.0, 0.0) at 101.000000001 s [active again, same clock, same scan: zero and state are published anew]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)], polygons [('StopCircle', 'base_footprint', 101000000001, 16), ('front_box', 'base_footprint', 101000000001, 4)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [1 s - 1 ns after re-activation: published (the stop stamp was renewed)]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('front_box', 'base_footprint', 102000000000, 4), ('StopCircle', 'base_footprint', 102000000000, 16)]
+  cmd (0.5, 0.0, 0.0) at 102.000000002 s [1 s + 1 ns after the zero that followed re-activation: withheld]: velocity none, state none, polygons [('front_box', 'base_footprint', 102000000002, 4), ('StopCircle', 'base_footprint', 102000000002, 16)]
+  deactivate: success=True, state now 2 (inactive)
+  cleanup: success=True, state now 1 (unconfigured)
+  unconfigured after cleanup:
+      publishers:    ['/collision_monitor/transition_event', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/parameter_events']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 102.000000002 s [after cleanup, configure, activate: the stored scan is gone]: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)], polygons [('StopCircle', 'base_footprint', 102000000002, 16), ('front_box', 'base_footprint', 102000000002, 4)]
+  cmd (0.5, 0.0, 0.0) at 102.000000002 s [a clear scan]: velocity [(0.5, 0.0, 0.0)], state [('', 0)], polygons [('front_box', 'base_footprint', 102000000002, 4), ('StopCircle', 'base_footprint', 102000000002, 16)]
+  shutdown from active: success=True, state now 4 (finalized)
+  finalized:
+      publishers:    ['/StopCircle', '/cm_state', '/cmd_vel_out', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/front_box', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_in', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+  cmd (0.5, 0.0, 0.0) at 102.000000002 s [finalized (shut down from active)]: velocity [(0.5, 0.0, 0.0)], state none, polygons [('StopCircle', 'base_footprint', 102000000002, 16), ('front_box', 'base_footprint', 102000000002, 4)]
+      log x2: [collision_monitor]: Configuring
+      log x3: [collision_monitor]: Activating
+      log x2: [collision_monitor]: Deactivating
+      log x1: [collision_monitor]: Cleaning up
+      log x1: [collision_monitor]: Shutting down
+
+== state: Every state message, also while the velocity is withheld.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [clear: first command, passes]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point in the slowdown circle]: velocity [(0.25, 0.0, 0.0)], state [('SlowCircle', 2)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [same]: velocity [(0.25, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point in both: stop]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [2 s later, still stop: velocity withheld]: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [slowdown, non-zero command: velocity returns]: velocity [(0.25, 0.0, 0.0)], state [('SlowCircle', 2)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [stop again]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 104.000000000 s [withheld]: velocity none, state none
+  cmd (0.0, 0.0, 0.0) at 104.000000000 s [zero command in the slowdown zone while withheld]: velocity none, state [('', 0)]
+  cmd (0.0, 0.0, 0.0) at 104.000000000 s [zero command, clear, while withheld]: velocity none, state none
+  cmd (0.0, 0.0, 0.0) at 120.000000000 s [scan now 16 s old: invalid source while withheld]: velocity none, state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 120.000000000 s [same, non-zero command]: velocity none, state none
+  cmd (nan, 0.0, 0.0) at 120.000000000 s [a NaN command]: velocity none, state none
+  state topic: type nav2_msgs/msg/CollisionMonitorState, reliability RELIABLE, durability VOLATILE, depth 0
+
+== visualize: The polygon publishers and the collision point markers.
+  configure: success=True, state now 2 (inactive)
+  ... after configure: velocity none, state none
+  activate: success=True, state now 3 (active)
+  ... after activate: velocity none, state none, polygons [('front_box', 'base_footprint', 100000000000, 4), ('StopCircle', 'base_footprint', 100000000000, 16)]
+      front_box: frame 'base_footprint', stamp 100000000000, 4 points, first four [(0.5, 0.30000001192092896, 0.0), (0.5, -0.30000001192092896, 0.0), (0.0, -0.30000001192092896, 0.0), (0.0, 0.30000001192092896, 0.0)]
+      StopCircle: frame 'base_footprint', stamp 100000000000, 16 points, first four [(0.5, 0.0, 0.0), (0.4619397521018982, 0.19134171307086945, 0.0), (0.3535533845424652, 0.3535533845424652, 0.0), (0.19134171307086945, 0.4619397521018982, 0.0)]
+  /front_box: type geometry_msgs/msg/PolygonStamped, reliability RELIABLE, durability TRANSIENT_LOCAL
+  /StopCircle: type geometry_msgs/msg/PolygonStamped, reliability RELIABLE, durability TRANSIENT_LOCAL
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [stop]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)], polygons [('StopCircle', 'base_footprint', 101000000000, 16), ('front_box', 'base_footprint', 101000000000, 4)]
+  cmd (nan, 0.0, 0.0) at 101.000000000 s [a NaN command]: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 105.000000000 s [withheld velocity]: velocity none, state none, polygons [('StopCircle', 'base_footprint', 105000000000, 16), ('front_box', 'base_footprint', 105000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 105.000000000 s [with a subscriber on collision_points_marker]: velocity none, state none, polygons [('front_box', 'base_footprint', 105000000000, 4), ('StopCircle', 'base_footprint', 105000000000, 16)]
+      marker ns 'collision_points_scan', frame 'base_footprint', type 8, points [(0.2, 0.0), (0.19999, 0.002), (1.9996, 0.039997)]
+  deactivate: success=True, state now 2 (inactive)
+  ... after deactivate: velocity none, state none
+
+== bond: The bond topic with heartbeats on, wall-clock time.
+  configure: success=True, state now 2 (inactive)
+  bond messages while inactive: 0
+  activate: success=True, state now 3 (active)
+  bond messages in 2 s after activation: 23
+      id 'collision_monitor', active True, heartbeat_timeout 4.0, heartbeat_period 0.10000000149011612
+  /bond publisher of collision_monitor: reliability RELIABLE, durability VOLATILE
+  deactivate: success=True, state now 2 (inactive)
+  bond messages after deactivation: 1, active flags [False]
+      log x1: [collision_monitor]: Creating bond (collision_monitor) to lifecycle manager.
+      log x1: [collision_monitor]: Destroying bond (collision_monitor) to lifecycle manager.
+
+== manager: Nav2's lifecycle manager drives the node; then the node is killed.
+  8 s after the lifecycle manager started: node state 3 (active)
+  node killed (SIGKILL)
+      manager: [lifecycle_manager_probe]: Creating
+      manager: [lifecycle_manager_probe]: Creating and initializing lifecycle service clients
+      manager: [lifecycle_manager_probe]: Starting managed nodes bringup...
+      manager: [lifecycle_manager_probe]: Configuring collision_monitor
+      manager: [lifecycle_manager_probe]: Activating collision_monitor
+      manager: [lifecycle_manager_probe]: Server collision_monitor connected with bond.
+      manager: [lifecycle_manager_probe]: Managed nodes are active
+      manager: [lifecycle_manager_probe]: Creating bond timer...
+      manager: [lifecycle_manager_probe]: Have not received a heartbeat from collision_monitor.
+      manager: [lifecycle_manager_probe]: CRITICAL FAILURE: SERVER collision_monitor IS DOWN after not receiving a heartbeat for 4000 ms. Shutting down related nodes.
+      manager: [lifecycle_manager_probe]: Terminating bond timer...
+      manager: [lifecycle_manager_probe]: Resetting managed nodes...
+      manager: [lifecycle_manager_probe]: Deactivating collision_monitor
+      manager: [lifecycle_manager_probe]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_probe)
+      log x1: [collision_monitor]: Configuring
+      log x1: [collision_monitor]: Activating
+      log x1: [collision_monitor]: Creating bond (collision_monitor) to lifecycle manager.
+
+== tf-latest: Without base shift correction the newest transform is used, whatever its stamp.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor 1 m ahead of the base at the scan stamp: point at 1.2 m]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [a transform stamped 0.5 s after the scan and after the clock says the sensor is at the base: point at 0.2 m]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 104.000000000 s [the newest transform is 3.5 s old, the scan 4 s (timeout 5 s)]: velocity [(0.0, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 104.000000000 s [a transform with a stamp between the two (sensor 1 m ahead) arrives late]: velocity [(0.0, 0.0, 0.0)], state none
+
+== tf-tilt: Roll, pitch and height of the sensor: the 3D transform is projected on the plane.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [upright sensor, ray to the left at 0.3 m; the zone is on the right]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor upside down (roll of half a turn): the ray lands on the right]: velocity [(0.0, 0.0, 0.0)], state [('RightBox', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor 5 m above the base, ray to the right: height is ignored]: velocity [(0.0, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [quaternion (0, 0, 0, 2), not normalised, ray to the right]: velocity [(0.0, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor turned a quarter turn to the left, ray ahead: lands on the left]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [same sensor, ray backwards: lands on the right]: velocity [(0.0, 0.0, 0.0)], state [('RightBox', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor pitched a quarter turn, rays to the right at 3 m (y unchanged by the pitch)]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [same sensor, ray to the right at 0.3 m]: velocity [(0.0, 0.0, 0.0)], state [('RightBox', 1)]
+
+== tf-pitch-circle: A pitched sensor: a far point ahead is projected onto the base's origin.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [upright sensor, point 3 m ahead; stop circle of 0.5 m]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [sensor pitched a quarter turn (looking down or up), point 3 m along its x axis]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+
+== tf-missing: No transform, and a transform that arrives while the node waits for it.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [scan in a frame without transform; tolerance 0.5 s; clock stands still]: velocity none, state none
+  ... 1.5 s of wall time later, clock unchanged: velocity none, state none
+  ... clock advanced by tolerance - 1 ns: velocity none, state none
+  ... clock advanced by exactly the tolerance: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.500000000 s [next command at the new clock]: velocity none, state none
+  ... before the clock moves: velocity none, state none
+  ... the transform arrives while the node waits; the clock has not moved: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.500000000 s [with the transform present]: velocity [(0.0, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.500000000 s [a scan with an empty frame_id]: velocity none, state none
+  ... after the tolerance: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+      log x1: [getTransform]: Failed to get "laser"->"base_footprint" frame transform: "base_footprint" passed to lookupTransform argument target_frame does not exist.
+      log x2: [collision_monitor]: Robot to stop due to invalid source. Either due to data not published yet, or to lack of new data received within the sensor timeout, or if impossible to transform data to base frame
+      log x1: [getTransform]: Failed to get ""->"base_footprint" frame transform: Invalid argument "" passed to lookupTransform argument source_frame - in tf2 frame_ids cannot be empty
+
+== tf-missing-timeout0: No transform with source_timeout 0 and with transform_tolerance 0.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [no transform, tolerance 0, source_timeout 0]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [transform present]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+
+== shift-straight: Base shift correction: the odom frame moves between scan and command.
+  -- base_shift_correction: True
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [no scan yet]: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [scan stamped now, point 1.2 m ahead; odom sample at this instant only]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 100.500000000 s [0.5 s later; odom samples at 0 s (x = 0) and 1 s (x = 1): the base is at 0.5 m]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [1 s later: the base has moved 1 m, the point is 0.2 m ahead]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.250000000 s [0.25 s after the newest odom sample; tolerance 0.5 s]: velocity none, state none
+  ... clock advanced by the tolerance: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.750000000 s [next command, still no newer odom sample]: velocity none, state none
+  ... before anything else happens: velocity none, state none
+  ... an odom sample newer than the command arrives; clock unchanged: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.750000000 s [odom samples on both sides of the clock]: velocity [(0.0, 0.0, 0.0)], state none
+      log x1: [getTransform]: Failed to get "base_footprint"->"base_footprint" frame transform: Lookup would require extrapolation into the future.  Requested time 101.250000 but the latest data is at time 101.000000, when looking up transform from frame [odom] to frame [base_footprint]
+  -- base_shift_correction: False
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 150.000000000 s [no scan yet]: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 150.000000000 s [scan stamped now, point 1.2 m ahead; odom sample at this instant only]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 150.500000000 s [0.5 s later; odom samples at 0 s (x = 0) and 1 s (x = 1): the base is at 0.5 m]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 151.000000000 s [1 s later: the base has moved 1 m, the point is 0.2 m ahead]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 151.250000000 s [0.25 s after the newest odom sample; tolerance 0.5 s]: velocity [(0.5, 0.0, 0.0)], state none
+  ... clock advanced by the tolerance: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 151.750000000 s [next command, still no newer odom sample]: velocity [(0.5, 0.0, 0.0)], state none
+  ... before anything else happens: velocity none, state none
+  ... an odom sample newer than the command arrives; clock unchanged: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 151.750000000 s [odom samples on both sides of the clock]: velocity [(0.5, 0.0, 0.0)], state none
+
+== shift-turn: Base shift correction when the base turns by half a turn.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point 0.3 m ahead, in the front box]: velocity [(0.0, 0.0, 0.0)], state [('FrontBox', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [the base has turned half a turn since the scan: the point is behind it]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [a scan stamped before the turn with the point behind: now ahead]: velocity [(0.0, 0.0, 0.0)], state [('FrontBox', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [the same scan stamped after the turn]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+
+== shift-sensor-frame: Base shift correction with the scan in a sensor frame, and its failure cases.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [sensor 0.5 m ahead of the base, point 0.7 m ahead of it at the scan stamp, base moved 1 m: 0.2 m ahead]: velocity [(0.0, 0.0, 0.0)], state [('StopCircle', 1)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [a scan stamped 1 s before the oldest odom sample]: velocity none, state none
+  ... after the tolerance: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [scan and command at 2 s, base at rest at 1 m: point 1.2 m ahead]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+      log x1: [getTransform]: Failed to get "laser"->"base_footprint" frame transform: Lookup would require extrapolation into the past.  Requested time 99.000000 but the earliest data is at time 100.000000, when looking up transform from frame [laser] to frame [odom]
+
+== shift-no-odom: Base shift correction with the scan already in the base frame and no odom frame.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [scan in the base frame, nothing near, no transform published at all]: velocity none, state none
+  ... after the tolerance: velocity [(0.0, 0.0, 0.0)], state [('invalid source', 1)]
+  cmd (0.5, 0.0, 0.0) at 100.500000000 s [odom samples around the clock]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+      log x1: [getTransform]: Failed to get "base_footprint"->"base_footprint" frame transform: "base_footprint" passed to lookupTransform argument target_frame does not exist.
+
+== footprint-edit: Nav2's default FootprintApproach zone with only action_type changed.
+  -- nav2_params.yaml, FootprintApproach.action_type: approach, nothing else
+  configure: success=True, state now 2 (inactive)
+  inactive:
+      publishers:    ['/cmd_vel', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/collision_monitor_state', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_smoothed', '/local_costmap/published_footprint', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+      log x1: [collision_monitor]: [FootprintApproach]: Polygon points are not defined. Using dynamic subscription instead.
+      log x1: [collision_monitor]: [FootprintApproach]: Making footprint subscriber on /local_costmap/published_footprint topic
+  -- nav2_params.yaml, FootprintApproach.action_type: stop, nothing else
+  configure: success=False, state now 1 (unconfigured)
+      log x1: [collision_monitor]: [FootprintApproach]: Polygon points are not defined. Using dynamic subscription instead.
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting common polygon parameters: parameter 'FootprintApproach.polygon_sub_topic' is not initialized
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting polygon parameters: static points and sub topic both not defined
+  -- nav2_params.yaml, FootprintApproach.action_type: slowdown, nothing else
+  configure: success=False, state now 1 (unconfigured)
+      log x1: [collision_monitor]: [FootprintApproach]: Polygon points are not defined. Using dynamic subscription instead.
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting common polygon parameters: parameter 'FootprintApproach.polygon_sub_topic' is not initialized
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting polygon parameters: static points and sub topic both not defined
+  -- the package example file collision_monitor_params.yaml, polygons: ["FootprintApproach"], action_type: stop
+  configure: success=False, state now 1 (unconfigured)
+      log x1: [collision_monitor]: [FootprintApproach]: Polygon points are not defined. Using dynamic subscription instead.
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting common polygon parameters: parameter 'FootprintApproach.polygon_sub_topic' is not initialized
+      log x1: [collision_monitor]: [FootprintApproach]: Error while getting polygon parameters: static points and sub topic both not defined
+
+[WARN] [1795508807.281227000] [rcl.logging_rosout]: Publisher already registered for node name: 'cm_nav2_probe'. If this is due to multiple nodes with the same name then all logs for the logger named 'cm_nav2_probe' will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+== footprint-sub-topic: The same zone as `stop` with polygon_sub_topic pointed at the published footprint.
+  configure: success=True, state now 2 (inactive)
+  inactive:
+      publishers:    ['/cmd_vel', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/collision_monitor_state', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_smoothed', '/local_costmap/published_footprint', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+  subscription on /local_costmap/published_footprint: type geometry_msgs/msg/PolygonStamped, reliability BEST_EFFORT, durability VOLATILE
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [no footprint message yet; 8 points 0.1 m ahead (min_points 6)]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [footprint received: a 0.5 m square around the base, given in odom]: velocity [(0.0, 0.0, 0.0)], state [('FootprintApproach', 1)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [the base has moved 1 m; no new footprint message; 8 points 0.1 m ahead]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [8 points 1.1 m behind the base, where the footprint was]: velocity [(0.0, 0.0, 0.0)], state [('FootprintApproach', 1)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [a footprint message at the new position; 8 points 0.1 m ahead]: velocity [(0.0, 0.0, 0.0)], state none
+      log x1: [collision_monitor]: [FootprintApproach]: Polygon shape is not set yet
+      log x2: [collision_monitor]: [FootprintApproach]: Polygon shape update has been arrived
+
+== footprint-topic-ignored: footprint_topic on a stop zone that has static points.
+  configure: success=True, state now 2 (inactive)
+  inactive: static points with footprint_topic and polygon_sub_topic set:
+      publishers:    ['/cm_state', '/cmd_vel_out', '/collision_monitor/collision_points_marker', '/collision_monitor/transition_event', '/parameter_events', '/rosout']
+      subscriptions: ['/clock', '/cmd_vel_in', '/parameter_events', '/scan', '/tf', '/tf_static']
+      services:      ['/collision_monitor/change_state', '/collision_monitor/get_available_states', '/collision_monitor/get_available_transitions', '/collision_monitor/get_state', '/collision_monitor/get_transition_graph', '/collision_monitor/get_type_description', '/collision_monitor/toggle']
+
+== polygon-topic: A stop zone whose shape arrives on polygon_sub_topic.
+  configure: success=True, state now 2 (inactive)
+  subscription on /zone_shape: type geometry_msgs/msg/PolygonStamped, reliability BEST_EFFORT, durability VOLATILE, depth 0
+  activate: success=True, state now 3 (active)
+  ... published by the activation, no shape yet: velocity none, state none, polygons [('Dyn', 'base_footprint', 100000000000, 0)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [no shape received yet, point 0.2 m ahead]: velocity [(0.5, 0.0, 0.0)], state none, polygons [('Dyn', 'base_footprint', 100000000000, 0)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [front box received]: velocity [(0.0, 0.0, 0.0)], state [('Dyn', 1)], polygons [('Dyn', 'base_footprint', 100000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [a message with two points: refused, the box stays]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('Dyn', 'base_footprint', 100000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [a message with no points: refused, the box stays]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('Dyn', 'base_footprint', 100000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [a triangle behind the base: accepted, the point ahead is outside]: velocity [(0.5, 0.0, 0.0)], state [('', 0)], polygons [('Dyn', 'base_footprint', 100000000000, 3)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point 0.2 m behind, inside the triangle]: velocity [(0.0, 0.0, 0.0)], state [('Dyn', 1)], polygons [('Dyn', 'base_footprint', 100000000000, 3)]
+  ... a box in a frame without transform (the callback waits for the tolerance): velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [after the tolerance: the triangle is still the shape]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('Dyn', 'base_footprint', 101000000000, 3)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [the front box given in a frame 0.5 m behind the base: it lies behind, the point behind is inside]: velocity [(0.0, 0.0, 0.0)], state none, polygons [('Dyn', 'shifted', 101000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 101.000000000 s [point 0.2 m ahead: outside the shifted box]: velocity [(0.5, 0.0, 0.0)], state [('', 0)], polygons [('Dyn', 'shifted', 101000000000, 4)]
+  ... a box with an empty frame_id: velocity none, state none
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [after the tolerance: shape unchanged]: velocity [(0.5, 0.0, 0.0)], state none, polygons [('Dyn', 'shifted', 102000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [a box with a NaN coordinate, point 0.2 m ahead]: velocity [(0.5, 0.0, 0.0)], state none, polygons [('Dyn', 'base_footprint', 102000000000, 4)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [a closed box (first point repeated)]: velocity [(0.0, 0.0, 0.0)], state [('Dyn', 1)], polygons [('Dyn', 'base_footprint', 102000000000, 5)]
+  cmd (0.5, 0.0, 0.0) at 102.000000000 s [three equal points]: velocity [(0.5, 0.0, 0.0)], state [('', 0)], polygons [('Dyn', 'base_footprint', 102000000000, 3)]
+      last published polygon on Dyn: frame 'base_footprint', [(0.5, 0.0), (0.5, 0.0), (0.5, 0.0)]
+      log x1: [collision_monitor]: [Dyn]: Polygon shape is not set yet
+
+== polygon-topic-moving: A shape given in a moving frame follows the newest transform at each command.
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [box in frame carrier, which coincides with the base: point inside, slowdown]: velocity [(0.25, 0.0, 0.0)], state [('Dyn', 2)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [carrier has moved 2 m ahead, no new shape message]: velocity [(0.5, 0.0, 0.0)], state [('', 0)]
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point 2.2 m ahead]: velocity [(0.25, 0.0, 0.0)], state [('Dyn', 2)]
+
+== polygon-topic-inactive: Shape messages while inactive and across cleanup; polygon_subscribe_transient_local.
+  a latched front box (reliable, transient local) was published before configure
+  configure: success=True, state now 2 (inactive)
+  subscription on /zone_shape: reliability BEST_EFFORT, durability TRANSIENT_LOCAL
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point 0.2 m ahead: stop if the latched box was delivered]: velocity [(0.5, 0.0, 0.0)], state none
+  deactivate: success=True, state now 2 (inactive)
+  a triangle behind the base was published while inactive
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [active again, point 0.2 m ahead]: velocity [(0.5, 0.0, 0.0)], state none
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [point 0.2 m behind: stop if the triangle was taken while inactive]: velocity [(0.0, 0.0, 0.0)], state [('Dyn', 1)]
+  deactivate: success=True, state now 2 (inactive)
+  cleanup: success=True, state now 1 (unconfigured)
+  configure: success=True, state now 2 (inactive)
+  activate: success=True, state now 3 (active)
+  cmd (0.5, 0.0, 0.0) at 100.000000000 s [after cleanup, configure, activate, no new message: point 0.2 m behind]: velocity [(0.5, 0.0, 0.0)], state none
+      log x2: [collision_monitor]: [Dyn]: Polygon shape is not set yet
+      log x1: [collision_monitor]: [Dyn]: Polygon shape update has been arrived
+

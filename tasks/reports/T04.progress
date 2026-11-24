@@ -1,0 +1,1 @@
+2026-11-24 09:44 written once, at the end (the rule arrived with the final merge): upstream source read; 20 probe cases run on the binary and saved; transform cost measured; SPEC_NAV2.md, corrections to T05-T07 and the report written; origin/collision-monitor (cc4dcd2) merged, core builds. next: push claude/cm-nav2-spec; finished

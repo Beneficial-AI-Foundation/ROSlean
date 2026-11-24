@@ -80,7 +80,9 @@ lean_object * roslean_cm_builder_add_vertex(lean_object * b, uint32_t x_bits, ui
 lean_object * roslean_cm_new(lean_object * b);
 uint8_t roslean_cm_ok(lean_object * m);
 /* 0 accepted, 1 `source_timeout`, 2 the source's own `source_timeout`,
- * 3 `stop_pub_timeout`, 4 a zone. */
+ * 3 `stop_pub_timeout`, 4 a zone, 5 `set_source` was never called, 6 a vertex
+ * was added when the zone added last was not a polygon. A new builder is not
+ * accepted (5), and no call clears a refusal. */
 uint8_t roslean_cm_error(lean_object * m);
 /* 0 zone `k` is accepted, 1 `radius`, 2 `points`, 3 `slowdown_ratio`,
  * 4 `min_points`, 5 no such zone. */
