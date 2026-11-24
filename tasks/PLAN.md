@@ -42,7 +42,7 @@ same row group can run at the same time.
 | --- | --- | --- | --- | --- |
 | [T00](T00-cloud-setup.md) | Cloud environment: set-up script, what runs there | — | yes | merged 586f733 |
 | [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | running |
-| [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | running |
+| [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | merged c2d5f85 |
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | open |
 | [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02 | yes | open |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | open |
@@ -71,7 +71,7 @@ So that parallel tasks do not collide.
 | Files | Tasks that may change them |
 | --- | --- |
 | `core/ROSleanCore/CollisionMonitor*.lean`, `ROSlean/CollisionMonitor/` | T01, then T03, T05, T06 (FFI files only), T09 |
-| `ros/roslean_core`, `ros/roslean_collision_monitor/{src,include,config}`, `smoke_*` tests | T01, then T03, T06, T09 |
+| `ros/roslean_core`, `ros/roslean_collision_monitor/{src,include,config}`, `smoke_*` tests, the package's `package.xml` and the non-harness part of its `CMakeLists.txt` | T01, then T03, T06, T09 |
 | `ros/roslean_collision_monitor/test/` (harness), `bench/` | T02, then T07, T08 |
 | `docs/collision_monitor/SPEC.md` | T01, T03, T05, T06, T09 |
 | `docs/collision_monitor/SPEC_NAV2.md` | T04; later tasks correct it |
@@ -104,9 +104,16 @@ Open, with the default that tasks follow until the user decides:
 | Scan age by arrival time instead of header stamp? | As upstream: header stamp |
 | Publish zero for a non-finite command? | As upstream: ignored |
 | Refuse zones that protect nothing (no zones, radius 0, `source_timeout: 0`)? | Accept and warn |
-| Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | T04 recommends; until decided, the option T04 recommends |
+| Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | T04 recommends B (in Lean; 1.2 to 1.9 µs per reading and command measured); B until decided |
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
 | Keep the extra 1 mm on circle radii? | Keep |
+| (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
+| (T04) A footprint zone fed from odom is left behind when its publisher stops: accept, give shapes a maximum age, or document only the fixed polygon? | Accept, as upstream; document the fixed polygon as the recommended edit |
+| (T04) Does `source_timeout: 0` also disable the stop for a missing transform? | As upstream: yes |
+| (T04) Reproduce upstream's wait for a transform inside the command callback? | Yes |
+| (T04) After shutdown from the active state: silent (ours, ND4) or keep forwarding (upstream)? | Silent |
+| (T04) Stand-alone process if the node cannot be loaded into Nav2's component container? | Acceptable; T06 tries composition first |
+| (T04) Which Nav2 parameter edit to document? | The footprint as a fixed polygon; the two-line `polygon_sub_topic` change is mentioned |
 
 ## Watching the tasks
 
