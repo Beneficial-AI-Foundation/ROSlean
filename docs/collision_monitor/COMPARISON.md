@@ -510,8 +510,9 @@ When these runs were made one input crashed the Lean node, on both
 platforms (exit by signal 6). Since task T03 none does: the case
 `clock-negative` (a `/clock` of −5 s, of −1 ns short of 0, of −2³¹ s, each
 followed by a usable one) passes with upstream beside the node and gone
-after the first message; all 23 cases, 129 checks, 0 failures on macOS
-(`bench/results/cm_comparison/t03/fault_injection.log`). Everything else
+after the first message; all 23 cases, 129 checks, 0 failures on macOS and
+in the Linux container (`bench/results/cm_comparison/t03/fault_injection.log`,
+`…/t03/linux/fault_injection.log`). Everything else
 is handled, and handled as the SPEC says.
 
 ## Defects
@@ -1062,7 +1063,12 @@ first run, on the first version of the fast path (`759d895`), gave the same
 the first attempt *upstream's* answer to one command was not what the
 test's own model of upstream says (an `oracle` problem, command 82); a
 benchmark of this task was running on the machine then, and in the final
-run the seed passed at once.
+run the seed passed at once. In the Linux container (`1c68b38`): 0 cases
+outside the bounds, none retried, 26,951 commands, 747 that depend on a
+growth band, 588 demanded and 763 published differently, and again every
+one of the 300 lines is that of this document's Linux run
+(`bench/results/cm_comparison/linux/random_[0-2].log` against
+`bench/results/cm_comparison/t03/linux/random_?.log`).
 
 **The point test, repeated.** `band_bounds 100000 7` (34 million points
 against upstream's zone tests): the log is the same as this document's,
@@ -1286,9 +1292,9 @@ container:
 | Test | What | macOS | Linux | Label |
 | --- | --- | ---: | ---: | --- |
 | `band_bounds` | core against upstream's zone tests, 6.8 million points | 35 s | 30 s | |
-| `roslean_cmd_cost` | a command is within the budget of [Cost of a command](#cost-of-a-command) (it was expected to fail until T03) | 2 s | not run since | |
+| `roslean_cmd_cost` | a command is within the budget of [Cost of a command](#cost-of-a-command) (it was expected to fail until T03) | 6 s | not run as a test since (the program: within the budget) | |
 | `t2_point_as_upstream` | macOS only: the shim's point for one reading against upstream's bits | under 1 s | not registered | |
-| `roslean_fault_clock_negative` | a negative `/clock` message: the node answers zero and goes on, upstream is gone (D15; it was expected to fail until T03) | 25 s | not run since | |
+| `roslean_fault_clock_negative` | a negative `/clock` message: the node answers zero and goes on, upstream is gone (D15; it was expected to fail until T03) | 8 s | not run as a test since (the case passes in `faults`) | |
 | `upstream_probes` | the 18 probes on upstream's binary | 35 s | 33 s | |
 | `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | 274 s | 271 s | long |
 | `roslean_fault_injection` | 19 fault cases, upstream beside the node | 93 s | 92 s | long |

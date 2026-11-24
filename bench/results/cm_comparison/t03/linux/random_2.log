@@ -34,3 +34,22 @@ ok    seed=130 zones=3 tf=1 yaw=None stamped=0 commands=77 boundary-dependent=2 
 ok    seed=131 zones=2 tf=1 yaw=None stamped=0 commands=112 boundary-dependent=9 differ=6 published-differ=10 farthest=1.268mm 24.4s
 ok    seed=132 zones=2 tf=0 yaw=None stamped=0 commands=106 boundary-dependent=5 differ=5 published-differ=5 farthest=0.015mm 16.6s
 ok    seed=133 zones=2 tf=0 yaw=None stamped=0 commands=86 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 12.3s
+ok    seed=134 zones=2 tf=0 yaw=None stamped=1 commands=125 boundary-dependent=7 differ=6 published-differ=7 farthest=1.423mm 18.2s
+ok    seed=135 zones=3 tf=0 yaw=None stamped=0 commands=81 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 13.1s
+ok    seed=136 zones=3 tf=1 yaw=None stamped=1 commands=112 boundary-dependent=2 differ=2 published-differ=2 farthest=0.167mm 16.5s
+ok    seed=137 zones=1 tf=1 yaw=None stamped=1 commands=92 boundary-dependent=1 differ=1 published-differ=1 farthest=0.000mm 13.7s
+ok    seed=138 zones=1 tf=0 yaw=None stamped=1 commands=83 boundary-dependent=3 differ=3 published-differ=3 farthest=0.352mm 12.4s
+ok    seed=139 zones=1 tf=0 yaw=None stamped=0 commands=103 boundary-dependent=4 differ=3 published-differ=4 farthest=0.011mm 16.4s
+ok    seed=140 zones=1 tf=1 yaw=None stamped=1 commands=102 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 15.8s
+ok    seed=141 zones=3 tf=1 yaw=None stamped=0 commands=89 boundary-dependent=1 differ=1 published-differ=1 farthest=0.367mm 14.5s
+ok    seed=142 zones=3 tf=0 yaw=None stamped=0 commands=71 boundary-dependent=1 differ=1 published-differ=1 farthest=0.255mm 11.9s
+ok    seed=143 zones=1 tf=0 yaw=None stamped=0 commands=111 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 15.3s
+ok    seed=144 zones=2 tf=0 yaw=None stamped=1 commands=106 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 15.6s
+ok    seed=145 zones=2 tf=0 yaw=None stamped=0 commands=114 boundary-dependent=21 differ=16 published-differ=16 farthest=1.204mm 16.8s
+ok    seed=146 zones=1 tf=1 yaw=None stamped=0 commands=101 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 14.2s
+ok    seed=147 zones=3 tf=0 yaw=None stamped=1 commands=89 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 14.9s
+ok    seed=148 zones=2 tf=0 yaw=None stamped=0 commands=93 boundary-dependent=6 differ=6 published-differ=6 farthest=0.144mm 13.5s
+ok    seed=149 zones=1 tf=1 yaw=None stamped=1 commands=64 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 11.4s
+circle zones: 9904 point tests, 587 of them within 3.5 mm outside the zone; 41 answers differ because of such a point, the deciding point 0.000 to 1.423 mm outside (median 0.000)
+polygon zones: 8464 point tests, 453 of them within 4.4 mm outside the zone; 58 answers differ because of such a point, the deciding point 0.000 to 3.016 mm outside (median 0.184)
+0 case(s) outside the bounds in 50 random cases, 4685 commands, of which 136 depend on a point in a growth band; the two nodes demand different velocities for 99 and publish differently for 126; 0 case(s) passed only on the slow retry
