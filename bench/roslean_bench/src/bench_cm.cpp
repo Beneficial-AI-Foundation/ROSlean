@@ -39,6 +39,7 @@
 #include "nav2_collision_monitor/collision_monitor_node.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "roslean_collision_monitor/conversions.hpp"
+#include "roslean_collision_monitor/transforms.hpp"
 #include "roslean_core/collision_monitor.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
@@ -102,6 +103,8 @@ public:
     if (!monitor_->ok()) {
       throw std::runtime_error("the Lean core refuses the benchmark configuration");
     }
+    monitor_->on_lifecycle(CollisionMonitor::Transition::Configure);
+    monitor_->on_lifecycle(CollisionMonitor::Transition::Activate);
     pub_ = create_publisher<geometry_msgs::msg::Twist>(
       "bench_lean_out", rclcpp::QoS(rclcpp::KeepLast(1)));
   }
@@ -111,26 +114,41 @@ public:
     return static_cast<uint64_t>(std::max<rcl_time_point_value_t>(now().nanoseconds(), 0));
   }
 
+  // Since task T06: the scan callback hands over the ranges and keeps the
+  // message; the command callback asks the core which lookups to make,
+  // computes the points of the stored scan in the base frame (here under
+  // the identity, as for a scan in the base frame without base shift
+  // correction: no TF buffer is involved) and hands them over with the
+  // command. The state message and the polygons are not published here.
   void scan(const sensor_msgs::msg::LaserScan & msg)
   {
     using namespace roslean_collision_monitor;
     const uint64_t t = now_ns();
     const int64_t stamp_ns =
       static_cast<int64_t>(msg.header.stamp.sec) * 1000000000 + msg.header.stamp.nanosec;
-    const bool usable = msg.header.frame_id == base_frame_id_;
-    const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges, SensorPose{});
+    const auto ranges = encode_ranges(msg.ranges);
     monitor_->on_scan(
-      t, stamp_ns, usable, bits_of(msg.range_min), bits_of(msg.range_max), beams.data(),
-      beams.size());
+      t, stamp_ns, bits_of(msg.range_min), bits_of(msg.range_max), ranges.data(), ranges.size());
+    scan_ = msg;
   }
 
   void cmd(const geometry_msgs::msg::Twist & c)
   {
     using namespace roslean_collision_monitor;
     const uint64_t t = now_ns();
+    const uint64_t lx = bits_of(c.linear.x), ly = bits_of(c.linear.y), lz = bits_of(c.linear.z),
+      ax = bits_of(c.angular.x), ay = bits_of(c.angular.y), az = bits_of(c.angular.z);
+    std::optional<std::vector<uint8_t>> points;
+    if (monitor_->cmd_plan(t, lx, ly, lz, ax, ay, az) == CollisionMonitor::Plan::ScanAndZones) {
+      const auto tf = try_lookup(
+        tf_, scan_request(base_frame_id_, scan_.header.frame_id, 0, 0, "odom", false));
+      if (tf) {
+        points = scan_points(*tf, scan_.angle_min, scan_.angle_increment, scan_.ranges);
+      }
+    }
     const auto d = monitor_->on_cmd(
-      t, bits_of(c.linear.x), bits_of(c.linear.y), bits_of(c.linear.z),
-      bits_of(c.angular.x), bits_of(c.angular.y), bits_of(c.angular.z));
+      t, lx, ly, lz, ax, ay, az, points.has_value(), points ? points->data() : nullptr,
+      points ? points->size() : 0, nullptr, 0);
     geometry_msgs::msg::Twist out;
     last_ = static_cast<int>(d.kind);
     switch (d.kind) {
@@ -148,6 +166,7 @@ public:
       case CollisionMonitor::OutputKind::StopSource:
         break;
       case CollisionMonitor::OutputKind::Silent:
+      case CollisionMonitor::OutputKind::Withheld:
         return;
     }
     pub_->publish(out);
@@ -157,6 +176,8 @@ public:
 private:
   std::optional<CollisionMonitor> monitor_;
   std::string base_frame_id_{"base_footprint"};
+  sensor_msgs::msg::LaserScan scan_;
+  tf2::BufferCore tf_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
   int last_{-1};
 };

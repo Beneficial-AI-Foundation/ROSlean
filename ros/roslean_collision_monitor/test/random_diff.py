@@ -59,9 +59,10 @@ upstream by design (docs/collision_monitor/SPEC.md), so:
   * only configurations that both nodes accept are generated: no base-shift
     correction (D11); ratios, timeouts and min_points are those above, which
     both accept;
-  * the ROSlean node gets no state topic (D13), and where upstream gets a
-    static transform for the scan frame, ROSlean gets the same pose as
-    `scan.roslean_sensor_pose` (D11);
+  * the ROSlean node gets no state topic here (it has one since task T06;
+    random_nav2.py compares the state messages), and both nodes get the
+    static transform for the scan frame (the ROSlean node applied a fixed
+    sensor pose instead until task T06);
   * points near zone boundaries are kept, and a fifth of the scans are aimed
     at a boundary: at a point of it, or up to 6 mm to either side;
   * the answers are not compared bit for bit but against the SPEC's bounds
@@ -312,11 +313,9 @@ def run_case(tag, cfg, events, exes, opts, settle):
                     None if roslean else f'{tag}_state_{letter}')
         log = os.path.join(opts.logs, f'{tag}_{letter}.log') if opts.logs else None
         params = [f'cmd_vel_in_topic:={tag}_cmd', f'scan.topic:={tag}_scan']
-        if roslean and scan_frame != 'base_footprint':
-            # D11: the pose that upstream gets as a static transform.
-            tx, ty, flip = cfg['tf']
-            turn = yaw if yaw is not None else math.pi if flip else 0.0
-            params.append(f'scan.roslean_sensor_pose:=[{tx!r},{ty!r},{turn!r}]')
+        # (Until task T06 the ROSlean node got the pose of the scan frame as
+        # `scan.roslean_sensor_pose` here, D11. It now looks the static
+        # transform up, like upstream, and the parameter is gone.)
         side.start(path, params, log)
         sides.append(side)
     d = Driver('diff_' + tag, sides, stamped, cmd_topic=f'{tag}_cmd', scan_topic=f'{tag}_scan',

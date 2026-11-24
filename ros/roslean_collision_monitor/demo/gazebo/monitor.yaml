@@ -3,8 +3,7 @@
 #
 # The same file is given to the Lean node and, with monitor_package:=
 # nav2_collision_monitor, to upstream's node. Everything in it is upstream's
-# format except `scan.roslean_sensor_pose`, which upstream does not declare
-# and therefore ignores.
+# format.
 #
 # The node is called `cm_gate` in the demo, not `collision_monitor`, because
 # with planner:=nav2 the Nav2 bring-up starts a `collision_monitor` of its own
@@ -22,7 +21,8 @@ cm_gate:
     # Zero is published for this long after it first appears, then nothing;
     # from then on the base watchdog holds the robot (SPEC R15, A3).
     stop_pub_timeout: 1.0
-    # The Lean node requires this line (SPEC D11): upstream's default is true.
+    # No correction for the robot's motion since the scan (upstream's default
+    # is true; both nodes provide it since task T06, the demo does not use it).
     base_shift_correction: false
     base_frame_id: "base_footprint"
     # Zones, in the base frame (x ahead, y to the left, metres). The burger's
@@ -47,13 +47,8 @@ cm_gate:
       type: "scan"
       topic: "scan"
       enabled: true
-      # The scan is in the frame `base_scan`, not in the base frame, and the
-      # Lean node looks up no transform (SPEC D11), so the lidar's pose in
-      # `base_footprint` is given here: [x, y, yaw]. The numbers are the
-      # robot's: turtlebot3_burger.urdf has base_footprint -> base_link at
-      # xyz (0, 0, 0.010) and base_link -> base_scan (`scan_joint`) at
-      # xyz (-0.032, 0, 0.172), both with rpy (0, 0, 0); the simulated sensor
-      # in turtlebot3_gazebo's model.sdf sits at the same x and y. The lidar
-      # is mounted upright, so [x, y, yaw] describes it fully; the height
-      # does not matter for a planar scan.
-      roslean_sensor_pose: [-0.032, 0.0, 0.0]
+      # The scan is in the frame `base_scan`. Both nodes look the transform
+      # from it to `base_footprint` up in TF; robot_state_publisher provides
+      # it from the robot's URDF (base_link -> base_scan at x = -0.032 m).
+      # (Until task T06 the Lean node took the lidar's pose from a parameter
+      # of its own, `roslean_sensor_pose`; that parameter is gone.)

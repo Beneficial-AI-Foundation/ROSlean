@@ -1,15 +1,17 @@
-// The floating-point work of the collision monitor shim, and what it
-// publishes for the core's answer to a command. Nothing else.
+// The floating-point work of the collision monitor shim that involves no
+// transform, and what it publishes for the core's answer to a command.
+// Nothing else. (The points of a scan and the vertices of a polygon message
+// in the base frame are computed in transforms.hpp.)
 //
 // Everything here is *trusted*: it is not covered by a theorem about the Lean
-// core (docs/collision_monitor/SPEC.md, T1 to T3, T5 and T9). It is kept in this one
+// core (docs/collision_monitor/SPEC.md, T1, T3, T5 and T9). It is kept in this one
 // header, free of ROS and of Lean, so that it can be read in one sitting and
 // tested on its own (test/smoke_conversions.cpp).
 //
 //   T1  scale          the slowdown multiplication
-//   T2  encode_scan    scan readings to points in the base frame, in metres:
-//                      the angle, cos, sin, the product and the sensor pose
+//       encode_ranges  the ranges of a scan as bytes (no arithmetic)
 //   T3  parse_points   the text of the `points` parameter to floats
+//   T8  circle_polygon the 16 points published for a circle zone (display)
 //   T5  apply_answer   what is published for the core's answer to a command
 //   T9  clock_message_usable   whether a /clock message is one rclcpp accepts
 //
@@ -68,10 +70,10 @@ inline double scale(double component, uint64_t ratio_bits)
   return component * double_of_bits(ratio_bits);
 }
 
-/// What the shim does with the core's answer to a command.
+/// What the shim does with the velocity of the core's answer to a command.
 enum class Answer
 {
-  Nothing,             ///< publish nothing
+  Nothing,             ///< publish no velocity
   Publish,             ///< publish the three components
   PublishUnknownKind   ///< publish zero: the kind is none of the core's
 };
@@ -79,10 +81,10 @@ enum class Answer
 /// T5. The table of the SPEC, "Where the velocity is computed". `kind` and
 /// `ratio_bits` are what `roslean_cm_out_kind` and `roslean_cm_out_ratio`
 /// returned (0 silent, 1 pass, 2 slowdown, 3 stop by a zone, 4 stop by the
-/// source); `cmd` holds linear.x, linear.y and angular.z of the command, and
+/// source, 5 processed with the velocity withheld); `cmd` holds linear.x, linear.y and angular.z of the command, and
 /// `out` receives the same three components of the message to publish.
 ///
-/// A kind outside 0 to 4 cannot be returned by the core (`kindOf`). Were a
+/// A kind outside 0 to 5 cannot be returned by the core (`kindOf`). Were a
 /// core and a shim of different versions ever linked together, the answer
 /// the shim does not understand is a stop, not silence and not the command:
 /// `out` is zero and the caller publishes it (review CM3/CM4, finding 8).
@@ -93,6 +95,7 @@ inline Answer apply_answer(
   out = {0.0, 0.0, 0.0};
   switch (kind) {
     case 0:
+    case 5:
       return Answer::Nothing;
     case 1:
       out = cmd;
@@ -120,16 +123,8 @@ inline bool clock_message_usable(int32_t sec)
   return sec >= 0;
 }
 
-/// The fixed pose of the sensor in the base frame: metres and radians (D11).
-struct SensorPose
-{
-  double x{0.0};
-  double y{0.0};
-  double yaw{0.0};
-};
-
-/// Bytes per reading in the array handed to the core.
-constexpr size_t kRecordSize = 20;
+/// Bytes per reading in the array of ranges handed to the core.
+constexpr size_t kRangeSize = 4;
 
 inline void put_le(uint8_t * out, uint64_t v, int bytes)
 {
@@ -138,45 +133,29 @@ inline void put_le(uint8_t * out, uint64_t v, int bytes)
   }
 }
 
-/// T2. One 20-byte record per reading, valid or not: the range's bit pattern
-/// (4 bytes), then x and y of its point in the base frame in metres, as
-/// binary64 bit patterns (8 bytes each), all little-endian. The point is
-/// computed as upstream's Scan::getData does (R3): the angle accumulates in
-/// single precision, range * cos(angle) and range * sin(angle) are
-/// single-precision products, widened to double. The core converts the
-/// coordinates to millimetres.
-///
-/// "As upstream" is about the operations. The bits of the result are
-/// upstream's when this file is compiled with optimisation (the package's
-/// default build type is Release) and with -ffp-contract=off, for a scan
-/// without a pose; without optimisation the compiler calls another library
-/// entry for cos and sin, and about 1 % of the coordinates differ by one unit
-/// in the last place of a float (SPEC, "Scan event"; smoke_conversions).
-inline std::vector<uint8_t> encode_scan(
-  float angle_min, float angle_increment, const std::vector<float> & ranges,
-  const SensorPose & pose)
+/// The ranges of a scan for the core: 4 bytes per reading, valid or not, the
+/// bit pattern of the range, little-endian. No arithmetic.
+inline std::vector<uint8_t> encode_ranges(const std::vector<float> & ranges)
 {
-  std::vector<uint8_t> out(kRecordSize * ranges.size());
-  const bool shift = pose.x != 0.0 || pose.y != 0.0 || pose.yaw != 0.0;
-  const double cos_yaw = std::cos(pose.yaw);
-  const double sin_yaw = std::sin(pose.yaw);
-  float angle = angle_min;
+  std::vector<uint8_t> out(kRangeSize * ranges.size());
   for (size_t i = 0; i < ranges.size(); ++i) {
-    const float xf = ranges[i] * std::cos(angle);
-    const float yf = ranges[i] * std::sin(angle);
-    double x = xf;
-    double y = yf;
-    if (shift) {
-      const double xb = pose.x + cos_yaw * x - sin_yaw * y;
-      const double yb = pose.y + sin_yaw * x + cos_yaw * y;
-      x = xb;
-      y = yb;
-    }
-    uint8_t * rec = out.data() + kRecordSize * i;
-    put_le(rec, bits_of(ranges[i]), 4);
-    put_le(rec + 4, bits_of(x), 8);
-    put_le(rec + 12, bits_of(y), 8);
-    angle += angle_increment;
+    put_le(out.data() + kRangeSize * i, bits_of(ranges[i]), 4);
+  }
+  return out;
+}
+
+/// T8 (display only). The 16 points published for a circle zone, as
+/// upstream's Circle::getPolygon computes them: radius * (cos, sin) of an
+/// angle that advances by 2 pi / 16 in double precision while it is below
+/// 2 pi, narrowed to float.
+inline std::vector<std::array<float, 2>> circle_polygon(double radius)
+{
+  std::vector<std::array<float, 2>> out;
+  const double polygon_edges = 16;
+  const double angle_increment = 2 * M_PI / polygon_edges;
+  for (double angle = 0.0; angle < 2 * M_PI; angle += angle_increment) {
+    out.push_back(
+      {static_cast<float>(radius * std::cos(angle)), static_cast<float>(radius * std::sin(angle))});
   }
   return out;
 }

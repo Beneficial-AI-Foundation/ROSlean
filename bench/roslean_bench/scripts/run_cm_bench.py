@@ -108,7 +108,8 @@ def sample(pid):
 
 
 class Pair:
-    """Both nodes on the same topics, upstream activated through its lifecycle."""
+    """Both nodes on the same topics, upstream activated through its lifecycle
+    (the Lean node by its parameter autostart_node)."""
 
     def __init__(self, workdir):
         self.params = Path(workdir) / 'cm_bench.yaml'
@@ -119,7 +120,10 @@ class Pair:
         for name, exe in NODES.items():
             self.procs[name] = subprocess.Popen(
                 [exe, '--ros-args', '--params-file', self.params, '-r', f'__node:=cm_{name}',
-                 '-p', f'cmd_vel_out_topic:=out_{name}', '--log-level', 'warn'],
+                 '-p', f'cmd_vel_out_topic:=out_{name}', '--log-level', 'warn']
+                # Since task T06 the Lean node is a lifecycle node too; it
+                # configures and activates itself here.
+                + (['-p', 'autostart_node:=true'] if name == 'lean' else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import rclpy
         from lifecycle_msgs.msg import Transition

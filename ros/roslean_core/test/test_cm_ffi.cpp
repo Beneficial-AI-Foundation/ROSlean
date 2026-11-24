@@ -24,11 +24,18 @@
 #include <vector>
 
 #include "roslean_core/collision_monitor.hpp"
+#include "roslean_core/scan_points_monitor.hpp"
 
 namespace
 {
 
-using CM = roslean::CollisionMonitor;
+// The tests of the first part hand each scan over with the base-frame
+// coordinates of its readings; ScanPointsMonitor passes them on with every
+// command, as the node's shim does after a transform lookup, and activates
+// the monitor at once. The calls of the Nav2 extension are tested on the
+// wrapper itself (RawCM), further down.
+using CM = roslean::ScanPointsMonitor;
+using RawCM = roslean::CollisionMonitor;
 using Kind = CM::OutputKind;
 using Err = CM::ZoneError;
 using CErr = CM::ConfigError;
@@ -261,6 +268,464 @@ int main()
     check(growth < 4096, "no leak: peak memory does not grow over 600000 rounds of every wrapper call");
   }
 
+  // ---- The calls of the Nav2 extension (SPEC_NAV2.md, section 8) ----
+  {
+    using Tr = RawCM::Transition;
+    using Ph = RawCM::Phase;
+    using Plan = RawCM::Plan;
+    using Rep = RawCM::Report;
+    // Ranges of a scan: 4 bytes per reading.
+    const auto ranges = [](const std::vector<float> & rs) {
+        std::vector<uint8_t> out;
+        for (float r : rs) {put(out, f(r), 4);}
+        return out;
+      };
+    // Coordinate pairs: 16 bytes each.
+    const auto pairs = [](const std::vector<std::pair<double, double>> & ps) {
+        std::vector<uint8_t> out;
+        for (const auto & p : ps) {
+          put(out, d(p.first), 8);
+          put(out, d(p.second), 8);
+        }
+        return out;
+      };
+    // Zone vertices of a command: count and pairs per zone, or "none".
+    using ZV = std::optional<std::vector<std::pair<double, double>>>;
+    const auto zone_verts = [&](const std::vector<ZV> & zs) {
+        std::vector<uint8_t> out;
+        for (const auto & z : zs) {
+          if (!z) {
+            put(out, 0xFFFFFFFFu, 4);
+          } else {
+            put(out, z->size(), 4);
+            const auto b = pairs(*z);
+            out.insert(out.end(), b.begin(), b.end());
+          }
+        }
+        return out;
+      };
+    const std::vector<uint8_t> none;
+    const auto cmd = [&](
+      RawCM & m, uint64_t now, const std::vector<uint8_t> * pts,
+      const std::vector<uint8_t> & zv, double x = 0.5) {
+        return m.on_cmd(
+          now, d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), pts != nullptr,
+          pts ? pts->data() : nullptr, pts ? pts->size() : 0, zv.data(), zv.size());
+      };
+    const auto plan = [&](RawCM & m, uint64_t now, double x = 0.5) {
+        return m.cmd_plan(now, d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0));
+      };
+    const auto scan4 = [&](RawCM & m, uint64_t now, const std::vector<float> & rs) {
+        const auto b = ranges(rs);
+        m.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+      };
+    // Zone 0: stop circle 0.3 m; zone 1: slowdown circle 0.6 m at 0.5.
+    const auto two_circles = [](double timeout, bool enabled = true) {
+        RawCM::Builder b;
+        b.set_source(enabled, timeout, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(0.3, RawCM::ZoneAction::Stop, 0.0, 1, true);
+        b.add_circle(0.6, RawCM::ZoneAction::Slowdown, 0.5, 1, true);
+        return b.build();
+      };
+    const auto in_stop = pairs({{0.1, 0.0}, {0.1, 0.1}});
+    const auto in_slow = pairs({{0.5, 0.0}, {0.5, 0.1}});
+    const auto outside = pairs({{2.0, 0.0}, {2.0, 0.1}});
+    {
+      // Lifecycle (E1 to E5, N2 to N8).
+      auto m = two_circles(100.0);
+      check(m.ok() && m.phase() == Ph::Unconfigured, "a new monitor is unconfigured");
+      check(plan(m, 1) == Plan::None && cmd(m, 1, &in_stop, none).kind == Kind::Silent,
+        "unconfigured: a command is not answered, and nothing is to be looked up");
+      scan4(m, 1, {1.0f, 1.0f});
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Unconfigured, "activate from unconfigured changes nothing");
+      m.on_lifecycle(Tr::Configure);
+      check(m.phase() == Ph::Inactive, "configure: inactive");
+      check(cmd(m, 2, &in_stop, none).kind == Kind::Silent, "inactive: a command is not answered (N4)");
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Active, "activate: active");
+      check(cmd(m, 3, &in_stop, none).kind == Kind::StopSource,
+        "the scan sent while unconfigured was not stored: invalid source");
+      m.on_lifecycle(Tr::Deactivate);
+      scan4(m, 4, {1.0f, 1.0f});
+      check(m.phase() == Ph::Inactive && cmd(m, 5, &in_stop, none).kind == Kind::Silent,
+        "deactivate: inactive, silent");
+      m.on_lifecycle(Tr::Activate);
+      auto o = cmd(m, 6, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.zone == 0 && o.report == Rep::Stop && o.report_zone == 0,
+        "a scan received while inactive is used after activation (N4); the stop is reported");
+      o = cmd(m, 7, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::None, "the same state is not reported twice (N13)");
+      // R15 and N6: the zero is withheld after stop_pub_timeout; deactivate
+      // and activate start the period again and re-report the state.
+      o = cmd(m, 7 + kS + 1, &in_stop, none);
+      check(o.kind == Kind::Withheld && o.report == Rep::None, "withheld after stop_pub_timeout: kind 5");
+      o = cmd(m, 7 + kS + 2, &in_slow, none);
+      check(o.kind == Kind::Slowdown && o.zone == 1 && o.ratio_bits == d(0.5) &&
+        o.report == Rep::Slowdown && o.report_zone == 1, "slowdown: reported with its zone");
+      o = cmd(m, 7 + kS + 3, &in_slow, none, 0.0);
+      check(o.kind == Kind::Slowdown && o.report == Rep::Normal,
+        "a zero command in a slowdown zone reports no action (N14)");
+      o = cmd(m, 7 + kS + 4, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::Stop, "stop again: published and reported");
+      o = cmd(m, 7 + 3 * kS, &outside, none, 0.0);
+      check(o.kind == Kind::Withheld && o.report == Rep::Normal,
+        "a state message while the velocity is withheld (N13)");
+      o = cmd(m, 7 + 3 * kS + 1, nullptr, none, 0.0);
+      check(o.kind == Kind::Withheld && o.report == Rep::Source,
+        "and the invalid source is reported while withheld");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Activate);
+      o = cmd(m, 7 + 3 * kS + 2, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::Stop,
+        "after deactivate and activate the zero is published and the state reported again (N6)");
+      m.on_lifecycle(Tr::Cleanup);
+      check(m.phase() == Ph::Active, "cleanup from active changes nothing");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      check(m.phase() == Ph::Unconfigured, "cleanup: unconfigured");
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(cmd(m, 8 + 3 * kS, &in_stop, none).kind == Kind::StopSource,
+        "cleanup discards the stored scan (N7)");
+      m.on_lifecycle(Tr::Shutdown);
+      check(m.phase() == Ph::Finalized, "shutdown: finalized");
+      scan4(m, 9 + 3 * kS, {1.0f, 1.0f});
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Finalized && cmd(m, 10 + 3 * kS, &in_stop, none).kind == Kind::Silent &&
+        plan(m, 10 + 3 * kS) == Plan::None, "after shutdown nothing is answered, whatever follows (ND4)");
+    }
+    {
+      // An unknown transition code changes nothing (C level).
+      RawCM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      auto m = b.build();
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(static_cast<Tr>(5));
+      m.on_lifecycle(static_cast<Tr>(255));
+      check(m.phase() == Ph::Inactive, "transition codes 5 and 255 change nothing");
+    }
+    {
+      // The coordinates of a command (E8, step 3) and the plan.
+      auto m = two_circles(2.0);
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(plan(m, kS) == Plan::None, "no scan, timeout not 0: no lookup (the source is invalid at once)");
+      scan4(m, kS, {1.0f, 1.0f});
+      check(plan(m, kS) == Plan::ScanAndZones, "a fresh scan: its transform is looked up");
+      check(cmd(m, kS, &in_stop, none).kind == Kind::StopZone, "one pair per reading: the points count");
+      check(cmd(m, kS, &outside, none).kind == Kind::Pass,
+        "the same stored scan with other coordinates at the next command (N22)");
+      check(cmd(m, kS, nullptr, none).kind == Kind::StopSource, "no coordinates: invalid source (N27)");
+      const auto three = pairs({{2.0, 0.0}, {2.0, 0.0}, {2.0, 0.0}});
+      const auto one = pairs({{2.0, 0.0}});
+      check(cmd(m, kS, &three, none).kind == Kind::StopSource &&
+        cmd(m, kS, &one, none).kind == Kind::StopSource,
+        "more or fewer pairs than readings: invalid source");
+      auto ragged = outside;
+      ragged.resize(ragged.size() + 15, 0);
+      check(cmd(m, kS, &ragged, none).kind == Kind::Pass, "a trailing partial pair is ignored");
+      // Which readings count is decided from the stored ranges (R4).
+      scan4(m, kS, {1.0f, 20.0f});
+      const auto second_in = pairs({{2.0, 0.0}, {0.1, 0.0}});
+      const auto first_in = pairs({{0.1, 0.0}, {2.0, 0.0}});
+      check(cmd(m, kS, &second_in, none).kind == Kind::Pass,
+        "the pair of a reading that is out of range is not a point, wherever it lies");
+      check(cmd(m, kS, &first_in, none).kind == Kind::StopZone, "the pair of the valid reading is");
+      check(plan(m, 3 * kS) == Plan::ScanAndZones && plan(m, 3 * kS + 1) == Plan::None,
+        "a scan older than the timeout: no lookup");
+      {
+        const auto o = cmd(m, 3 * kS + 1, &outside, none);
+        check(o.kind == Kind::Withheld && o.report == Rep::Source,
+          "and the stop for an invalid source, whatever the points (reported; the zero itself is "
+          "withheld, since zero has been demanded for more than stop_pub_timeout)");
+      }
+      check(m.cmd_plan(kS, d(kNaN), 0, 0, 0, 0, 0) == Plan::None, "a command that is not finite: no lookup");
+      auto z = two_circles(0.0);
+      z.on_lifecycle(Tr::Configure);
+      z.on_lifecycle(Tr::Activate);
+      check(plan(z, kS) == Plan::Zones, "timeout 0, no scan: the zones' lookups only");
+      scan4(z, kS, {1.0f, 1.0f});
+      check(plan(z, 100 * kS) == Plan::ScanAndZones, "timeout 0: a scan is never too old");
+      check(cmd(z, kS, nullptr, none).kind == Kind::Pass && cmd(z, kS, &three, none).kind == Kind::Pass,
+        "timeout 0: no coordinates, or the wrong number, is no points (N27)");
+      auto off = two_circles(2.0, false);
+      off.on_lifecycle(Tr::Configure);
+      off.on_lifecycle(Tr::Activate);
+      scan4(off, kS, {1.0f, 1.0f});
+      check(plan(off, kS) == Plan::Zones && cmd(off, kS, &in_stop, none).kind == Kind::Pass,
+        "a disabled source: no lookup for the scan, and its points are not used");
+      RawCM::Builder bad;
+      auto nb = bad.build();
+      nb.on_lifecycle(Tr::Configure);
+      nb.on_lifecycle(Tr::Activate);
+      check(!nb.ok() && nb.phase() == Ph::Active && plan(nb, 1) == Plan::None &&
+        cmd(nb, 1, &outside, none).kind == Kind::StopSource,
+        "a monitor that is not ok follows the lifecycle, plans no lookup and stops every command");
+    }
+    {
+      // Topic zones (E7, N32 to N34). Zone 0: fixed stop circle 0.1 m; zone
+      // 1: stop polygon fed by a topic; zone 2: slowdown polygon fed by a
+      // topic.
+      const auto make = []() {
+          RawCM::Builder b;
+          b.set_source(true, 0.0, std::nullopt);
+          b.set_stop_pub_timeout(1.0);
+          b.add_circle(0.1, RawCM::ZoneAction::Stop, 0.0, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Slowdown, 0.25, 1, true);
+          return b.build();
+        };
+      const auto shape = [&](
+        RawCM & m, uint32_t zone, bool foreign, const std::vector<std::pair<double, double>> * vs) {
+          const auto b = vs ? pairs(*vs) : std::vector<uint8_t>();
+          return m.on_shape(zone, foreign, vs != nullptr, b.data(), b.size());
+        };
+      const std::vector<std::pair<double, double>> box =
+      {{0.4, 0.2}, {0.4, -0.2}, {0.2, -0.2}, {0.2, 0.2}};
+      const std::vector<std::pair<double, double>> tri = {{0.4, 0.2}, {0.4, -0.2}, {0.2, 0.0}};
+      const auto p = pairs({{0.3, 0.0}});
+      auto m = make();
+      check(m.ok(), "a configuration with topic zones is accepted");
+      check(!shape(m, 1, false, &box), "unconfigured: a shape message is not accepted");
+      m.on_lifecycle(Tr::Configure);
+      check(shape(m, 2, false, &box), "inactive: a shape message is accepted (N35)");
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 1, {1.0f});
+      auto o = cmd(m, 1, &p, none);
+      check(o.kind == Kind::Slowdown && o.zone == 2 && o.ratio_bits == d(0.25),
+        "the stop zone has no shape and takes no action (N32); the slowdown zone has one");
+      check(!shape(m, 0, false, &box), "a shape for a fixed zone is refused");
+      check(!shape(m, 3, false, &box) && !shape(m, UINT32_MAX, false, &box), "and for no zone");
+      const std::vector<std::pair<double, double>> two = {{0.4, 0.2}, {0.4, -0.2}};
+      check(!shape(m, 1, false, &two), "two points are refused (N33)");
+      check(!shape(m, 1, true, nullptr), "no vertices (the lookup failed): refused");
+      auto nan_box = box;
+      nan_box[2].first = kNaN;
+      auto far_box = box;
+      far_box[1].second = 999.9976;
+      check(!shape(m, 1, false, &nan_box) && !shape(m, 1, false, &far_box),
+        "a vertex that is not finite or beyond the limit: refused (ND6)");
+      check(cmd(m, 2, &p, none).kind == Kind::Slowdown, "after the refusals the zone still has no shape");
+      check(shape(m, 1, true, &tri), "three points are accepted (N33)");
+      check(cmd(m, 3, &p, none).kind == Kind::StopZone && cmd(m, 3, &p, none).zone == 1,
+        "the topic stop zone now stops");
+      // N34: a shape in another frame follows the vertices of each command.
+      const std::vector<std::pair<double, double>> moved = {{1.4, 0.2}, {1.4, -0.2}, {1.2, 0.0}};
+      check(cmd(m, 4, &p, zone_verts({std::nullopt, ZV(moved), std::nullopt})).kind == Kind::Slowdown,
+        "new vertices for the foreign shape move it away");
+      check(cmd(m, 5, &p, none).kind == Kind::Slowdown, "and it stays there without vertices");
+      check(cmd(m, 6, &p, zone_verts({std::nullopt, std::nullopt})).kind == Kind::Slowdown,
+        "an entry 'none' leaves it where it is");
+      check(cmd(m, 7, &p, zone_verts({std::nullopt, ZV(box)})).kind == Kind::Slowdown,
+        "another number of vertices than the shape has is not taken");
+      check(cmd(m, 8, &p, zone_verts({std::nullopt, ZV(tri)})).kind == Kind::StopZone, "moved back: stop");
+      check(
+        cmd(m, 9, &p, zone_verts({std::nullopt, std::nullopt,
+          ZV({{{5.4, 0.2}, {5.4, -0.2}, {5.2, -0.2}, {5.2, 0.2}}})})).kind == Kind::StopZone,
+        "the stop zone still wins");
+      check(shape(m, 1, true, &moved), "a new message replaces the shape");
+      check(cmd(m, 10, &p, zone_verts({std::nullopt, std::nullopt,
+          ZV({{{5.4, 0.2}, {5.4, -0.2}, {5.2, -0.2}, {5.2, 0.2}}})})).kind == Kind::Slowdown,
+        "a shape given in the base frame is not moved by a command's vertices");
+      // A truncated array: the entry it does not hold in full is 'none'.
+      auto cut = zone_verts({std::nullopt, ZV(tri)});
+      cut.resize(cut.size() - 1);
+      check(cmd(m, 11, &p, cut).kind == Kind::Slowdown, "a truncated entry is not taken");
+      const std::vector<uint8_t> huge = {0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 1, 2, 3};
+      check(cmd(m, 12, &p, huge).kind == Kind::Slowdown,
+        "a count of 0xFFFFFFFE with three bytes behind it is not taken (and costs nothing)");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 13, {1.0f});
+      check(cmd(m, 13, &p, none).kind == Kind::Pass, "cleanup discards every shape (N7, N35)");
+    }
+    {
+      // Vertices of a topic zone are rounded to the nearest millimetre.
+      check(RawCM::vertex_coord_mm(0.2994) == 299 && RawCM::vertex_coord_mm(0.2996) == 300 &&
+        RawCM::vertex_coord_mm(-0.2996) == -300 && RawCM::vertex_coord_mm(0.0) == 0,
+        "vertex_coord_mm rounds to nearest");
+      check(RawCM::vertex_coord_mm(kNaN) == 1000000 && RawCM::vertex_coord_mm(-kInf) == -1000000 &&
+        RawCM::vertex_coord_mm(1024.0) == 1000000 && RawCM::vertex_coord_mm(-5000.0) == -1000000,
+        "not finite, or 1024 m and more: the limit");
+      bool all = true;
+      std::mt19937_64 g(7);
+      std::uniform_real_distribution<double> u(-1010.0, 1010.0);
+      for (int n = 0; n < 200000; ++n) {
+        const double v = n % 2 ? u(g) : std::round(u(g) * 1000.0) / 1000.0 + 0.0005;
+        const double r = exact_round_mm(v);
+        const int64_t want = static_cast<int64_t>(std::signbit(v) ? -r : r);
+        const int64_t got = RawCM::vertex_coord_mm(v);
+        if (got != want) {
+          if (all) {std::printf("      vertex_coord_mm(%.17g) = %lld, expected %lld\n", v,
+              static_cast<long long>(got), static_cast<long long>(want));}
+          all = false;
+        }
+      }
+      check(all, "200000 random vertex coordinates: the exact rounding to nearest, half away from zero");
+    }
+    {
+      // The exported command call against the reference definition, with
+      // coordinates and zone vertices as arguments: random ranges, pairs,
+      // shape messages and zone vertices, well formed and not.
+      uint64_t rng = 0xD1B54A32D192ED03ull;
+      const auto next = [&rng]() {
+          rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+          return rng;
+        };
+      const auto unit = [&next]() {return static_cast<double>(next() >> 11) / 9007199254740992.0;};
+      const double special[] = {0.0, -0.0, kNaN, kInf, -kInf, 5e-324, 1023.9, -1024.0, 999.9995, 1e300};
+      const auto coord = [&]() {
+          const uint64_t k = next() % 12;
+          if (k == 0) {return special[next() % (sizeof special / sizeof special[0])];}
+          if (k < 8) {return (unit() - 0.5) * 1.6;}
+          return (unit() - 0.5) * 0.02 + (next() % 2 ? 0.3 : -0.4);
+        };
+      const auto make = [](double timeout) {
+          RawCM::Builder b;
+          b.set_source(true, timeout, std::nullopt);
+          b.set_stop_pub_timeout(1.0);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 2, true);
+          b.add_circle(0.5, RawCM::ZoneAction::Slowdown, 0.4, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Slowdown, 0.2, 1, true);
+          auto m = b.build();
+          m.on_lifecycle(RawCM::Transition::Configure);
+          m.on_lifecycle(RawCM::Transition::Activate);
+          return m;
+        };
+      size_t compared = 0, differ = 0, accepted = 0, shapes = 0;
+      size_t kinds[6] = {0, 0, 0, 0, 0, 0};
+      size_t reports[5] = {0, 0, 0, 0, 0};
+      for (double timeout : {2.0, 0.0}) {
+        auto fast = make(timeout);
+        auto ref = make(timeout);
+        uint64_t now = 0;
+        size_t readings = 0;
+        for (int round = 0; round < 1500; ++round) {
+          now += next() % (500 * kMs);
+          if (next() % 3 == 0) {
+            readings = next() % 30;
+            std::vector<float> rs(readings);
+            for (auto & r : rs) {r = next() % 8 == 0 ? 20.0f : 0.5f;}
+            const auto b = ranges(rs);
+            fast.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+            ref.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+          }
+          if (next() % 4 == 0) {
+            std::vector<std::pair<double, double>> vs(2 + next() % 4);
+            for (auto & v : vs) {v = {coord(), coord()};}
+            const auto b = pairs(vs);
+            const uint32_t zone = static_cast<uint32_t>(next() % 4);
+            const bool foreign = next() % 2;
+            const bool has = next() % 6 != 0;
+            const bool a1 = fast.on_shape(zone, foreign, has, b.data(), b.size());
+            const bool a2 = ref.on_shape(zone, foreign, has, b.data(), b.size());
+            ++shapes;
+            accepted += a1;
+            if (a1 != a2) {++differ;}
+          }
+          if (next() % 40 == 0) {
+            for (auto tr : {Tr::Deactivate, Tr::Activate}) {
+              fast.on_lifecycle(tr);
+              ref.on_lifecycle(tr);
+            }
+          }
+          std::vector<std::pair<double, double>> ps(next() % 10 == 0 ? next() % 30 : readings);
+          for (auto & q : ps) {q = {coord(), coord()};}
+          auto pb = pairs(ps);
+          if (next() % 15 == 0) {pb.resize(pb.size() + next() % 16, 7);}
+          const bool has_points = next() % 10 != 0;
+          std::vector<ZV> zs(next() % 5);
+          for (auto & z : zs) {
+            if (next() % 3 != 0) {
+              std::vector<std::pair<double, double>> vs(2 + next() % 4);
+              for (auto & v : vs) {v = {coord(), coord()};}
+              z = vs;
+            }
+          }
+          auto zb = zone_verts(zs);
+          if (next() % 10 == 0 && !zb.empty()) {zb.resize(next() % zb.size());}
+          if (next() % 20 == 0) {
+            zb.clear();
+            for (int k = next() % 40; k > 0; --k) {zb.push_back(static_cast<uint8_t>(next()));}
+          }
+          const double x = next() % 5 == 0 ? 0.0 : 0.5;
+          const double z = next() % 30 == 0 ? kNaN : 0.0;
+          const auto pl = fast.cmd_plan(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+          const auto a = fast.on_cmd(
+            now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0), has_points, pb.data(), pb.size(),
+            zb.data(), zb.size());
+          const auto e = ref.on_cmd_reference(
+            now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0), has_points, pb.data(), pb.size(),
+            zb.data(), zb.size());
+          ++compared;
+          ++kinds[static_cast<uint8_t>(a.kind) % 6];
+          ++reports[static_cast<uint8_t>(a.report) % 5];
+          if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits ||
+            a.report != e.report || a.report_zone != e.report_zone)
+          {
+            ++differ;
+          }
+          // The plan: 0 means the answer needs no lookup.
+          if (pl == Plan::None && !(a.kind == Kind::Silent || a.kind == Kind::StopSource ||
+            a.kind == Kind::Withheld))
+          {
+            ++differ;
+          }
+        }
+      }
+      std::printf(
+        "      new calls, fast against reference: %zu commands (silent %zu, pass %zu, slowdown %zu, "
+        "stop by zone %zu, stop by source %zu, withheld %zu; reports: none %zu, normal %zu, stop %zu, "
+        "slowdown %zu, source %zu), %zu of %zu shapes accepted, %zu differ\n",
+        compared, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], reports[0], reports[1],
+        reports[2], reports[3], reports[4], accepted, shapes, differ);
+      check(differ == 0,
+        "on_cmd with coordinates and zone vertices answers as on_cmd_reference, report included");
+      check(kinds[0] > 0 && kinds[1] > 0 && kinds[2] > 0 && kinds[3] > 0 && kinds[4] > 0 &&
+        kinds[5] > 0 && reports[1] > 0 && reports[2] > 0 && reports[3] > 0 && reports[4] > 0 &&
+        accepted > 0 && accepted < shapes,
+        "and every kind of answer and of report occurred, and shapes were accepted and refused");
+    }
+    {
+      // Reference counting on the new calls: many rounds, peak memory (one
+      // leaked object of 16 bytes per round would add 6 MB). Nothing before
+      // this point in the program has allocated more than a round does.
+      const auto b4 = ranges(std::vector<float>(64, 1.0f));
+      const auto p16 = pairs(std::vector<std::pair<double, double>>(64, {0.3, 0.0}));
+      const std::vector<std::pair<double, double>> tri = {{0.4, 0.2}, {0.4, -0.2}, {0.2, 0.0}};
+      const auto vb = pairs(tri);
+      const auto zb = zone_verts({ZV(tri), std::nullopt});
+      const auto round_trip = [&](int n) {
+          RawCM::Builder b;
+          b.set_source(true, 2.0, std::nullopt);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 1, n % 2);
+          auto m = b.build();
+          for (auto tr : {Tr::Configure, Tr::Activate}) {m.on_lifecycle(tr);}
+          (void)m.phase();
+          m.on_scan(1, 1, f(0.1f), f(10.0f), b4.data(), b4.size());
+          (void)m.on_shape(0, true, n % 3 != 0, vb.data(), vb.size());
+          (void)m.cmd_plan(2, d(0.5), 0, 0, 0, 0, 0);
+          (void)m.on_cmd(2, d(0.5), 0, 0, 0, 0, 0, n % 5 != 0, p16.data(), p16.size(), zb.data(), zb.size());
+          (void)m.on_cmd_reference(3, d(0.5), 0, 0, 0, 0, 0, true, p16.data(), p16.size(), zb.data(), zb.size());
+          (void)m.on_cmd_no_clock(d(0.5), 0, 0, 0, 0, 0);
+          for (auto tr : {Tr::Deactivate, Tr::Cleanup, Tr::Shutdown}) {m.on_lifecycle(tr);}
+          (void)RawCM::vertex_coord_mm(1.5);
+        };
+      for (int n = 0; n < 20000; ++n) {round_trip(n);}
+      const long before = peak_rss_kb();
+      for (int n = 0; n < 400000; ++n) {round_trip(n);}
+      const long growth = peak_rss_kb() - before;
+      std::printf("      new calls: peak RSS %+ld kB over 400000 rounds\n", growth);
+      check(growth < 4096, "no leak in the new calls");
+    }
+  }
+
+
   {
     // The three decisions, and the source check (R8, R7).
     auto m = standard();
@@ -378,16 +843,16 @@ int main()
     scan(m, 0, 0, at(100, 0));
     check(is(fwd(m, 1000 * kMs), Kind::StopZone, 0), "stop published");
     check(is(fwd(m, 2000 * kMs), Kind::StopZone, 0), "still published exactly at stop_pub_timeout");
-    check(is(fwd(m, 2000 * kMs + 1), Kind::Silent), "silent 1 ns after stop_pub_timeout");
+    check(is(fwd(m, 2000 * kMs + 1), Kind::Withheld), "silent 1 ns after stop_pub_timeout");
     check(
       is(m.on_cmd(2001 * kMs, d(0.5), d(0.0), d(kNaN), d(0.0), d(0.0), d(0.2)), Kind::Silent),
       "NaN in linear.z: ignored");
     scan(m, 2001 * kMs, 2001 * kMs, at(2000, 0));
-    check(is(halt(m, 2002 * kMs), Kind::Silent), "a zero command continues the silence");
+    check(is(halt(m, 2002 * kMs), Kind::Withheld), "a zero command continues the silence");
     check(is(fwd(m, 2003 * kMs), Kind::Pass), "a non-zero command is published");
     check(is(halt(m, 2004 * kMs), Kind::Pass), "zero command: published as pass");
     check(is(halt(m, 3004 * kMs), Kind::Pass), "zero command still published at the timeout");
-    check(is(halt(m, 3004 * kMs + 1), Kind::Silent), "and dropped after it");
+    check(is(halt(m, 3004 * kMs + 1), Kind::Withheld), "and dropped after it");
     // Each of the six components is checked, in its own position.
     const double bad[] = {kInf, -kInf, kNaN};
     bool all = true;
@@ -402,7 +867,7 @@ int main()
     check(is(fwd(m, 4500 * kMs), Kind::Pass), "a non-zero command ends the zero phase");
     check(is(m.on_cmd(5000 * kMs, d(0.0), d(0.0), d(1.0), d(1.0), d(1.0), d(0.0)), Kind::Pass),
       "planar-zero command starts a zero phase");
-    check(is(m.on_cmd(6000 * kMs + 1, d(0.0), d(0.0), d(1.0), d(1.0), d(1.0), d(0.0)), Kind::Silent),
+    check(is(m.on_cmd(6000 * kMs + 1, d(0.0), d(0.0), d(1.0), d(1.0), d(1.0), d(0.0)), Kind::Withheld),
       "linear.z, angular.x, angular.y do not make it non-zero");
     check(is(m.on_cmd(6000 * kMs + 2, d(0.0), d(1e-300), d(0.0), d(0.0), d(0.0), d(0.0)), Kind::Pass),
       "linear.y counts");
@@ -484,7 +949,9 @@ int main()
             const auto e = ref.on_cmd_reference(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
             ++compared;
             ++kinds[static_cast<uint8_t>(a.kind) % 5];
-            if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits) {
+            if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits ||
+              a.report != e.report || a.report_zone != e.report_zone)
+            {
               ++differ;
             }
           }
@@ -520,12 +987,12 @@ int main()
     // R15 starts anew after a command without a clock.
     scan(m, 3 * kMs, 3 * kMs, at(100, 0));
     check(is(fwd(m, 1000 * kMs), Kind::StopZone, 0), "stop by the zone");
-    check(is(fwd(m, 2000 * kMs + 1), Kind::Silent), "withheld after stop_pub_timeout");
+    check(is(fwd(m, 2000 * kMs + 1), Kind::Withheld), "withheld after stop_pub_timeout");
     check(is(nc(m), Kind::StopSource), "no clock while zero is withheld: published");
     check(is(fwd(m, 9000 * kMs), Kind::StopSource),
       "clock back, scan too old: the stop is published, not withheld");
     check(is(fwd(m, 10000 * kMs), Kind::StopSource), "and for stop_pub_timeout from then");
-    check(is(fwd(m, 10000 * kMs + 1), Kind::Silent), "then withheld again");
+    check(is(fwd(m, 10000 * kMs + 1), Kind::Withheld), "then withheld again");
     // With the staleness check off and with the source disabled: still a stop.
     CM::Builder b0;
     b0.set_source(true, 0.0, std::nullopt);
@@ -585,7 +1052,11 @@ int main()
     b = roslean_cm_builder_set_source(b, 1, d(0.0), 0, d(0.0));
     b = roslean_cm_builder_add_circle(b, d(0.5), 7, d(0.5), 0, 9 /* any non-zero flag */);
     lean_object * m = roslean_cm_new(b);
-    m = roslean_cm_on_cmd(m, 5, d(0.5), 0, 0, 0, 0, 0);
+    m = roslean_cm_on_lifecycle(m, 0);
+    m = roslean_cm_on_lifecycle(m, 1);
+    m = roslean_cm_on_cmd(
+      m, 5, d(0.5), 0, 0, 0, 0, 0, 0, roslean_core_byte_array(nullptr, 0),
+      roslean_core_byte_array(nullptr, 0));
     roslean_core_inc(m);
     check(roslean_cm_out_kind(m) == 3, "action code 7 is stop; flag 9 is enabled");
     roslean_core_dec(m);
@@ -627,7 +1098,7 @@ int main()
     check(m.ok() && CM::timeout_ns(1e-8) == 10, "ratio 0 is accepted; 1e-8 s is 10 ns");
     check(is(fwd(m, 100), Kind::Slowdown, 0, 0), "ratio 0: slowdown with pattern 0");
     check(is(fwd(m, 110), Kind::Slowdown, 0, 0), "published at the timeout (10 ns)");
-    check(is(fwd(m, 111), Kind::Silent), "silent after it");
+    check(is(fwd(m, 111), Kind::Withheld), "silent after it");
   }
   {
     // Polygon: vertices in order, signed coordinates, the 4-vertex rule.
@@ -868,7 +1339,11 @@ int main()
         roslean_cm_builder_add_circle(roslean_cm_builder_new(roslean_core_unit()), d(0.3), 0, 0, 1, 1));
       roslean_core_inc(raw);
       const bool ok = roslean_cm_ok(raw) != 0;
-      raw = roslean_cm_on_cmd(raw, 5, d(0.5), 0, 0, 0, 0, 0);
+      raw = roslean_cm_on_lifecycle(raw, 0);
+      raw = roslean_cm_on_lifecycle(raw, 1);
+      raw = roslean_cm_on_cmd(
+        raw, 5, d(0.5), 0, 0, 0, 0, 0, 0, roslean_core_byte_array(nullptr, 0),
+        roslean_core_byte_array(nullptr, 0));
       roslean_core_inc(raw);
       check(!ok && roslean_cm_out_kind(raw) == 4, "the same through the C functions: add_circle, cm_new, a command");
       roslean_core_dec(raw);

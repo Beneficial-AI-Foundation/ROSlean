@@ -7,8 +7,10 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # -ffp-contract=off: the conversions are written operation by operation
-  # (include/roslean_collision_monitor/conversions.hpp); the compiler must not
-  # fuse a multiplication and an addition into one rounding.
+  # (include/roslean_collision_monitor/conversions.hpp), and so is tf2's
+  # inline arithmetic that transforms.hpp applies to every point; the compiler
+  # must not fuse a multiplication and an addition into one rounding. On every
+  # platform (decided by the user, tasks/PLAN.md).
   add_compile_options(-Wall -Wextra -Wpedantic -ffp-contract=off)
 endif()
 
@@ -18,15 +20,49 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
 find_package(roslean_core REQUIRED)
+# The Nav2 extension (SPEC_NAV2.md, 8.5): lifecycle node with bond, the state
+# message, transforms.
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(rclcpp_components REQUIRED)
+find_package(nav2_util REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
-add_executable(collision_monitor src/collision_monitor_node.cpp)
-target_include_directories(collision_monitor PRIVATE include)
-target_link_libraries(collision_monitor
+set(_node_libraries
   rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
+  nav2_util::nav2_util_core
+  ${nav2_msgs_TARGETS}
   ${geometry_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
   ${rosgraph_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros
+  tf2_geometry_msgs::tf2_geometry_msgs
   roslean_core::roslean_core)
+# What the tests of the trusted headers need (transforms.hpp calls tf2).
+# roslean_core is in the list also where it is not called: on macOS its
+# link options drop the message libraries' Python typesupport, which would
+# otherwise abort a C++ program at load time (see ros/roslean_core).
+set(_transform_libraries
+  tf2::tf2 tf2_geometry_msgs::tf2_geometry_msgs ${geometry_msgs_TARGETS}
+  roslean_core::roslean_core)
+
+add_executable(collision_monitor src/collision_monitor_node.cpp)
+target_include_directories(collision_monitor PRIVATE include)
+target_link_libraries(collision_monitor ${_node_libraries})
+
+# The same node as an rclcpp component (SPEC_NAV2.md, 8.5, ND10): plugin
+# roslean_collision_monitor::CollisionMonitorNode.
+add_library(collision_monitor_component SHARED src/collision_monitor_node.cpp)
+target_compile_definitions(collision_monitor_component PRIVATE ROSLEAN_COLLISION_MONITOR_COMPONENT)
+target_include_directories(collision_monitor_component PRIVATE include)
+target_link_libraries(collision_monitor_component ${_node_libraries}
+  rclcpp_components::component)
+rclcpp_components_register_nodes(collision_monitor_component
+  "roslean_collision_monitor::CollisionMonitorNode")
 # Find libroslean_core relative to the executable, so that the install tree
 # works wherever it is copied (isolated and merged colcon layouts).
 if(APPLE)
@@ -36,9 +72,13 @@ else()
 endif()
 set_target_properties(collision_monitor PROPERTIES
   INSTALL_RPATH "${_origin}/../../../roslean_core/lib;${_origin}/..")
+set_target_properties(collision_monitor_component PROPERTIES
+  INSTALL_RPATH "${_origin}/../../roslean_core/lib;${_origin}")
 
 install(TARGETS collision_monitor DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(TARGETS collision_monitor_component
+  LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 # The tests and their configuration, so that they can be run from the install
 # tree against any node:
@@ -58,8 +98,18 @@ if(BUILD_TESTING)
   # conversion to millimetres, without ROS.
   add_executable(smoke_conversions test/smoke_conversions.cpp)
   target_include_directories(smoke_conversions PRIVATE include)
-  target_link_libraries(smoke_conversions roslean_core::roslean_core)
+  target_link_libraries(smoke_conversions roslean_core::roslean_core ${_transform_libraries})
   add_test(NAME smoke_conversions COMMAND smoke_conversions)
+
+  # The trusted code that looks transforms up and applies them (T2, T6):
+  # which transform is asked for, every kind of failure, and the arithmetic
+  # of N25 bit for bit against a reference written out operation by
+  # operation. Fails if the package is compiled without -ffp-contract=off on
+  # a machine with fused multiply-add.
+  add_executable(smoke_transforms test/smoke_transforms.cpp)
+  target_include_directories(smoke_transforms PRIVATE include)
+  target_link_libraries(smoke_transforms ${_transform_libraries})
+  add_test(NAME smoke_transforms COMMAND smoke_transforms)
 
   # The core's timeouts against rclcpp::Duration, which upstream uses.
   add_executable(smoke_timeouts test/smoke_timeouts.cpp)
@@ -71,7 +121,7 @@ if(BUILD_TESTING)
   # beyond 3.5 mm / 4.4 mm outside), on 6.4 million points near boundaries.
   add_executable(band_bounds test/band_bounds.cpp)
   target_include_directories(band_bounds PRIVATE include)
-  target_link_libraries(band_bounds roslean_core::roslean_core)
+  target_link_libraries(band_bounds roslean_core::roslean_core ${_transform_libraries})
   add_test(NAME band_bounds COMMAND band_bounds 20000)
 
   # What a command costs in the core, against the budget of COMPARISON.md,
@@ -81,7 +131,7 @@ if(BUILD_TESTING)
   # RUN_SERIAL keeps other tests of this package off the processor.
   add_executable(cmd_cost test/cmd_cost.cpp)
   target_include_directories(cmd_cost PRIVATE include)
-  target_link_libraries(cmd_cost roslean_core::roslean_core)
+  target_link_libraries(cmd_cost roslean_core::roslean_core ${_transform_libraries})
   add_test(NAME roslean_cmd_cost COMMAND cmd_cost)
   set_tests_properties(roslean_cmd_cost PROPERTIES RUN_SERIAL TRUE)
 
@@ -92,6 +142,7 @@ if(BUILD_TESTING)
     # finding 5; fixed since) and fails again in such a build.
     add_executable(t2_point_as_upstream test/t2_point_as_upstream.cpp)
     target_include_directories(t2_point_as_upstream PRIVATE include)
+    target_link_libraries(t2_point_as_upstream ${_transform_libraries})
     add_test(NAME t2_point_as_upstream COMMAND t2_point_as_upstream)
   endif()
 
@@ -223,30 +274,30 @@ if(BUILD_TESTING)
       TIMEOUT 1800 LABELS long)
   endif()
 
-  # The ROSlean node through the same three tests. EXPECTED TO FAIL until the
-  # node has the extension (tasks/T06): today it is not a lifecycle node, and
-  # each script stops at its first check ("the node offers no lifecycle
-  # services (or has exited)": it exits, because it refuses `state_topic`),
-  # within seconds. T08 removes WILL_FAIL, adds LABELS long to the
-  # first and the third, and completes test/profile_roslean_nav2.py, which
-  # states the differences from upstream that a scenario can see (ND4, ND5,
-  # ND6, ND11). (WILL_FAIL cannot tell why a test fails; run by hand, the
-  # scripts print that line.)
+  # The ROSlean node through the same three tests (since tasks/T06 it has the
+  # extension). test/profile_roslean_nav2.py states the differences from
+  # upstream that a scenario can see (ND4, ND5, ND6, ND11) and the two
+  # scenarios that are not run for this node.
   add_test(NAME roslean_nav2_scenario
     COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario_nav2.py" "${_lean}"
-      --profile profile_roslean_nav2 --first-failure)
+      --profile profile_roslean_nav2)
   set_tests_properties(roslean_nav2_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=143"
-    TIMEOUT 1800 WILL_FAIL TRUE)
+    TIMEOUT 1800 LABELS long)
   add_test(NAME roslean_nav2_bond
     COMMAND "${Python3_EXECUTABLE}" "${_test}/bond_manager.py" "${_lean}")
-  set_tests_properties(roslean_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=144" TIMEOUT 300
-    WILL_FAIL TRUE)
+  set_tests_properties(roslean_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=144" TIMEOUT 300)
   if(nav2_collision_monitor_FOUND)
     # Beside upstream on the same messages; both must give the model's answer.
     add_test(NAME roslean_nav2_random
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_nav2.py" "${_lean}" ${_upstream} 0 3)
     set_tests_properties(roslean_nav2_random PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=145"
-      TIMEOUT 1800 WILL_FAIL TRUE)
+      TIMEOUT 1800 LABELS long)
+    # The node as an rclcpp component in a container of the kind Nav2 uses,
+    # beside upstream's monitor and Nav2's lifecycle manager in one process
+    # (SPEC_NAV2.md, 8.5, ND10). Half a minute, on the wall clock.
+    add_test(NAME smoke_component
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/smoke_component.py")
+    set_tests_properties(smoke_component PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=147" TIMEOUT 300)
   endif()
 endif()
 

@@ -60,11 +60,12 @@ uint8_t roslean_mux_forward(lean_object * m);
 
 /* Collision monitor (core/ROSleanCore/CollisionMonitorFFI.lean; the meaning of
  * every argument is laid down in docs/collision_monitor/SPEC.md, "Shim
- * boundary"). Parameter values are passed as read: `double` values as their
+ * boundary", and SPEC_NAV2.md, section 8). Parameter values are passed as read: `double` values as their
  * bit patterns (`*_bits`, uint64_t), the numbers of a polygon's `points` as
  * `float` bit patterns (uint32_t). Lean converts and refuses. `min_points`
  * and `stamp_ns` are Lean `Int64`: cast from int64_t at the call site, as
- * above. Flags (`enabled`, `has_own`, `usable`) are true iff non-zero;
+ * above. Flags (`enabled`, `has_own`, `foreign`, `has_verts`, `has_points`) are
+ * true iff non-zero;
  * `action` is 1 for slowdown and stop for every other value. */
 lean_object * roslean_cm_builder_new(lean_object * unit);
 lean_object * roslean_cm_builder_set_source(
@@ -75,6 +76,9 @@ lean_object * roslean_cm_builder_add_circle(
   lean_object * b, uint64_t radius_bits, uint8_t action, uint64_t ratio_bits, uint64_t min_points,
   uint8_t enabled);
 lean_object * roslean_cm_builder_add_polygon(
+  lean_object * b, uint8_t action, uint64_t ratio_bits, uint64_t min_points, uint8_t enabled);
+/* A polygon zone whose shape arrives on a topic: no vertices. */
+lean_object * roslean_cm_builder_add_topic_polygon(
   lean_object * b, uint8_t action, uint64_t ratio_bits, uint64_t min_points, uint8_t enabled);
 lean_object * roslean_cm_builder_add_vertex(lean_object * b, uint32_t x_bits, uint32_t y_bits);
 lean_object * roslean_cm_new(lean_object * b);
@@ -87,30 +91,63 @@ uint8_t roslean_cm_error(lean_object * m);
 /* 0 zone `k` is accepted, 1 `radius`, 2 `points`, 3 `slowdown_ratio`,
  * 4 `min_points`, 5 no such zone. */
 uint8_t roslean_cm_zone_error(lean_object * m, uint32_t k);
-/* `beams` is a Lean ByteArray (roslean_core_byte_array) of 20-byte records. */
+/* A lifecycle transition was performed: 0 configure, 1 activate,
+ * 2 deactivate, 3 cleanup, 4 shutdown. Any other value changes nothing. A
+ * new monitor is unconfigured. */
+lean_object * roslean_cm_on_lifecycle(lean_object * m, uint8_t transition);
+/* 0 unconfigured, 1 inactive, 2 active, 3 finalized. */
+uint8_t roslean_cm_phase(lean_object * m);
+/* `ranges` is a Lean ByteArray (roslean_core_byte_array): 4 bytes per
+ * reading, the binary32 pattern of the range, little-endian. */
 lean_object * roslean_cm_on_scan(
-  lean_object * m, uint64_t now_ns, uint64_t stamp_ns, uint8_t usable, uint32_t range_min_bits,
-  uint32_t range_max_bits, lean_object * beams);
-lean_object * roslean_cm_on_cmd(
+  lean_object * m, uint64_t now_ns, uint64_t stamp_ns, uint32_t range_min_bits,
+  uint32_t range_max_bits, lean_object * ranges);
+/* A polygon message for topic zone `zone`. `verts`: 16 bytes per vertex, the
+ * binary64 patterns of x and y in the base frame, little-endian; looked at
+ * only if `has_verts` is not 0 (0: the transform could not be looked up). */
+lean_object * roslean_cm_on_shape(
+  lean_object * m, uint32_t zone, uint8_t foreign, uint8_t has_verts, lean_object * verts);
+/* The shape call made last was accepted. */
+uint8_t roslean_cm_shape_accepted(lean_object * m);
+/* Which transforms to look up for this command: 0 none, 1 those of the topic
+ * zones, 3 the scan's and the zones'. A query. */
+uint8_t roslean_cm_cmd_plan(
   lean_object * m, uint64_t now_ns, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
   uint64_t ang_x, uint64_t ang_y, uint64_t ang_z);
+/* `points`: 16 bytes per reading of the stored scan, the binary64 patterns
+ * of x and y in the base frame, little-endian; looked at only if
+ * `has_points` is not 0. `zone_verts`: for each zone in order a 4-byte
+ * little-endian count n and 16 n bytes of vertices, n = 0xFFFFFFFF for
+ * "none". */
+lean_object * roslean_cm_on_cmd(
+  lean_object * m, uint64_t now_ns, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
+  uint64_t ang_x, uint64_t ang_y, uint64_t ang_z, uint8_t has_points, lean_object * points,
+  lean_object * zone_verts);
 /* The definition the theorems are stated on; `roslean_cm_on_cmd` is proved to
  * return the same monitor (ROSlean/CollisionMonitor/Fast.lean). Slow. For
  * tests only. */
 lean_object * roslean_cm_on_cmd_reference(
   lean_object * m, uint64_t now_ns, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
-  uint64_t ang_x, uint64_t ang_y, uint64_t ang_z);
+  uint64_t ang_x, uint64_t ang_y, uint64_t ang_z, uint8_t has_points, lean_object * points,
+  lean_object * zone_verts);
 /* A command that arrives while the node has no valid clock reading (SPEC,
  * D15): there is no time argument. Answered with kind 4 when processed. */
 lean_object * roslean_cm_on_cmd_no_clock(
   lean_object * m, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
   uint64_t ang_x, uint64_t ang_y, uint64_t ang_z);
+/* 0 silent (publish nothing at all), 1 pass, 2 slowdown, 3 stop by a zone,
+ * 4 stop for an invalid source, 5 processed but the velocity is withheld. */
 uint8_t roslean_cm_out_kind(lean_object * m);
 uint32_t roslean_cm_out_zone(lean_object * m);
 uint64_t roslean_cm_out_ratio(lean_object * m);
+/* 0 no state message, 1 normal, 2 stop, 3 slowdown, 4 invalid source; the
+ * zone of 2 and 3 in roslean_cm_out_report_zone. */
+uint8_t roslean_cm_out_report(lean_object * m);
+uint32_t roslean_cm_out_report_zone(lean_object * m);
 /* The conversions on their own, for tests and log messages. Results are Lean
  * `Int64`: cast to int64_t. -1 (INT64_MIN for a vertex) means refused. */
 uint64_t roslean_cm_coord_mm(uint64_t bits);
+uint64_t roslean_cm_vertex_coord_mm(uint64_t bits);
 uint64_t roslean_cm_radius_mm(uint64_t bits);
 uint64_t roslean_cm_vertex_mm(uint32_t bits);
 uint64_t roslean_cm_timeout_ns(uint64_t bits);

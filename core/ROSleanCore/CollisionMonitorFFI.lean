@@ -7,7 +7,7 @@ import ROSleanCore.CollisionMonitorFast
 
 A flat API for the ROS shim, as laid down in
 `docs/collision_monitor/SPEC.md`, "Shim boundary": opaque objects and scalars,
-plus one `ByteArray` per laser scan. The matching C++ wrapper is
+plus `ByteArray`s for readings, coordinates and vertices. The matching C++ wrapper is
 `ros/roslean_core/include/roslean_core/collision_monitor.hpp`; the two are kept
 in sync by hand, the C prototypes in `ffi.h` are checked against the generated
 C at build time, and `ros/roslean_core/test/test_cm_ffi.cpp` checks that the
@@ -33,31 +33,25 @@ wants to keep using a monitor after a query must `lean_inc` it first.
 
 Theorems about this file are in `ROSlean/CollisionMonitor/FFI.lean`.
 
-**State of this file after tasks T05 and T05b.** The model now has the
-lifecycle, the base-frame coordinates that arrive with each command, and the
-topic zones of `docs/collision_monitor/SPEC_NAV2.md`; this interface does not
-yet (task T06 writes the calls of that document's section 8). Until then the
-exported functions keep their signatures and their behaviour, as the node of
-SPEC.md uses them, by the following reading of the old calls in the new
-model:
+**The calls after task T06** (`docs/collision_monitor/SPEC_NAV2.md`, section
+8). A monitor starts unconfigured (`State.init`); the node delivers the
+lifecycle transitions (`cmOnLifecycle`). A scan call hands over the ranges
+only. A command call hands over, with the command, one pair of binary64
+coordinates in the base frame per reading of the stored scan, as the shim
+computed them for this command (or none), and for each topic zone its
+vertices in the base frame (or none). A shape call hands over the vertices
+of a polygon message in the base frame (or none).
 
-* `cmNew` delivers `configure` and `activate`: the monitor starts in the
-  active phase, since the old node has no lifecycle;
-* a scan call always stores the scan (event `scan`). The coordinates in its
-  records are in the base frame already, as the old shim hands them over;
-  the record array is kept (`Monitor.raw`), and every command carries the
-  coordinates in it (`Monitor.coords`), as the model's "coordinates of the
-  stored scan for this command". If the call says the scan is not `usable`,
-  nothing is kept, which is the model's "the lookup failed" (the stop of R8
-  follows, as it did for the removed event `scanUnusable`);
 * the command call that C sees is `cmOnCmdFast` (task T03): the same
   function as `cmOnCmd`, computed by `stepCmdFast`
   (`ROSleanCore.CollisionMonitorFast`), proved equal in
   `ROSlean/CollisionMonitor/Fast.lean`; a command without a clock reading
   is `cmOnCmdNoClock` (SPEC, D15);
-* no zone is a topic zone, and no command carries zone vertices;
-* `roslean_cm_out_kind` returns 0 both for `silent` and for a processed
-  command whose velocity is withheld; the report is not exposed.
+* `cmCmdPlan` tells the shim which transforms upstream would look up for a
+  command; it changes nothing;
+* `roslean_cm_out_kind` returns 0 for `silent` and 5 for a processed command
+  whose velocity is withheld; the report is read with `roslean_cm_out_report`
+  and `roslean_cm_out_report_zone`.
 -/
 
 namespace ROSleanCore.CollisionMonitorFFI
@@ -128,13 +122,8 @@ structure Monitor where
   zoneErrs : List UInt8
   st : State
   out : Output
-  /-- The record array of the scan stored last, as that scan call handed it
-  over; `none` if the scan was reported as not usable (see the head of this
-  file). It holds the base-frame coordinates of the readings, which every
-  command carries (`Monitor.coords`). They are not decoded when the scan
-  arrives: the exported command call reads them from the bytes
-  (`cmOnCmdFast`). -/
-  raw : Option ByteArray
+  /-- The shape call made last was accepted (E7); `false` before any. -/
+  accepted : Bool
 
 /-- No zones, source enabled, both timeouts 0, nothing refused, and the
 source not set: the monitor of a new builder is not accepted
@@ -198,6 +187,13 @@ def builderAddPolygon (b : Builder) (action : UInt8) (ratioBits : UInt64) (minPo
     (enabled : UInt8) : Builder :=
   { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon [])) action ratioBits minPoints enabled] }
 
+/-- Appends a polygon zone whose shape arrives on a topic (N31): it has no
+shape in the configuration. -/
+@[export roslean_cm_builder_add_topic_polygon]
+def builderAddTopicPolygon (b : Builder) (action : UInt8) (ratioBits : UInt64) (minPoints : Int64)
+    (enabled : UInt8) : Builder :=
+  { b with zones := b.zones ++ [zoneOfRaw .topic action ratioBits minPoints enabled] }
+
 /-- Appends a vertex to the last zone of the list, if that zone is a polygon;
 `none` is a vertex that was refused, and marks the polygon with code 2 unless
 it already has a code. Nothing changes if the last zone is a circle or the
@@ -238,22 +234,17 @@ def builderAddVertex (b : Builder) (x y : UInt32) : Builder :=
     zones := addVertexToLast (vertexOfRaw x y) b.zones
     stray := b.stray || !lastIsPolygon b.zones }
 
-/-- The state a monitor starts in: the initial state after `configure` and
-`activate`. The node of SPEC.md has no lifecycle and is active from its
-start. -/
-def startState (cfg : Config) : State := (run cfg (State.init cfg) [.configure, .activate]).1
-
-/-- The monitor for the configuration built so far, in the active phase
-(`startState`) and with output `silent`. It is accepted iff the source was
+/-- The monitor for the configuration built so far, unconfigured
+(`State.init`) and with output `silent`. It is accepted iff the source was
 set, no raw value was refused, no vertex was added to no polygon, and
 `Config.ok` holds. -/
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
-    st := startState b.cfg, out := .silent, raw := none }
+    st := State.init b.cfg, out := .silent, accepted := false }
 
-/-- The configuration was accepted. The node must refuse to start if this is
-`false`. -/
+/-- The configuration was accepted. The `configure` transition of the node
+must fail if this is `false`. -/
 @[export roslean_cm_ok]
 def cmOk (m : Monitor) : Bool := m.ok
 
@@ -266,7 +257,7 @@ uses `cmError` and this only to name the offending parameter. -/
 @[export roslean_cm_zone_error]
 def cmZoneError (m : Monitor) (k : UInt32) : UInt8 := m.zoneErrs.getD k.toNat 5
 
-/-! ## Scan decoding -/
+/-! ## Decoding -/
 
 /-- Byte `i` of the array as a number; 0 beyond the end. -/
 def byteAt (a : ByteArray) (i : Nat) : Nat :=
@@ -280,41 +271,68 @@ def u32At (a : ByteArray) (o : Nat) : Nat :=
 /-- The binary64 pattern stored little-endian at offset `o`. -/
 def u64At (a : ByteArray) (o : Nat) : Nat := u32At a (o + 4) * 0x100000000 + u32At a o
 
-/-- Bytes per reading in the scan array: the range pattern (4 bytes), then
-the `x` and `y` coordinates of its point in metres as binary64 patterns (8
-bytes each), all little-endian. -/
-def recordSize : Nat := 20
+/-- Bytes per reading in the array of a scan call: the range pattern,
+little-endian. -/
+def rangeSize : Nat := 4
 
-/-- Record `i` of the array: the reading's range pattern. -/
+/-- Bytes per coordinate pair in the arrays of a command call and of a shape
+call: the `x` and `y` in metres, in the base frame, as binary64 patterns (8
+bytes each), little-endian. -/
+def pairSize : Nat := 16
+
+/-- Reading `i` of a scan array: its range pattern. -/
 def beamAt (a : ByteArray) (i : Nat) : Beam :=
-  { range := u32At a (recordSize * i) }
+  { range := u32At a (rangeSize * i) }
 
-/-- Record `i` of the array: the patterns of the two coordinates of the
-reading's point, unconverted. -/
-def coordsAt (a : ByteArray) (i : Nat) : Coords :=
-  (u64At a (recordSize * i + 4), u64At a (recordSize * i + 12))
+/-- Pair `i` of a coordinate array: the two patterns, unconverted. -/
+def pairAt (a : ByteArray) (i : Nat) : Coords :=
+  (u64At a (pairSize * i), u64At a (pairSize * i + 8))
 
-/-- The beams of a scan array: `size / 20` records in order; a remainder of
-fewer than 20 bytes is ignored. Total for an array of any length. -/
+/-- The beams of a scan array: `size / 4` readings in order; a remainder of
+fewer than 4 bytes is ignored. Total for an array of any length. -/
 def decodeBeams (a : ByteArray) : List Beam :=
-  (List.range (a.size / recordSize)).map (beamAt a)
+  (List.range (a.size / rangeSize)).map (beamAt a)
 
-/-- The coordinates of a scan array: one pair per record, in order. -/
-def decodeCoords (a : ByteArray) : List Coords :=
-  (List.range (a.size / recordSize)).map (coordsAt a)
-
-/-- The base-frame coordinates of the readings of the scan stored last, one
-pair of binary64 patterns per record of the kept array; `none` if that scan
-was reported as not usable. This is what every command carries in the
-model. It is a function of the kept array, used in the theorems; the
-exported calls never build this list. -/
-def Monitor.coords (m : Monitor) : Option (List Coords) := m.raw.map decodeCoords
+/-- The pairs of a coordinate array: `size / 16` pairs in order; a remainder
+of fewer than 16 bytes is ignored. -/
+def decodePairs (a : ByteArray) : List Coords :=
+  (List.range (a.size / pairSize)).map (pairAt a)
 
 /-- The scan the model sees for the arguments of `cmOnScan`. A negative stamp
 becomes 0 (D8). -/
-def scanOfRaw (stampNs : Int64) (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Scan :=
+def scanOfRaw (stampNs : Int64) (rangeMinBits rangeMaxBits : UInt32) (ranges : ByteArray) : Scan :=
   { stamp := stampNs.toInt.toNat, rangeMin := rangeMinBits.toNat, rangeMax := rangeMaxBits.toNat,
-    beams := decodeBeams beams }
+    beams := decodeBeams ranges }
+
+/-- The little-endian number that a list of bytes denotes. -/
+def leNat : List UInt8 → Nat
+  | [] => 0
+  | b :: bs => b.toNat + 256 * leNat bs
+
+/-- `n` coordinate pairs from the front of a list of bytes, 16 bytes each. -/
+def takePairs : Nat → List UInt8 → List Coords
+  | 0, _ => []
+  | n + 1, bs => (leNat (bs.take 8), leNat ((bs.drop 8).take 8)) :: takePairs n (bs.drop 16)
+
+/-- The loop of `decodeZoneVerts`: at most `fuel` entries from the bytes. -/
+def parseZoneVerts : Nat → List UInt8 → List (Option (List Coords))
+  | 0, _ => []
+  | fuel + 1, bs =>
+    if bs.length < 4 then []
+    else if leNat (bs.take 4) = 0xFFFFFFFF then none :: parseZoneVerts fuel (bs.drop 4)
+    else if bs.length < 4 + 16 * leNat (bs.take 4) then []
+    else
+      some (takePairs (leNat (bs.take 4)) (bs.drop 4)) ::
+        parseZoneVerts fuel (bs.drop (4 + 16 * leNat (bs.take 4)))
+
+/-- The zone vertices of a command call: for each zone in order a 4-byte
+little-endian count `n` and `16·n` bytes of vertices (pairs as in
+`pairSize`), with `n = 0xFFFFFFFF` for "none". The list ends where the
+array ends, or at an entry the array does not hold in full; a zone the list
+does not reach has none (`refreshShapes`). Total for an array of any
+length. -/
+def decodeZoneVerts (a : ByteArray) : List (Option (List Coords)) :=
+  parseZoneVerts a.size a.data.toList
 
 /-! ## Events -/
 
@@ -334,35 +352,119 @@ def Monitor.apply (m : Monitor) (e : Event) : Monitor :=
     | .configure | .activate | .deactivate | .cleanup | .shutdown =>
       { m with st := (step m.cfg m.st e).1, out := .silent }
 
-/-- A scan arrived at node-clock time `nowNs`: one `step` of the model on a
-`scan` event, which stores the scan, and its record array is kept, so that
-the coordinates of its records are remembered for the following commands
-(`Monitor.coords`, `cmdEvent`). `usable` is 0 if the scan's frame is not the
-base frame and no sensor pose was configured (D11): then nothing is kept, so
-that the source has no data until a usable scan arrives (R8). -/
-@[export roslean_cm_on_scan]
-def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
-    (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
-  { m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)) with
-    raw := if usable != 0 then some beams else none }
+/-- The lifecycle event of a transition code: 0 `configure`, 1 `activate`,
+2 `deactivate`, 3 `cleanup`, 4 `shutdown` (E1–E5); none for any other
+value. -/
+def lifecycleEvent (t : UInt8) : Option Event :=
+  if t == 0 then some .configure
+  else if t == 1 then some .activate
+  else if t == 2 then some .deactivate
+  else if t == 3 then some .cleanup
+  else if t == 4 then some .shutdown
+  else none
 
-/-- The event of the model that a command call delivers: it carries the
-coordinates remembered from the scan stored last (none if that scan was not
-usable); there are no zone vertices. -/
-def cmdEvent (coords : Option (List Coords)) (nowNs : UInt64)
-    (linX linY linZ angX angY angZ : UInt64) : Event :=
-  .cmd nowNs.toNat ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
-    coords []
+/-- A lifecycle transition was performed: one `step` of the model on its
+event. Any other code changes nothing. -/
+@[export roslean_cm_on_lifecycle]
+def cmOnLifecycle (m : Monitor) (transition : UInt8) : Monitor :=
+  match lifecycleEvent transition with
+  | some e => m.apply e
+  | none => m
+
+/-- The code of a phase: 0 unconfigured, 1 inactive, 2 active, 3
+finalized. -/
+def phaseCode : Phase → UInt8
+  | .unconfigured => 0
+  | .inactive => 1
+  | .active => 2
+  | .finalized => 3
+
+/-- The phase of the model, for logs and tests. -/
+@[export roslean_cm_phase]
+def cmPhase (m : Monitor) : UInt8 := phaseCode m.st.phase
+
+/-- A scan arrived at node-clock time `nowNs`: one `step` of the model on a
+`scan` event. `ranges` holds the range patterns; where the readings lie in
+the base frame is handed over with each command. -/
+@[export roslean_cm_on_scan]
+def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64)
+    (rangeMinBits rangeMaxBits : UInt32) (ranges : ByteArray) : Monitor :=
+  m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits ranges))
+
+/-- The vertices a shape call hands over: none if `hasVerts` is 0 (the
+transform from the message's frame could not be looked up), else the pairs
+of the array. -/
+def vertsOfRaw (hasVerts : UInt8) (verts : ByteArray) : Option (List Coords) :=
+  if hasVerts != 0 then some (decodePairs verts) else none
+
+/-- The event of the model that a shape call delivers. -/
+def shapeEvent (zone : UInt32) (foreign hasVerts : UInt8) (verts : ByteArray) : Event :=
+  .shape zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0)
+
+/-- A polygon message for topic zone `zone` arrived (E7): one `step` of the
+model on a `shape` event. `verts` holds the vertices in the base frame;
+`foreign` is non-zero iff the message's frame is not the base frame. Whether
+the message was accepted is recorded for `cmShapeAccepted`. -/
+@[export roslean_cm_on_shape]
+def cmOnShape (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8) (verts : ByteArray) :
+    Monitor :=
+  { m.apply (shapeEvent zone foreign hasVerts verts) with
+    accepted := m.ok &&
+      (acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0)).isSome }
+
+/-- The shape call made last was accepted: the shim then keeps the message
+for the lookups of later commands (N34) and for display (N16). -/
+@[export roslean_cm_shape_accepted]
+def cmShapeAccepted (m : Monitor) : Bool := m.accepted
+
+/-- The twist of the six patterns of a command call. -/
+def twistOfRaw (linX linY linZ angX angY angZ : UInt64) : Twist :=
+  ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
+
+/-- The scan coordinates a command call hands over: none if `hasPoints` is
+0, else the pairs of the array. -/
+def pointsOfRaw (hasPoints : UInt8) (points : ByteArray) : Option (List Coords) :=
+  if hasPoints != 0 then some (decodePairs points) else none
+
+/-- The event of the model that a command call delivers. -/
+def cmdEvent (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) (hasPoints : UInt8)
+    (points zoneVerts : ByteArray) : Event :=
+  .cmd nowNs.toNat (twistOfRaw linX linY linZ angX angY angZ) (pointsOfRaw hasPoints points)
+    (decodeZoneVerts zoneVerts)
+
+/-- Which transforms upstream would look up for a command at `now` (N22,
+N34): 0 none (the command is not processed, or the source is invalid before
+any lookup: no scan, or a scan too old, with a non-zero timeout); 1 those of
+the topic zones only (the source is disabled, or there is no scan and the
+timeout is 0); 3 the scan's and the zones'. -/
+def cmdPlan (cfg : Config) (st : State) (now : Nat) (v : Twist) : UInt8 :=
+  if st.phase ≠ .active then 0
+  else if !v.finite then 0
+  else if !cfg.sourceEnabled then 1
+  else
+    match st.scan with
+    | none => if cfg.sourceTimeout = 0 then 1 else 0
+    | some s => if 0 < cfg.sourceTimeout && s.stamp + cfg.sourceTimeout < now then 0 else 3
+
+/-- `cmdPlan` for the command the shim is about to deliver; 0 for a monitor
+that was not accepted (its answer depends on nothing). A query: the monitor
+is not changed. -/
+@[export roslean_cm_cmd_plan]
+def cmCmdPlan (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : UInt8 :=
+  if m.ok then cmdPlan m.cfg m.st nowNs.toNat (twistOfRaw linX linY linZ angX angY angZ) else 0
 
 /-- A velocity command arrived at node-clock time `nowNs`; the six components
-are binary64 bit patterns. This is the definition the theorems are stated
-on; the function exported to C is `cmOnCmdFast`, which returns the same
-monitor (`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`). It is exported
-under another name so that a test can run the two side by side
+are binary64 bit patterns; `points` holds one coordinate pair per reading of
+the stored scan (looked at only if `hasPoints` is not 0) and `zoneVerts` the
+vertices of the topic zones (`decodeZoneVerts`). This is the definition the
+theorems are stated on; the function exported to C is `cmOnCmdFast`, which
+returns the same monitor (`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`). It
+is exported under another name so that a test can run the two side by side
 (`test_cm_ffi.cpp`); the node does not call it. -/
 @[export roslean_cm_on_cmd_reference]
-def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
-  m.apply (cmdEvent m.coords nowNs linX linY linZ angX angY angZ)
+def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64)
+    (hasPoints : UInt8) (points zoneVerts : ByteArray) : Monitor :=
+  m.apply (cmdEvent nowNs linX linY linZ angX angY angZ hasPoints points zoneVerts)
 
 /-! ## The command call as exported -/
 
@@ -408,30 +510,31 @@ def coordMm64 (b : UInt64) : Int :=
 (`coordMmAt_eq`). -/
 def coordMmAt (a : ByteArray) (o : Nat) : Int := coordMm64 (word64At a o)
 
-/-- The point of record `i` of a scan array: `scanPointMm (coordsAt a i)`
+/-- The point of pair `i` of a coordinate array: `scanPointMm (pairAt a i)`
 (`pointAt_eq`). -/
 def pointAt (a : ByteArray) (i : Nat) : Point :=
-  ⟨coordMmAt a (recordSize * i + 4), coordMmAt a (recordSize * i + 12)⟩
+  ⟨coordMmAt a (pairSize * i), coordMmAt a (pairSize * i + 8)⟩
 
 /-- `Monitor.apply` on the command event that carries the coordinates of the
-record array `raw`, computed by `stepCmdFast`. -/
-def Monitor.applyCmdFast (m : Monitor) (now : Nat) (v : Twist) : Monitor :=
+array `points` (none if `hasPoints` is false), computed by `stepCmdFast`:
+the coordinates are never decoded into a list. -/
+def Monitor.applyCmdFast (m : Monitor) (now : Nat) (v : Twist) (hasPoints : Bool)
+    (points : ByteArray) (zoneVerts : List (Option (List Coords))) : Monitor :=
   if m.ok then
     let (st, out) :=
-      match m.raw with
-      | some a => stepCmdFast m.cfg m.st now v (some (a.size / recordSize)) (pointAt a) []
-      | none => stepCmdFast m.cfg m.st now v none (fun _ => ⟨0, 0⟩) []
+      stepCmdFast m.cfg m.st now v (if hasPoints then some (points.size / pairSize) else none)
+        (pointAt points) zoneVerts
     { m with st, out }
   else
     { m with out := if m.st.phase = .active then .answer (some .stopSource) none else .silent }
 
-/-- The command call as C sees it. For every monitor that the exported calls
-can produce it returns what `cmOnCmd` returns
-(`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`, `execFast_eq`). -/
+/-- The command call as C sees it. On every monitor it returns what `cmOnCmd`
+returns (`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`, `execFast_eq`). -/
 @[export roslean_cm_on_cmd]
-def cmOnCmdFast (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) :
-    Monitor :=
-  m.applyCmdFast nowNs.toNat ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
+def cmOnCmdFast (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64)
+    (hasPoints : UInt8) (points zoneVerts : ByteArray) : Monitor :=
+  m.applyCmdFast nowNs.toNat (twistOfRaw linX linY linZ angX angY angZ) (hasPoints != 0) points
+    (decodeZoneVerts zoneVerts)
 
 /-- Applies a command that arrives without a valid clock reading
 (`stepNoClock`) and records its output. A monitor that was not accepted
@@ -445,23 +548,24 @@ def Monitor.applyNoClock (m : Monitor) (v : Twist) : Monitor :=
 
 /-- A velocity command arrived while the node has no valid clock reading
 (SPEC, D15); the six components are binary64 bit patterns. There is no time
-argument. The answer is `stopSource` whenever the command is processed. -/
+argument, and nothing is looked up. The answer is `stopSource` whenever the
+command is processed. -/
 @[export roslean_cm_on_cmd_no_clock]
 def cmOnCmdNoClock (m : Monitor) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
   m.applyNoClock ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
 
 /-! ## Output queries -/
 
-/-- The code of an output's kind: 0 nothing to publish (`silent`, or a
-processed command whose velocity is withheld), 1 `pass`, 2 `slowdown …`,
-3 `stopZone …`, 4 `stopSource`. -/
-def kindOf (o : Output) : UInt8 :=
-  match o.velocity with
-  | none => 0
-  | some .pass => 1
-  | some (.slowdown _ _) => 2
-  | some (.stopZone _) => 3
-  | some .stopSource => 4
+/-- The code of an output's kind: 0 `silent` (nothing is published, on any
+topic); 1 `pass`, 2 `slowdown …`, 3 `stopZone …`, 4 `stopSource`; 5 a
+processed command whose velocity is withheld (R15). -/
+def kindOf : Output → UInt8
+  | .silent => 0
+  | .answer none _ => 5
+  | .answer (some .pass) _ => 1
+  | .answer (some (.slowdown _ _)) _ => 2
+  | .answer (some (.stopZone _)) _ => 3
+  | .answer (some .stopSource) _ => 4
 
 /-- The zone index of an output of kind 2 or 3; 0 otherwise. -/
 def zoneOf (o : Output) : Nat :=
@@ -488,6 +592,31 @@ def cmOutZone (m : Monitor) : UInt32 := (zoneOf m.out).toUInt32
 @[export roslean_cm_out_ratio]
 def cmOutRatio (m : Monitor) : UInt64 := (ratioOf m.out).toUInt64
 
+/-- The code of an output's report: 0 none; 1 `normal`; 2 `stop`; 3
+`slowdown`; 4 `source` (N13). -/
+def reportOf (o : Output) : UInt8 :=
+  match o.report with
+  | none => 0
+  | some .normal => 1
+  | some (.stop _) => 2
+  | some (.slowdown _) => 3
+  | some .source => 4
+
+/-- The zone index of a report of code 2 or 3; 0 otherwise. -/
+def reportZoneOf (o : Output) : Nat :=
+  match o.report with
+  | some (.stop k) => k
+  | some (.slowdown k) => k
+  | _ => 0
+
+/-- The report of the most recent event's output. -/
+@[export roslean_cm_out_report]
+def cmOutReport (m : Monitor) : UInt8 := reportOf m.out
+
+/-- The zone index of the report of the most recent event's output. -/
+@[export roslean_cm_out_report_zone]
+def cmOutReportZone (m : Monitor) : UInt32 := (reportZoneOf m.out).toUInt32
+
 /-! ## The conversions, for tests and log messages
 
 The node never needs these to decide anything; they expose the conversions of
@@ -497,6 +626,12 @@ reference computations, and so that the node can log the values in use. -/
 /-- `coordMm` of a binary64 pattern. -/
 @[export roslean_cm_coord_mm]
 def cmCoordMm (bits : UInt64) : Int64 := Int64.ofInt (coordMm bits.toNat)
+
+/-- `vertexCoordMm` of a binary64 pattern: a topic zone's vertex coordinate
+in millimetres (rounded to nearest; ±1,000,000 if not finite or 1024 m or
+more). -/
+@[export roslean_cm_vertex_coord_mm]
+def cmVertexCoordMm (bits : UInt64) : Int64 := Int64.ofInt (vertexCoordMm bits.toNat)
 
 /-- `radiusMm`, or -1 if the value is refused. -/
 @[export roslean_cm_radius_mm]

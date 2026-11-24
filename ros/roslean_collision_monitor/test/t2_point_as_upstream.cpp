@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "roslean_collision_monitor/conversions.hpp"
+#include "roslean_collision_monitor/scan_records.hpp"
 
 int main()
 {
@@ -38,7 +39,7 @@ int main()
   // volatile: the compiler must call the library, not fold the constant.
   volatile float angle_min = 1.1233999729156494f;
   const float angle = angle_min;
-  const auto rec = encode_scan(angle, 0.0f, std::vector<float>{1.0f}, SensorPose{});
+  const auto rec = encode_scan(angle, 0.0f, std::vector<float>{1.0f});
   uint64_t xb = 0, yb = 0;
   for (int k = 0; k < 8; ++k) {
     xb |= static_cast<uint64_t>(rec[4 + k]) << (8 * k);

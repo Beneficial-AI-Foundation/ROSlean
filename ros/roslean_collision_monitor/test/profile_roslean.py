@@ -1,5 +1,8 @@
 """What the ROSlean collision monitor is expected to do in the scenarios of scenario.py.
 
+(Brought up to the node with the Nav2 extension by task T06: see the comment
+at STATE_TOPIC below.)
+
     scenario.py roslean_collision_monitor/collision_monitor --profile profile_roslean
 
 The expectations in scenario.py are what upstream's binary does. This file
@@ -20,8 +23,7 @@ EXPECT maps a scenario name to a dict with any of
                                `out` (None: nothing published) instead of
                                upstream's answer. For a step at which upstream
                                aborts, `out` is what this node answers.
-  params    (D, why, [..])     extra parameters, e.g. the sensor pose that
-                               stands in for a static transform
+  params    (D, why, [..])     extra parameters
   no_tf     (D, why)           the scenario publishes a transform for upstream;
                                this node is run without it
   skip      (D, why)           not run, with the reason
@@ -31,30 +33,27 @@ SCENARIOS holds scenarios for this node only, in scenario.py's format.
 The results of a run are recorded in docs/collision_monitor/COMPARISON.md.
 """
 
-import math
-
 from probes import PROBES
-from scenario import BOUNDARY_VERTICES, P, ZERO, clock, cmd, ray, scan, s
+from scenario import ZERO, s
 
-# The node has no state topic and refuses the parameter (D13), so the
-# harness does not set it and checks no state message. That refusal is the
-# scenario `roslean-state-topic` below.
+# Since task T06 the node has the Nav2 extension (SPEC_NAV2.md): it looks
+# transforms up as upstream does, so every scenario that publishes one runs
+# with it. The entries that stated the differences D11 (no TF, the fixed
+# sensor pose, base_shift_correction refused) and D13 (no state topic) are
+# gone with those differences.
+TF = True
+# The node has a state topic now, but this profile still runs it without
+# one: where a velocity differs from upstream's (D4, D8 below) the state
+# message differs with it, and the entries below state velocities only.
+# Tried with True on 2026-11-24 (macOS): 32 of 318 checks failed, 29 of them
+# state messages, all in scenarios that have a velocity difference stated
+# below, and 3 velocities in the two base-shift scenarios, which are stated
+# below since. The state topic is compared with upstream's in
+# scenario_nav2.py and random_nav2.py.
 STATE_TOPIC = False
-# The node looks up no transform (D11). Every scenario that publishes one
-# has an entry below.
-TF = False
 
 D4_CIRCLE = 'the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it'
 D4_POLY = 'the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside'
-SHIFT_REFUSED = ('D11', 'base_shift_correction must be false: scan points are not corrected '
-                        'for motion', 'base_shift_correction')
-
-
-def pose(x, y, yaw=0.0):
-    return ('D11', 'the fixed sensor pose stands in for the static transform',
-            [f'scan.roslean_sensor_pose:=[{x!r},{y!r},{yaw!r}]'])
-
-
 T = s(100)
 
 EXPECT = {
@@ -109,74 +108,32 @@ EXPECT = {
     'action-none': {'refused': ('D1', 'action_type none is outside the subset',
                                 'NoAction.action_type')},
 
-    # ---- transforms: D11 ----------------------------------------------------
-    # The four corners need four sensor poses, hence four runs of the node:
-    # the scenarios roslean-vertex-* below.
-    'boundary-vertices': {'skip': ('D11', 'one fixed sensor pose per run; replaced by '
-                                          'roslean-vertex-tr, -br, -bl and -tl')},
+    # ---- transforms (N23, N25): the points are transformed in the shim; a
+    # point that lands exactly on a zone boundary is inside (D4).
+    'boundary-vertices': {'diffs': {
+        'corner (0.5, 0.5): outside': (ZERO, 'D4', D4_POLY),
+        'corner (0.5, -0.5): outside': (ZERO, 'D4', D4_POLY),
+        'corner (-0.5, -0.5): outside': (ZERO, 'D4', D4_POLY),
+    }},
     'offset': {
-        'params': pose(0.25, 0.0),
         'diffs': {'on the circle: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)')},
     },
     'rotated': {
-        'params': pose(0.25, 0.0, math.pi),
         'diffs': {'on the circle: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)')},
     },
-    'offset-shift-correction': {'refused': SHIFT_REFUSED},
-    'shift-correction-same-frame': {'refused': SHIFT_REFUSED},
-    'no-odom': {'refused': SHIFT_REFUSED},
-    # A scan in a frame that is not the base frame, without a sensor pose,
-    # is not used: the same answers as upstream without a transform.
-    'no-transform': {'no_tf': ('D11', 'no lookup; a scan in a foreign frame is not used')},
-    'timeout-zero-no-transform': {
-        'no_tf': ('D11', 'no lookup; a scan in a foreign frame is not used')},
-    'transform-wait': {
-        'no_tf': ('D11', 'no lookup; transform_tolerance is ignored'),
-        'diffs': {
-            'no answer while the clock stands still': (
-                ZERO, 'D11', 'nothing is waited for: the stop comes at once'),
-            'clock + 0.25: the stop comes out': (
-                None, 'D11', 'the stop was published already'),
-        },
+    # Base shift correction (N24) is provided since task T06; these two
+    # scenarios put points on the circle.
+    'offset-shift-correction': {
+        'diffs': {'on the circle: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)')},
     },
+    'shift-correction-same-frame': {'diffs': {
+        'point at exactly 0.5: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)'),
+        'one float32 step above 0.5: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)'),
+    }},
 }
 
 
-def vertex(frame):
-    """The steps of boundary-vertices that concern one corner."""
-    steps = [clock(T)]
-    for i, step in enumerate(BOUNDARY_VERTICES):
-        if step[0] == 'scan' and step[1].get('frame') == frame:
-            # The label is upstream's verdict; the expected answer is in EXPECT.
-            _, vel, out, _, label = BOUNDARY_VERTICES[i + 1]
-            steps += [scan(ray(0.5)), cmd(vel, out, label + ' (upstream)')]
-    assert len(steps) == 3, frame
-    return steps
-
-
-SCENARIOS = {
-    # The four corners of the square (+-0.5, +-0.5), each reached exactly by
-    # a range of 0.5 straight ahead from a sensor 0.5 to the side. Upstream
-    # counts only the corner (-0.5, 0.5) as inside (boundary-vertices); here
-    # all four are (D4).
-    'roslean-vertex-tr': dict(
-        params=[P('Poly1'), 'scan.roslean_sensor_pose:=[0.0,0.5,0.0]'], steps=vertex('v_tr')),
-    'roslean-vertex-br': dict(
-        params=[P('Poly1'), 'scan.roslean_sensor_pose:=[0.0,-0.5,0.0]'], steps=vertex('v_br')),
-    'roslean-vertex-bl': dict(
-        params=[P('Poly1'), 'scan.roslean_sensor_pose:=[-1.0,-0.5,0.0]'], steps=vertex('v_bl')),
-    'roslean-vertex-tl': dict(
-        params=[P('Poly1'), 'scan.roslean_sensor_pose:=[-1.0,0.5,0.0]'], steps=vertex('v_tl')),
-    # The harness gives every other node a state topic; this one must refuse it.
-    'roslean-state-topic': dict(
-        params=[P('StopCircle'), 'state_topic:=cm_state'], steps=[], refused=True),
-}
-EXPECT.update({
-    'roslean-vertex-tr': {'diffs': {'corner (0.5, 0.5)': (ZERO, 'D4', D4_POLY)}},
-    'roslean-vertex-br': {'diffs': {'corner (0.5, -0.5)': (ZERO, 'D4', D4_POLY)}},
-    'roslean-vertex-bl': {'diffs': {'corner (-0.5, -0.5)': (ZERO, 'D4', D4_POLY)}},
-    'roslean-state-topic': {'refused': ('D13', 'the state topic is not provided', 'state_topic')},
-})
+SCENARIOS = {}
 
 # The scenarios of probes.py: statements of the SPEC put to upstream's
 # binary. This node must answer them as upstream does, except:

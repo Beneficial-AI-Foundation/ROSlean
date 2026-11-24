@@ -155,8 +155,7 @@ theorem cmOnCmdNoClock_kind (m : Monitor) (lx ly lz ax ay az : UInt64)
   rw [cmOnCmdNoClock_eq]
   cases hok : m.ok
   · simp [Monitor.applyNoClock, hok, hp, cmOutKind, kindOf, Output.velocity]
-  · simp [cmOutKind, (applyNoClock_of_ok m _ hok).2, kindOf,
-      ROSlean.CollisionMonitor.noClock_velocity m.st _ hp hf]
+  · simp [cmOutKind, (applyNoClock_of_ok m _ hok).2, kindOf, stepNoClock, hp, hf]
 
 /-- Whatever the phase and the command: the output kind of a command without
 a clock reading is 0 (nothing to publish) or 4 (publish zero). It is never
@@ -168,19 +167,18 @@ theorem cmOnCmdNoClock_kind_cases (m : Monitor) (lx ly lz ax ay az : UInt64) :
   cases hok : m.ok
   · by_cases hp : m.st.phase = .active <;>
       simp [Monitor.applyNoClock, hok, hp, cmOutKind, kindOf, Output.velocity]
-  · simp only [cmOutKind, (applyNoClock_of_ok m _ hok).2, kindOf]
-    cases hv : (stepNoClock m.st _).2.velocity with
-    | none => exact Or.inl rfl
-    | some a =>
-      rw [ROSlean.CollisionMonitor.noClock_velocity_isStop m.st _ a hv]
-      exact Or.inr rfl
+  · simp only [cmOutKind, (applyNoClock_of_ok m _ hok).2, stepNoClock]
+    by_cases hp : m.st.phase = .active
+    · cases hf : Twist.finite ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩ <;>
+        simp [hp, hf, kindOf]
+    · simp [hp, kindOf]
 
-/-- The configuration, its acceptance and the remembered coordinates are not
-changed by a command without a clock reading. -/
+/-- The configuration, its acceptance and the record of the last shape call
+are not changed by a command without a clock reading. -/
 theorem cmOnCmdNoClock_keeps (m : Monitor) (lx ly lz ax ay az : UInt64) :
     (cmOnCmdNoClock m lx ly lz ax ay az).cfg = m.cfg ∧
       (cmOnCmdNoClock m lx ly lz ax ay az).ok = m.ok ∧
-      (cmOnCmdNoClock m lx ly lz ax ay az).coords = m.coords := by
+      (cmOnCmdNoClock m lx ly lz ax ay az).accepted = m.accepted := by
   rw [cmOnCmdNoClock_eq]
   unfold Monitor.applyNoClock
   split <;> exact ⟨rfl, rfl, rfl⟩

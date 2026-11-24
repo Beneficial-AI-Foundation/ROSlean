@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "roslean_collision_monitor/conversions.hpp"
+#include "roslean_collision_monitor/scan_records.hpp"
 #include "roslean_core/collision_monitor.hpp"
 
 // test/upstream_points.cpp: upstream's computation of the points of a scan,
@@ -77,10 +78,10 @@ Rec rec(const std::vector<uint8_t> & b, size_t i)
   return r;
 }
 
-// A single reading at the given angle, with the given pose.
-Rec one(float range, float angle, const SensorPose & pose = SensorPose{})
+// A single reading at the given angle, in the scan frame.
+Rec one(float range, float angle)
 {
-  return rec(encode_scan(angle, 0.0f, {range}, pose), 0);
+  return rec(encode_scan(angle, 0.0f, {range}), 0);
 }
 
 bool mm(const Rec & r, int64_t x, int64_t y) {return r.x_mm == x && r.y_mm == y;}
@@ -119,15 +120,15 @@ int main()
     "a NaN pattern survives the round trip");
 
   // ---- encode_scan: the bytes --------------------------------------------
-  check(encode_scan(0.0f, 0.1f, {}, SensorPose{}).empty(), "a scan of zero length gives no bytes");
+  check(encode_scan(0.0f, 0.1f, {}).empty(), "a scan of zero length gives no bytes");
   {
-    const auto b = encode_scan(0.0f, 0.0f, {1.0f}, SensorPose{});
+    const auto b = encode_scan(0.0f, 0.0f, {1.0f});
     const std::vector<uint8_t> expect = {
       0x00, 0x00, 0x80, 0x3F,                           // 1.0f
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F,   // x = 1.0
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};  // y = 0.0
     check(b == expect, "range 1 at angle 0: 20 bytes, little-endian");
-    const auto n = encode_scan(3.1415927f, 0.0f, {1.0f}, SensorPose{});
+    const auto n = encode_scan(3.1415927f, 0.0f, {1.0f});
     check(le_at(n, 4, 8) == 0xBFF0000000000000ULL, "range 1 at angle pi: x = -1.0");
   }
 
@@ -154,7 +155,7 @@ int main()
   {
     // A record is produced for every reading, valid or not, with the range's
     // bits unchanged.
-    const auto b = encode_scan(0.0f, 0.0f, {kNaNF, kInfF, -kInfF, -1.0f, 0.0f}, SensorPose{});
+    const auto b = encode_scan(0.0f, 0.0f, {kNaNF, kInfF, -kInfF, -1.0f, 0.0f});
     check(b.size() == 100, "five readings, five records");
     check(rec(b, 0).range_bits == bits_of(kNaNF) && mm(rec(b, 0), 1000000, 1000000),
       "NaN reading: bits kept, point saturated");
@@ -181,7 +182,7 @@ int main()
       ranges[10] = kNaNF;  // the angle advances for an invalid reading too
       ranges[20] = kInfF;
       const float angle_min = start(gen), inc = step(gen);
-      const auto b = encode_scan(angle_min, inc, ranges, SensorPose{});
+      const auto b = encode_scan(angle_min, inc, ranges);
       differ += differing(b, upstream_points(angle_min, inc, ranges));
       total += 2 * ranges.size();
       for (size_t i = 0; i < ranges.size(); ++i) {
@@ -214,70 +215,19 @@ int main()
     check(close, "100000 random readings: it moves by less than 1 mm per axis");
   }
   {
-    // The fixed sensor pose (D11).
-    check(mm(one(1.0f, 0.0f, SensorPose{1.0, 2.0, 0.0}), 2000, 2000), "pose (1, 2, 0)");
-    check(mm(one(1.0f, 0.0f, SensorPose{0.0, 0.0, 1.5707963267948966}), 0, 1000), "yaw pi/2");
-    check(mm(one(1.0f, 0.0f, SensorPose{0.0, 0.0, -1.5707963267948966}), 0, -1000), "yaw -pi/2");
-    check(mm(one(1.0f, 0.0f, SensorPose{0.0, 0.0, 3.141592653589793}), -1000, 0),
-      "yaw pi: a sensor mounted backwards sees ahead what is behind");
-    check(mm(one(0.2f, 0.0f, SensorPose{-0.5, 0.0, 0.0}), -299, 0),
-      "-0.5 + 0.2000000030 = -0.2999999970 m: truncated toward zero to -299 mm");
-    check(mm(one(0.2f, 0.0f, SensorPose{0.5, -1.0, 0.0}), 700, -1000), "0.5 + 0.2000000030: 700 mm");
-    check(mm(one(1.0f, 0.0f, SensorPose{999.5, 0.0, 0.0}), 1000000, 0), "pose pushes beyond the limit");
-    check(mm(one(kNaNF, 0.0f, SensorPose{1.0, 0.0, 0.0}), 1000000, 1000000), "NaN with a pose");
-    {
-      // inf through the rotation gives inf or NaN; either way a saturated
-      // coordinate, which lies in no zone.
-      const Rec r = one(kInfF, 3.1415927f, SensorPose{1.0, 0.0, 0.5});
-      check(std::llabs(r.x_mm) == 1000000 && std::llabs(r.y_mm) == 1000000,
-        "infinite reading with a pose: both coordinates saturated");
-    }
-    {
-      // The pose is applied operation by operation: each product is rounded
-      // before it is added (SPEC, "Scan event"). The reference stores every
-      // product in a volatile double, which no compiler may fuse with the
-      // addition. This fails if conversions.hpp is compiled without
-      // -ffp-contract=off on a machine with fused multiply-add (arm64).
-      std::mt19937_64 gen(17);
-      std::uniform_real_distribution<float> range(0.05f, 12.0f);
-      std::vector<float> ranges(1000);
-      for (auto & r : ranges) {r = range(gen);}
-      const SensorPose pose{0.1, -0.2, 0.7};
-      const auto plain = encode_scan(-3.0f, 0.006f, ranges, SensorPose{});
-      const auto posed = encode_scan(-3.0f, 0.006f, ranges, pose);
-      const double c = std::cos(pose.yaw), s = std::sin(pose.yaw);
-      size_t differ = 0;
-      for (size_t i = 0; i < ranges.size(); ++i) {
-        const Rec p = rec(plain, i);
-        volatile double cx = c * p.x, sy = s * p.y, sx = s * p.x, cy = c * p.y;
-        volatile double x = pose.x + cx;
-        volatile double y = pose.y + sx;
-        differ += !same_bits(rec(posed, i).x, x - sy) + !same_bits(rec(posed, i).y, y + cy);
-      }
-      std::printf("      %zu of 2000 coordinates differ from the unfused reference\n", differ);
-      check(differ == 0, "1000 readings with a pose: no multiplication is fused with an addition");
-    }
-    {
-      // A pose of zero is "the sensor is the base frame": the points are
-      // those of a scan in the base frame, bit for bit, also where a
-      // coordinate is -0.0 (a rotation by 0 and a shift by 0 would turn it
-      // into +0.0) and for a pose written with negative zeros. The reference
-      // knows no pose.
-      const std::vector<float> ranges = {1.0f, 2.0f, 0.0f, 3.0f, 0.0f, kNaNF, 7.5f};
-      const auto ref = upstream_points(3.0f, 0.05f, ranges);  // cos < 0: 0 * cos = -0.0
-      bool has_negative_zero = false;
-      for (const auto & p : ref) {
-        has_negative_zero = has_negative_zero || bits_of(p[0]) == bits_of(-0.0);
-      }
-      check(has_negative_zero, "the scan of the next two checks has a coordinate of -0.0");
-      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{0.0, 0.0, 0.0}), ref) == 0,
-        "a pose of [0, 0, 0] gives the points of a scan in the base frame, bit for bit");
-      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{-0.0, -0.0, -0.0}), ref) == 0,
-        "and so does a pose of [-0, -0, -0]");
-      check(differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{0.0, 0.0, 1e-9}), ref) > 0 &&
-        differing(encode_scan(3.0f, 0.05f, ranges, SensorPose{1e-9, 0.0, 0.0}), ref) > 0,
-        "while the smallest yaw or shift is applied");
-    }
+    // The ranges of a scan for the core: four bytes per reading, the bit
+    // pattern, for every reading.
+    const auto b = encode_ranges({1.0f, kNaNF, -kInfF, 0.0f});
+    check(b.size() == 16 && le_at(b, 0, 4) == 0x3F800000u && le_at(b, 4, 4) == bits_of(kNaNF) &&
+      le_at(b, 8, 4) == 0xFF800000u && le_at(b, 12, 4) == 0u && encode_ranges({}).empty(),
+      "encode_ranges: the bit pattern of every reading, little-endian");
+  }
+  {
+    // T8: the polygon published for a circle zone, as upstream's.
+    const auto c = circle_polygon(0.5);
+    check(c.size() == 16 && c[0][0] == 0.5f && c[0][1] == 0.0f &&
+      c[4][1] == 0.5f && std::fabs(c[4][0]) < 1e-7f && c[8][0] == -0.5f,
+      "circle_polygon: 16 points on the radius, starting at angle 0");
   }
 
   // ---- the `points` string ------------------------------------------------
@@ -356,13 +306,16 @@ int main()
     check(stops, "kinds 3 and 4: zero is published");
     // Review CM3/CM4, finding 8: a kind the shim does not know is answered
     // with zero velocity, not with silence and not with the command.
+    out = junk;
+    check(apply_answer(5, half, cmd, out) == Answer::Nothing,
+      "kind 5 (processed, velocity withheld): no velocity is published");
     bool unknown = true;
-    for (int kind = 5; kind <= 255; ++kind) {
+    for (int kind = 6; kind <= 255; ++kind) {
       out = junk;
       unknown = apply_answer(static_cast<uint8_t>(kind), half, cmd, out) ==
         Answer::PublishUnknownKind && same(out, zero) && unknown;
     }
-    check(unknown, "kinds 5 to 255, which the core cannot return: zero is published");
+    check(unknown, "kinds 6 to 255, which the core cannot return: zero is published");
   }
   {
     // T9 (D15): a /clock message is usable iff rclcpp accepts its time.

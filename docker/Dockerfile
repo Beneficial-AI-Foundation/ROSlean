@@ -17,6 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
       ros-${ROS_DISTRO}-sensor-msgs ros-${ROS_DISTRO}-twist-mux \
+      ros-${ROS_DISTRO}-rclcpp-lifecycle ros-${ROS_DISTRO}-rclcpp-components \
+      ros-${ROS_DISTRO}-nav2-util ros-${ROS_DISTRO}-nav2-msgs \
+      ros-${ROS_DISTRO}-tf2 ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-tf2-geometry-msgs \
+      ros-${ROS_DISTRO}-tf2-msgs ros-${ROS_DISTRO}-lifecycle-msgs \
+      ros-${ROS_DISTRO}-nav2-collision-monitor ros-${ROS_DISTRO}-nav2-lifecycle-manager \
     && rm -rf /var/lib/apt/lists/*
 
 # elan installs the toolchain pinned in lean-toolchain on first use.
@@ -57,14 +62,18 @@ ARG ROS_DISTRO
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
       ros-${ROS_DISTRO}-sensor-msgs \
+      ros-${ROS_DISTRO}-rclcpp-lifecycle ros-${ROS_DISTRO}-rclcpp-components \
+      ros-${ROS_DISTRO}-nav2-util ros-${ROS_DISTRO}-nav2-msgs \
+      ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-tf2-geometry-msgs \
+      ros-${ROS_DISTRO}-nav2-lifecycle-manager \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/roslean /opt/roslean
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 # Mount your own parameter file and pass it instead to configure the inputs.
-# The collision monitor is in the same image:
-#   docker run --rm --network host roslean-twist-mux ros2 run roslean_collision_monitor \
-#     collision_monitor --ros-args --params-file \
-#     /opt/roslean/roslean_collision_monitor/share/roslean_collision_monitor/config/example.yaml
+# The collision monitor is in the same image. It is a lifecycle node; with
+# Nav2's lifecycle manager, which configures and activates it:
+#   docker run --rm --network host roslean-twist-mux ros2 launch \
+#     /opt/roslean/roslean_collision_monitor/share/roslean_collision_monitor/launch/collision_monitor_launch.py
 CMD ["ros2", "run", "roslean_twist_mux", "twist_mux", "--ros-args", "--params-file", \
      "/opt/roslean/roslean_twist_mux/share/roslean_twist_mux/config/example.yaml"]

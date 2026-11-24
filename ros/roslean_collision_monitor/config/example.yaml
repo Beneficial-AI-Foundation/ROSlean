@@ -1,31 +1,48 @@
 # Example configuration for the Lean-backed collision monitor.
 #
 # The format is that of nav2_collision_monitor; this is upstream's example
-# (params/collision_monitor_params.yaml) restricted to what this node supports:
-# one laser scan source, `circle` and `polygon` zones with fixed shapes, and the
-# actions `stop` and `slowdown`. Anything else is refused at start-up with a
-# message that names the parameter (docs/collision_monitor/SPEC.md, "Excluded
-# features").
+# (params/collision_monitor_params.yaml) restricted to what this node provides:
+# one laser scan source; `circle` and `polygon` zones with fixed shapes, and
+# `polygon` zones whose shape arrives on a topic; the actions `stop` and
+# `slowdown`. Anything else fails the `configure` transition with one message
+# that names every refused parameter (docs/collision_monitor/SPEC.md,
+# "Excluded features"; SPEC_NAV2.md, section 6).
+#
+# The node is a lifecycle node, like upstream's: Nav2's lifecycle manager
+# configures and activates it (launch/collision_monitor_launch.py starts both).
+# By hand:
 #
 #   ros2 run roslean_collision_monitor collision_monitor --ros-args \
 #     --params-file config/example.yaml
+#   ros2 lifecycle set /collision_monitor configure
+#   ros2 lifecycle set /collision_monitor activate
+#
+# or add `-p autostart_node:=true` to the first command.
 collision_monitor:
   ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
     cmd_vel_in_topic: "cmd_vel_smoothed"
     cmd_vel_out_topic: "cmd_vel"
     enable_stamped_cmd_vel: false
+    # A nav2_msgs/CollisionMonitorState message on each change of the acting
+    # zone. Empty or unset: no state topic.
+    state_topic: "collision_monitor_state"
+    # How long a command is held, by the node clock, while a transform it
+    # needs is missing; then it is answered with a stop (with a non-zero
+    # source_timeout). Not a bound on the age of a transform.
+    transform_tolerance: 0.5
     # A stored scan older than this (by its header stamp) stops the robot, and
-    # so does having no scan at all. 0.0 switches both checks off.
+    # so does having no scan at all, or no transform for it. 0.0 switches all
+    # three checks off.
     source_timeout: 5.0
+    # true (upstream's default): the scan's points are corrected for the
+    # robot's motion since the scan, through odom_frame_id. Every command then
+    # needs an odometry transform stamped at or after the command's time.
+    # false: the newest transform from the scan's frame to base_frame_id.
+    base_shift_correction: true
     # Zero is published for this long after it first appears, then nothing.
     stop_pub_timeout: 2.0
-    # Required, and must be false: scan points are not corrected for the
-    # robot's motion (upstream's default is true).
-    base_shift_correction: false
-    # There is no transform lookup. A scan is used only if its frame_id is
-    # this frame, or if the sensor's pose is given below; otherwise the source
-    # counts as having no data, which stops the robot.
-    base_frame_id: "base_footprint"
     # Zones are checked in this order. The first triggered stop zone wins over
     # everything; otherwise the triggered slowdown zone with the smallest ratio.
     polygons: ["PolygonStop", "PolygonSlow", "CircleSlow"]
@@ -34,6 +51,9 @@ collision_monitor:
       points: "[[0.3, 0.3], [0.3, -0.3], [0.0, -0.3], [0.0, 0.3]]"
       action_type: "stop"
       min_points: 4
+      # Publishes the zone as geometry_msgs/PolygonStamped on polygon_pub_topic.
+      visualize: true
+      polygon_pub_topic: "polygon_stop"
       enabled: true
     PolygonSlow:
       type: "polygon"
@@ -41,6 +61,8 @@ collision_monitor:
       action_type: "slowdown"
       min_points: 4
       slowdown_ratio: 0.3
+      visualize: true
+      polygon_pub_topic: "polygon_slowdown"
       enabled: true
     CircleSlow:
       type: "circle"
@@ -49,32 +71,22 @@ collision_monitor:
       min_points: 4
       slowdown_ratio: 0.7
       enabled: true
+    # A zone whose shape arrives on a topic, not in the list above. Until its
+    # first message with at least three points it takes no action, and a shape
+    # given in another frame (the costmap publishes the footprint in odom)
+    # stays where it was last published until the next message. The fixed
+    # polygon is the recommended form.
+    #
+    # FootprintStop:
+    #   type: "polygon"
+    #   action_type: "stop"
+    #   polygon_sub_topic: "/local_costmap/published_footprint"
+    #   min_points: 6
     observation_sources: ["scan"]
     scan:
       type: "scan"
       topic: "scan"
       enabled: true
-      # Only in this node: `roslean_sensor_pose`, the fixed pose of the sensor
-      # in the base frame, [x, y, yaw] in metres and radians, written with
-      # decimal points. It is NOT set here, and should stay unset unless you
-      # need it:
-      #
-      #   - Unset: only scans whose frame_id is base_frame_id are used. A scan
-      #     in any other frame is not used and counts as "no data", which
-      #     stops the robot (with a non-zero source_timeout). This is the
-      #     frame check.
-      #   - Set: the frame check is OFF. Every scan is used whatever its
-      #     frame_id, placed by this pose; no transform is looked up, so a
-      #     pose that is wrong (for example [0.0, 0.0, 0.0] for a sensor that
-      #     is mounted backwards or off-centre) puts obstacles in the wrong
-      #     place without any error. The node warns at start-up, and again
-      #     when a scan arrives in another frame.
-      #
-      # Set it only if your scans are not in base_frame_id, to the pose that
-      # your robot description gives for the sensor's frame, for example
-      # (TurtleBot3 burger, base_footprint -> base_scan):
-      #
-      #   roslean_sensor_pose: [-0.032, 0.0, 0.0]
-      #
-      # A sensor that is not mounted upright (roll or pitch) cannot be
-      # described and must not be approximated by this parameter.
+      # The pose of the sensor comes from TF: the transform from the scan's
+      # frame_id to base_frame_id, as in nav2_collision_monitor. (The parameter
+      # `roslean_sensor_pose` of earlier versions is gone and is refused.)

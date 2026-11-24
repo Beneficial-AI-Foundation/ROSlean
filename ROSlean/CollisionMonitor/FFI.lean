@@ -22,7 +22,7 @@ the node executes.
 * **Refusals.** A monitor is ok only if the source was set, no raw value was
   refused, no vertex was given to no polygon, and `Config.ok` holds
   (`cmOk_iff`, `cmOk_cfg_ok`). The builder is fail-closed over any sequence
-  of its five calls (`BuilderCall`): if any call, anywhere in the sequence,
+  of its six calls (`BuilderCall`): if any call, anywhere in the sequence,
   carries a refused value (a timeout, a radius, `min_points`, a vertex), the
   monitor is not ok, whatever the other calls are (`not_ok_of_refused_call`);
   so is it if a vertex is added when the zone added last is not a polygon
@@ -30,45 +30,53 @@ the node executes.
   (`not_ok_without_set_source`). What is refused is characterised in
   `ROSlean.CollisionMonitor.Convert`.
 * **Fail closed.** A monitor that is not ok answers every command with
-  `stopSource`, after any sequence of calls (`apply_cmd_of_not_ok`,
-  `foldl_exec_not_ok`).
-* **Scan decoding.** The byte array of a scan is decoded by a total function
-  into `size / 20` readings and as many coordinate pairs
-  (`decodeBeams_length`, `decodeCoords_length`, `getElem_decodeBeams`,
-  `getElem_decodeCoords`), every decoded pattern fits its field
-  (`beamAt_lt`, `coordsAt_lt`), and decoding inverts the encoding the shim
-  performs (`decodeBeams_encodeBeams`, `decodeCoords_encodeBeams`). The
-  coordinates are in the base frame already. They are kept as bit patterns
-  and travel with every command; the model converts them with `coordMm`
-  when the command is evaluated. They always fit the stored scan
-  (`fits_decode`), and the points are those of the valid records
-  (`points_decode`).
+  `stopSource` while it is in the active phase, and with nothing otherwise,
+  after any sequence of calls: never a pass, never a slowdown
+  (`apply_cmd_of_not_ok`, `apply_out_of_not_ok`, `foldl_exec_not_ok`).
+* **Decoding.** Each of the four byte arrays of the interface (the ranges
+  of a scan, the coordinate pairs of a command, the vertices of a shape
+  message, the zone vertices of a command) is decoded by a total function
+  (`decodeBeams_length`, `decodePairs_length`, `decodeZoneVerts_empty`),
+  every decoded pattern fits its field (`beamAt_lt`, `pairAt_lt`), and
+  decoding inverts the encoding the shim performs
+  (`decodeBeams_encodeRanges`, `decodePairs_encodePairs`,
+  `decodeZoneVerts_encodeZoneVerts`). Coordinates are in the base frame and
+  are kept as bit patterns; the model converts them when a command is
+  evaluated (`coordMm`) or a shape is taken (`vertexCoordMm`). The pairs of
+  a command fit the stored scan iff there is one per reading (`fits_decode`),
+  and the points are then those of the valid readings (`points_decode`).
 * **Events.** Each call is `step` on the event it delivers
-  (`cmOnScan_eq`, `cmOnCmd_eq`, `exec_eq_apply`). The event of a command
-  carries the coordinates of the scan call made last
-  (`Call.event`, `events`), or none if that scan was reported unusable. So
-  after any sequence of calls, with no condition on them, the state is the
-  one `run` reaches on the events they deliver (`foldl_exec_run`), from the
-  state after `configure` and `activate` (`startState`, `run_startState`).
-* **Read-back.** The three numbers the node reads after a command determine
-  the velocity part of the model's output exactly (`readBack_eq`). The
-  report and the difference between `silent` and a withheld velocity are
-  not exposed by this interface yet (task T06).
+  (`cmOnLifecycle_eq`, `cmOnScan_eq`, `cmOnShape_eq`, `cmOnCmd_eq`,
+  `exec_st`), and everything an event carries is an argument of its call:
+  the interface keeps nothing between calls but the monitor. So after any
+  sequence of calls, with no condition on them, the state is the one `run`
+  reaches on the events they deliver (`events`, `foldl_exec_run`), from the
+  initial state `State.init`.
+* **The plan of a command.** `cmCmdPlan` tells the shim which transforms to
+  look up. If it says none, the command call returns the same monitor
+  whatever the two arrays hold; if it says "the zones' only", whatever the
+  scan coordinates are (`cmOnCmd_of_plan_zero`, `cmOnCmd_of_plan_one`); and
+  it says "the scan's" exactly when the command is processed, the source is
+  enabled and a scan is stored that is not too old (`cmdPlan_eq_three_iff`).
+* **Shape messages.** The query after a shape call says whether the model
+  accepted the message (`cmShapeAccepted_iff`); only then does the state
+  change (`cmOnShape_st_of_accepted`, `cmOnShape_st_of_refused`).
+* **Read-back.** The five numbers the node reads after a command determine
+  the model's output exactly: whether the command was processed, the
+  velocity action or that it is withheld, and the report (`readBack_eq`,
+  `outputOfCodes_codes`, `kindOf_eq_zero_iff`).
 * **End to end.** `cm_readBack_after`: create a monitor from a builder that is
-  ok, make any sequence of calls of the two exported event functions (scans
-  usable or not, commands), then deliver a command; what the three exported
-  queries return is the velocity of the output of `step` for that command,
-  in the state `run` reaches on the delivered events, on the configuration
-  the builder holds. The statement is on the exported functions as the node
-  calls them.
+  ok, make any sequence of lifecycle, scan, shape and command calls, then
+  deliver a command; what the five exported queries return is the output of
+  `step` for that command, in the state `run` reaches on the delivered
+  events from `State.init`, on the configuration the builder holds. The
+  statement is on the exported functions as the node calls them
+  (`cm_readBack_after_fast` in `Fast.lean` for the command call C makes).
 
 What remains outside Lean is the C++ shim: reading the parameters and the
-clock, the floating-point work listed in the SPEC as T1 to T3, and acting on
-the returned decision.
-
-This file describes the interface as it stands after tasks T05 and T05b: the
-calls of the node of SPEC.md, read in the extended model. The calls of
-SPEC_NAV2.md, section 8, and their theorems are task T06.
+clock, looking transforms up and applying them (the points and vertices a
+call carries are the shim's word), the floating-point work listed in
+SPEC_NAV2.md, section 7, and acting on the returned decision.
 -/
 
 namespace ROSlean.CollisionMonitor.FFI
@@ -140,6 +148,14 @@ theorem builderAddCircle_refused (b : Builder) (radius : UInt64) (a : UInt8) (r 
 theorem builderAddPolygon_zones (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) :
     builderAddPolygon b a r mp en =
       { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon [])) a r mp en] } := rfl
+
+/-- `add_topic_polygon` appends a zone without shape, with the action,
+threshold and flag of the call. -/
+theorem builderAddTopicPolygon_zones (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64)
+    (en : UInt8) :
+    (builderAddTopicPolygon b a r mp en).cfg.zones =
+      b.cfg.zones ++ [(zoneOfRaw .topic a r mp en).1] := by
+  simp [builderAddTopicPolygon, Builder.cfg]
 
 /-- If the zone added last is a polygon, an accepted vertex is appended to
 it; the zones before it are untouched. -/
@@ -224,28 +240,13 @@ theorem foldl_addVertex (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64) (en 
 
 /-! ## Refusals -/
 
-/-- A monitor starts in the active phase (`startState`), with the builder's
+/-- A monitor starts unconfigured (`State.init`), with the builder's
 configuration and output `silent`; it is ok iff the builder reports no
 error. -/
 theorem cmNew_eq (b : Builder) :
     cmNew b = { cfg := b.cfg, ok := b.error == 0, err := b.error,
-                zoneErrs := b.zones.map entryError, st := startState b.cfg, out := .silent,
-                raw := none } := rfl
-
-/-- The state a monitor starts in is the initial state with the phase
-`active`: nothing else is touched by `configure` and `activate`. -/
-theorem startState_eq (cfg : Config) :
-    startState cfg = { State.init cfg with phase := .active } := rfl
-
-/-- A run from the state a monitor starts in is a run from start-up that
-begins with `configure` and `activate`: the theorems of `Trace.lean` about
-runs from `State.init` apply to the node with this prefix. -/
-theorem run_startState (cfg : Config) (es : List Event) :
-    run cfg (startState cfg) es =
-      ((run cfg (State.init cfg) ([.configure, .activate] ++ es)).1,
-        (run cfg (State.init cfg) ([.configure, .activate] ++ es)).2.drop 2) := by
-  rw [run_append]
-  rfl
+                zoneErrs := b.zones.map entryError, st := State.init b.cfg, out := .silent,
+                accepted := false } := rfl
 
 theorem zoneError_eq_zero_iff (z : Zone) : zoneError z = 0 ↔ z.ok = true := by
   unfold zoneError Zone.ok
@@ -373,6 +374,7 @@ inductive BuilderCall where
   | addCircle (radius : UInt64) (action : UInt8) (ratio : UInt64) (minPoints : Int64)
       (enabled : UInt8)
   | addPolygon (action : UInt8) (ratio : UInt64) (minPoints : Int64) (enabled : UInt8)
+  | addTopicPolygon (action : UInt8) (ratio : UInt64) (minPoints : Int64) (enabled : UInt8)
   | addVertex (x y : UInt32)
 
 /-- Performs the call. -/
@@ -381,6 +383,7 @@ def BuilderCall.exec (b : Builder) : BuilderCall → Builder
   | .setStopPubTimeout t => builderSetStopPubTimeout b t
   | .addCircle radius a r mp en => builderAddCircle b radius a r mp en
   | .addPolygon a r mp en => builderAddPolygon b a r mp en
+  | .addTopicPolygon a r mp en => builderAddTopicPolygon b a r mp en
   | .addVertex x y => builderAddVertex b x y
 
 /-- The call carries a value that the conversions refuse: a timeout, a
@@ -391,6 +394,7 @@ def BuilderCall.Refused : BuilderCall → Prop
   | .setStopPubTimeout t => timeoutNs t.toNat = none
   | .addCircle radius _ _ mp _ => radiusMm radius.toNat = none ∨ minPointsOfRaw mp.toInt = none
   | .addPolygon _ _ mp _ => minPointsOfRaw mp.toInt = none
+  | .addTopicPolygon _ _ mp _ => minPointsOfRaw mp.toInt = none
   | .addVertex x y => vertexOfRaw x y = none
 
 /-- The builder carries the mark of a refusal: a refused timeout, a vertex
@@ -464,6 +468,7 @@ theorem exec_marked_mono (b : Builder) (c : BuilderCall) (h : Marked b) : Marked
     | setStopPubTimeout => exact ⟨ze, hm, h⟩
     | addCircle => exact ⟨ze, by simp [BuilderCall.exec, builderAddCircle, hm], h⟩
     | addPolygon => exact ⟨ze, by simp [BuilderCall.exec, builderAddPolygon, hm], h⟩
+    | addTopicPolygon => exact ⟨ze, by simp [BuilderCall.exec, builderAddTopicPolygon, hm], h⟩
     | addVertex x y => exact addVertexToLast_keeps_code _ _ ⟨ze, hm, h⟩
 
 /-- A call that carries a refused value marks the builder, whatever the
@@ -480,6 +485,10 @@ theorem exec_marked_of_refused (b : Builder) (c : BuilderCall) (h : c.Refused) :
   | addPolygon a r mp en =>
     exact .inr (.inr (.inr ⟨zoneOfRaw (.fixed (.polygon [])) a r mp en,
       by simp [BuilderCall.exec, builderAddPolygon], by rw [zoneOfRaw_refused _ _ _ _ _ h]; decide⟩))
+  | addTopicPolygon a r mp en =>
+    exact .inr (.inr (.inr ⟨zoneOfRaw .topic a r mp en,
+      by simp [BuilderCall.exec, builderAddTopicPolygon],
+      by rw [zoneOfRaw_refused _ _ _ _ _ h]; decide⟩))
   | addVertex x y =>
     have hv : vertexOfRaw x y = none := h
     by_cases hl : lastIsPolygon b.zones = true
@@ -540,6 +549,7 @@ theorem foldl_exec_sourceSet (b : Builder) (cs : List BuilderCall)
     | setStopPubTimeout => rfl
     | addCircle => rfl
     | addPolygon => rfl
+    | addTopicPolygon => rfl
     | addVertex => rfl
 
 /-- **Not ok until the source is set.** A monitor made from a new builder by
@@ -604,7 +614,7 @@ theorem vertexOfRaw_eq_none_iff (x y : UInt32) :
   cases h1 : vertexMm x.toNat <;> cases h2 : vertexMm y.toNat <;>
     cases h3 : F32.finite x.toNat <;> cases h4 : F32.finite y.toNat <;> simp_all
 
-/-! ## Scan decoding -/
+/-! ## Decoding -/
 
 theorem byteAt_lt (a : ByteArray) (i : Nat) : byteAt a i < 256 := by
   unfold byteAt
@@ -647,17 +657,17 @@ theorem coordMmOfParts_halves (lo hi : Nat) (hlo : lo < 2 ^ 32) (hhi : hi < 2 ^ 
 theorem beamAt_lt (a : ByteArray) (i : Nat) : (beamAt a i).range < 2 ^ 32 := u32At_lt ..
 
 /-- The coordinates are 64-bit patterns. -/
-theorem coordsAt_lt (a : ByteArray) (i : Nat) :
-    (coordsAt a i).1 < 2 ^ 64 ∧ (coordsAt a i).2 < 2 ^ 64 := ⟨u64At_lt .., u64At_lt ..⟩
+theorem pairAt_lt (a : ByteArray) (i : Nat) :
+    (pairAt a i).1 < 2 ^ 64 ∧ (pairAt a i).2 < 2 ^ 64 := ⟨u64At_lt .., u64At_lt ..⟩
 
-/-- A byte array of any length is a scan of `size / 20` readings; a trailing
+/-- A byte array of any length is a scan of `size / 4` readings; a trailing
 partial record is ignored. -/
-theorem decodeBeams_length (a : ByteArray) : (decodeBeams a).length = a.size / 20 := by
-  simp [decodeBeams, recordSize]
+theorem decodeBeams_length (a : ByteArray) : (decodeBeams a).length = a.size / 4 := by
+  simp [decodeBeams, rangeSize]
 
-/-- There is one coordinate pair per reading. -/
-theorem decodeCoords_length (a : ByteArray) : (decodeCoords a).length = a.size / 20 := by
-  simp [decodeCoords, recordSize]
+/-- A byte array of any length is `size / 16` coordinate pairs. -/
+theorem decodePairs_length (a : ByteArray) : (decodePairs a).length = a.size / 16 := by
+  simp [decodePairs, pairSize]
 
 /-- Reading `i` of the decoded scan is record `i` of the array. -/
 theorem getElem_decodeBeams (a : ByteArray) (i : Nat) (h : i < (decodeBeams a).length) :
@@ -665,116 +675,151 @@ theorem getElem_decodeBeams (a : ByteArray) (i : Nat) (h : i < (decodeBeams a).l
   simp [decodeBeams]
 
 /-- Pair `i` of the decoded coordinates is that of record `i` of the array. -/
-theorem getElem_decodeCoords (a : ByteArray) (i : Nat) (h : i < (decodeCoords a).length) :
-    (decodeCoords a)[i] = coordsAt a i := by
-  simp [decodeCoords]
+theorem getElem_decodePairs (a : ByteArray) (i : Nat) (h : i < (decodePairs a).length) :
+    (decodePairs a)[i] = pairAt a i := by
+  simp [decodePairs]
 
-/-- **The coordinates of a scan call fit the scan of that call**, whatever
-the bytes: the model never treats them as a failed lookup. -/
-theorem fits_decode (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
-    (scanOfRaw stamp rmin rmax a).fits (decodeCoords a) = true := by
-  simp [Scan.fits, scanOfRaw, decodeBeams_length, decodeCoords_length]
+/-- **When the coordinates of a command fit the stored scan**: iff the
+coordinate array holds as many pairs as the scan array held readings. With
+any other number the model treats the lookup as failed (E8, step 3). -/
+theorem fits_decode (stamp : Int64) (rmin rmax : UInt32) (ranges points : ByteArray) :
+    (scanOfRaw stamp rmin rmax ranges).fits (decodePairs points) = true ↔
+      points.size / 16 = ranges.size / 4 := by
+  simp [Scan.fits, scanOfRaw, decodeBeams_length, decodePairs_length]
 
-/-- **The points of a scan call.** With the coordinates of its own records,
-the scan's points are the converted coordinates of the records whose range
-is valid (R4), in order: what the node of SPEC.md computed when the scan
-arrived, now computed for each command. -/
-theorem points_decode (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
-    (scanOfRaw stamp rmin rmax a).points (decodeCoords a) =
-      ((List.range (a.size / recordSize)).filter
-        (fun i => (scanOfRaw stamp rmin rmax a).validBeam (beamAt a i))).map
-        (fun i => scanPointMm (coordsAt a i)) := by
-  simp only [Scan.points, scanOfRaw, decodeBeams, decodeCoords, List.zip_map', List.filter_map,
+/-- **The points of a command.** With one coordinate pair per reading of
+the stored scan, the scan's points are the converted pairs of the readings
+whose range is valid (R4), in order: reading `i` with pair `i`. -/
+theorem points_decode (stamp : Int64) (rmin rmax : UInt32) (ranges points : ByteArray)
+    (h : points.size / 16 = ranges.size / 4) :
+    (scanOfRaw stamp rmin rmax ranges).points (decodePairs points) =
+      ((List.range (ranges.size / rangeSize)).filter
+        (fun i => (scanOfRaw stamp rmin rmax ranges).validBeam (beamAt ranges i))).map
+        (fun i => scanPointMm (pairAt points i)) := by
+  have h' : points.size / pairSize = ranges.size / rangeSize := h
+  simp only [Scan.points, scanOfRaw, decodeBeams, decodePairs, h', List.zip_map', List.filter_map,
     List.map_map]
   rfl
 
 /-- An empty array is a scan without readings. -/
 theorem decodeBeams_empty : decodeBeams ByteArray.empty = [] := rfl
 
-/-- One reading as the shim hands it over: the range pattern (binary32) and
-the patterns of the two coordinates in metres (binary64). -/
-structure RawBeam where
-  range : Nat
-  x : Nat
-  y : Nat
-
-/-- The beam of the model that a raw reading denotes: its range pattern. -/
-def RawBeam.beam (r : RawBeam) : Beam := { range := r.range }
-
-/-- The coordinates of a raw reading: the two patterns as given. -/
-def RawBeam.coords (r : RawBeam) : Coords := (r.x, r.y)
-
-/-- The patterns fit their fields. -/
-def RawBeam.Fits (r : RawBeam) : Prop := r.range < 2 ^ 32 ∧ r.x < 2 ^ 64 ∧ r.y < 2 ^ 64
+/-! ### Decoding inverts the shim's encoding -/
 
 /-- The `k` little-endian bytes of a number. -/
 def leBytes : Nat → Nat → List UInt8
   | 0, _ => []
   | k + 1, n => (n % 256).toUInt8 :: leBytes k (n / 256)
 
-/-- The 20 bytes the shim writes for one reading (SPEC, "Scan event"). -/
-def rawBytes (r : RawBeam) : List UInt8 := leBytes 4 r.range ++ leBytes 8 r.x ++ leBytes 8 r.y
+theorem leBytes_length (k n : Nat) : (leBytes k n).length = k := by
+  induction k generalizing n with
+  | zero => rfl
+  | succ k ih => simp [leBytes, ih]
 
-/-- The byte array the shim builds for a scan. -/
-def encodeBeams (rs : List RawBeam) : ByteArray := ⟨(rs.flatMap rawBytes).toArray⟩
+theorem toNat_toUInt8_mod (n : Nat) : (n % 256).toUInt8.toNat = n % 256 := by
+  simp [Nat.toUInt8]
 
-theorem rawBytes_length (r : RawBeam) : (rawBytes r).length = 20 := rfl
+/-- The bytes of a number denote it, up to the size of the field. -/
+theorem leNat_leBytes (k n : Nat) : leNat (leBytes k n) = n % 256 ^ k := by
+  induction k generalizing n with
+  | zero => simp [leBytes, leNat, Nat.mod_one]
+  | succ k ih =>
+    simp only [leBytes, leNat, toNat_toUInt8_mod, ih]
+    rw [pow_succ, Nat.mul_comm (256 ^ k) 256, Nat.mod_mul]
 
-theorem encodeBeams_size (rs : List RawBeam) : (encodeBeams rs).size = 20 * rs.length := by
-  induction rs with
-  | nil => rfl
-  | cons b bs ih =>
-    simp only [encodeBeams, ByteArray.size, List.flatMap_cons, List.size_toArray,
-      List.length_append, rawBytes_length, List.length_cons] at ih ⊢
-    omega
+/-- The 4 bytes the shim writes for a reading: its range pattern. -/
+def rangeBytes (r : Nat) : List UInt8 := leBytes 4 r
 
-/-- A byte of an encoded scan, as a list lookup. -/
-theorem byteAt_encodeBeams (rs : List RawBeam) (i : Nat) :
-    byteAt (encodeBeams rs) i = (((rs.flatMap rawBytes)[i]?).map UInt8.toNat).getD 0 := by
+/-- The 16 bytes the shim writes for a coordinate pair. -/
+def pairBytes (c : Coords) : List UInt8 := leBytes 8 c.1 ++ leBytes 8 c.2
+
+/-- The byte array the shim builds for the ranges of a scan. -/
+def encodeRanges (rs : List Nat) : ByteArray := ⟨(rs.flatMap rangeBytes).toArray⟩
+
+/-- The byte array the shim builds for a list of coordinate pairs: the
+points of a command, or the vertices of a shape message. -/
+def encodePairs (cs : List Coords) : ByteArray := ⟨(cs.flatMap pairBytes).toArray⟩
+
+theorem pairBytes_length (c : Coords) : (pairBytes c).length = 16 := by
+  simp [pairBytes, leBytes_length]
+
+theorem flatMap_length_const {α : Type} (f : α → List UInt8) (n : Nat)
+    (hf : ∀ x, (f x).length = n) (xs : List α) : (xs.flatMap f).length = n * xs.length := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.flatMap_cons, List.length_append, hf, ih, List.length_cons]
+    rw [Nat.mul_succ]; omega
+
+theorem encodeRanges_size (rs : List Nat) : (encodeRanges rs).size = 4 * rs.length := by
+  simpa [encodeRanges, ByteArray.size] using
+    flatMap_length_const rangeBytes 4 (fun r => leBytes_length 4 r) rs
+
+theorem encodePairs_size (cs : List Coords) : (encodePairs cs).size = 16 * cs.length := by
+  simpa [encodePairs, ByteArray.size] using flatMap_length_const pairBytes 16 pairBytes_length cs
+
+/-- A byte of an array built from a list, as a list lookup. -/
+theorem byteAt_mk (l : List UInt8) (i : Nat) :
+    byteAt ⟨l.toArray⟩ i = ((l[i]?).map UInt8.toNat).getD 0 := by
   unfold byteAt
-  by_cases h : i < (encodeBeams rs).size
-  · have h' : i < (rs.flatMap rawBytes).length := by
-      simpa [encodeBeams, ByteArray.size] using h
+  by_cases h : i < (ByteArray.mk l.toArray).size
+  · have h' : i < l.length := by simpa [ByteArray.size] using h
     rw [dif_pos h, List.getElem?_eq_getElem h']
     rfl
-  · have h' : ¬ i < (rs.flatMap rawBytes).length := by
-      simpa [encodeBeams, ByteArray.size] using h
+  · have h' : ¬ i < l.length := by simpa [ByteArray.size] using h
     rw [dif_neg h, List.getElem?_eq_none (by omega)]
     rfl
 
-/-- Byte `20 * i + j` of the encoding is byte `j` of record `i`. -/
-theorem getElem?_flatMap_rawBytes (rs : List RawBeam) (i j : Nat) (hj : j < 20) :
-    (rs.flatMap rawBytes)[20 * i + j]? = rs[i]?.bind (fun b => (rawBytes b)[j]?) := by
-  induction rs generalizing i with
+/-- Byte `n * i + j` of records of `n` bytes each is byte `j` of record
+`i`. -/
+theorem getElem?_flatMap_const {α : Type} (f : α → List UInt8) (n : Nat)
+    (hf : ∀ x, (f x).length = n) (xs : List α) (i j : Nat) (hj : j < n) :
+    (xs.flatMap f)[n * i + j]? = xs[i]?.bind (fun b => (f b)[j]?) := by
+  induction xs generalizing i with
   | nil => simp
   | cons b bs ih =>
     rw [List.flatMap_cons]
     cases i with
     | zero =>
-      rw [List.getElem?_append_left (by rw [rawBytes_length]; omega)]
+      rw [List.getElem?_append_left (by rw [hf]; omega)]
       simp
     | succ i =>
-      rw [List.getElem?_append_right (by rw [rawBytes_length]; omega), rawBytes_length]
-      have : 20 * (i + 1) + j - 20 = 20 * i + j := by omega
+      have hge : (f b).length ≤ n * (i + 1) + j := by rw [hf, Nat.mul_succ]; omega
+      rw [List.getElem?_append_right hge, hf]
+      have : n * (i + 1) + j - n = n * i + j := by rw [Nat.mul_succ]; omega
       rw [this, ih]
       simp
 
-theorem toNat_toUInt8_mod (n : Nat) : (n % 256).toUInt8.toNat = n % 256 := by
-  simp [Nat.toUInt8]
-
-/-- The three fields of record `i` of an encoded scan are those of reading
-`i`. -/
-theorem record_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) (i : Nat)
-    (h2 : i < rs.length) :
-    u32At (encodeBeams rs) (recordSize * i) = rs[i].range ∧
-      u64At (encodeBeams rs) (recordSize * i + 4) = rs[i].x ∧
-      u64At (encodeBeams rs) (recordSize * i + 12) = rs[i].y := by
-  obtain ⟨hr, hx, hy⟩ := h rs[i] (List.getElem_mem h2)
+/-- Reading `i` of an encoded scan is range `i`. -/
+theorem u32At_encodeRanges (rs : List Nat) (h : ∀ r ∈ rs, r < 2 ^ 32) (i : Nat)
+    (h2 : i < rs.length) : u32At (encodeRanges rs) (rangeSize * i) = rs[i] := by
+  have hr := h rs[i] (List.getElem_mem h2)
   have hb : rs[i]? = some rs[i] := List.getElem?_eq_getElem h2
-  have key : ∀ j, j < 20 → byteAt (encodeBeams rs) (20 * i + j) =
-      (((rawBytes rs[i])[j]?).map UInt8.toNat).getD 0 := by
+  have key : ∀ j, j < 4 → byteAt (encodeRanges rs) (4 * i + j) =
+      (((rangeBytes rs[i])[j]?).map UInt8.toNat).getD 0 := by
     intro j hj
-    rw [byteAt_encodeBeams, getElem?_flatMap_rawBytes rs i j hj, hb]
+    rw [encodeRanges, byteAt_mk,
+      getElem?_flatMap_const rangeBytes 4 (fun r => leBytes_length 4 r) rs i j hj, hb]
+    rfl
+  have k0 := key 0 (by omega)
+  have k1 := key 1 (by omega)
+  have k2 := key 2 (by omega)
+  have k3 := key 3 (by omega)
+  simp only [rangeBytes, leBytes, List.getElem?_cons_zero, List.getElem?_cons_succ,
+    Option.map_some, Option.getD_some, Nat.add_zero, toNat_toUInt8_mod] at k0 k1 k2 k3
+  simp only [u32At, rangeSize, k0, k1, k2, k3]
+  omega
+
+/-- The two fields of pair `i` of an encoded list of pairs are those of pair
+`i`. -/
+theorem pairAt_encodePairs (cs : List Coords) (h : ∀ c ∈ cs, c.1 < 2 ^ 64 ∧ c.2 < 2 ^ 64)
+    (i : Nat) (h2 : i < cs.length) : pairAt (encodePairs cs) i = cs[i] := by
+  obtain ⟨hx, hy⟩ := h cs[i] (List.getElem_mem h2)
+  have hb : cs[i]? = some cs[i] := List.getElem?_eq_getElem h2
+  have key : ∀ j, j < 16 → byteAt (encodePairs cs) (16 * i + j) =
+      (((pairBytes cs[i])[j]?).map UInt8.toNat).getD 0 := by
+    intro j hj
+    rw [encodePairs, byteAt_mk, getElem?_flatMap_const pairBytes 16 pairBytes_length cs i j hj, hb]
     rfl
   have k0 := key 0 (by omega)
   have k1 := key 1 (by omega)
@@ -792,46 +837,153 @@ theorem record_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) (i : N
   have k13 := key 13 (by omega)
   have k14 := key 14 (by omega)
   have k15 := key 15 (by omega)
-  have k16 := key 16 (by omega)
-  have k17 := key 17 (by omega)
-  have k18 := key 18 (by omega)
-  have k19 := key 19 (by omega)
-  simp only [rawBytes, leBytes, List.cons_append, List.nil_append, List.getElem?_cons_zero,
+  simp only [pairBytes, leBytes, List.cons_append, List.nil_append, List.getElem?_cons_zero,
     List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.add_zero,
-    toNat_toUInt8_mod] at k0 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k17 k18 k19
-  refine ⟨?_, ?_, ?_⟩
-  · simp only [u32At, recordSize, k0, k1, k2, k3]
+    toNat_toUInt8_mod] at k0 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15
+  have e1 : u64At (encodePairs cs) (pairSize * i) = cs[i].1 := by
+    simp only [u64At, u32At, pairSize, Nat.add_assoc, Nat.reduceAdd, k0, k1, k2, k3, k4, k5, k6, k7]
     omega
-  · simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k4, k5, k6, k7, k8, k9,
-      k10, k11]
+  have e2 : u64At (encodePairs cs) (pairSize * i + 8) = cs[i].2 := by
+    simp only [u64At, u32At, pairSize, Nat.add_assoc, Nat.reduceAdd, k8, k9, k10, k11, k12, k13,
+      k14, k15]
     omega
-  · simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k12, k13, k14, k15, k16,
-      k17, k18, k19]
-    omega
+  simp only [pairAt, e1, e2]
 
-/-- **Decoding inverts the encoding (ranges).** If the shim writes the
-records of the SPEC for readings whose patterns fit their fields, the model
-sees exactly those readings, in order. -/
-theorem decodeBeams_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
-    decodeBeams (encodeBeams rs) = rs.map RawBeam.beam := by
+/-- **Decoding inverts the encoding (ranges).** If the shim writes four
+bytes per reading for patterns that fit them, the model sees exactly those
+readings, in order. -/
+theorem decodeBeams_encodeRanges (rs : List Nat) (h : ∀ r ∈ rs, r < 2 ^ 32) :
+    decodeBeams (encodeRanges rs) = rs.map (fun r => { range := r }) := by
   apply List.ext_getElem
-  · rw [decodeBeams_length, encodeBeams_size, List.length_map]; omega
+  · rw [decodeBeams_length, encodeRanges_size, List.length_map]; omega
   · intro i h1 h2
     rw [List.length_map] at h2
     rw [getElem_decodeBeams, List.getElem_map]
-    simp only [beamAt, (record_encodeBeams rs h i h2).1, RawBeam.beam]
+    simp only [beamAt, u32At_encodeRanges rs h i h2]
 
-/-- **Decoding inverts the encoding (coordinates).** The model sees the two
-coordinate patterns of every reading as given, unconverted, in order. -/
-theorem decodeCoords_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
-    decodeCoords (encodeBeams rs) = rs.map RawBeam.coords := by
+/-- **Decoding inverts the encoding (coordinates and vertices).** The model
+sees the two patterns of every pair as given, unconverted, in order. -/
+theorem decodePairs_encodePairs (cs : List Coords) (h : ∀ c ∈ cs, c.1 < 2 ^ 64 ∧ c.2 < 2 ^ 64) :
+    decodePairs (encodePairs cs) = cs := by
   apply List.ext_getElem
-  · rw [decodeCoords_length, encodeBeams_size, List.length_map]; omega
+  · rw [decodePairs_length, encodePairs_size]; omega
   · intro i h1 h2
-    rw [List.length_map] at h2
-    rw [getElem_decodeCoords, List.getElem_map]
-    simp only [coordsAt, (record_encodeBeams rs h i h2).2.1, (record_encodeBeams rs h i h2).2.2,
-      RawBeam.coords]
+    rw [getElem_decodePairs, pairAt_encodePairs cs h i h2]
+
+/-- The bytes the shim writes for one zone in the array of zone vertices: a
+count and the vertices, or the count `0xFFFFFFFF` for "none". -/
+def zoneEntryBytes : Option (List Coords) → List UInt8
+  | none => leBytes 4 0xFFFFFFFF
+  | some vs => leBytes 4 vs.length ++ vs.flatMap pairBytes
+
+/-- The byte array the shim builds for the zone vertices of a command. -/
+def encodeZoneVerts (zs : List (Option (List Coords))) : ByteArray :=
+  ⟨(zs.flatMap zoneEntryBytes).toArray⟩
+
+theorem takePairs_flatMap (vs : List Coords) (rest : List UInt8)
+    (h : ∀ c ∈ vs, c.1 < 2 ^ 64 ∧ c.2 < 2 ^ 64) :
+    takePairs vs.length (vs.flatMap pairBytes ++ rest) = vs := by
+  induction vs with
+  | nil => rfl
+  | cons c vs ih =>
+    obtain ⟨hx, hy⟩ := h c List.mem_cons_self
+    have e1 : (List.flatMap pairBytes (c :: vs) ++ rest) =
+        leBytes 8 c.1 ++ (leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest)) := by
+      simp [pairBytes, List.append_assoc]
+    have t1 : (leBytes 8 c.1 ++ (leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest))).take 8 =
+        leBytes 8 c.1 := List.take_left' (leBytes_length 8 c.1)
+    have d1 : (leBytes 8 c.1 ++ (leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest))).drop 8 =
+        leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest) := List.drop_left' (leBytes_length 8 c.1)
+    have t2 : (leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest)).take 8 = leBytes 8 c.2 :=
+      List.take_left' (leBytes_length 8 c.2)
+    have d2 : (leBytes 8 c.1 ++ (leBytes 8 c.2 ++ (vs.flatMap pairBytes ++ rest))).drop 16 =
+        vs.flatMap pairBytes ++ rest := by
+      rw [← List.append_assoc]
+      exact List.drop_left' (by simp [leBytes_length])
+    rw [List.length_cons, takePairs, e1, t1, d1, t2, d2, ih (fun c hc => h c (List.mem_cons_of_mem _ hc)),
+      leNat_leBytes, leNat_leBytes]
+    have m1 : c.1 % 256 ^ 8 = c.1 := Nat.mod_eq_of_lt (by omega)
+    have m2 : c.2 % 256 ^ 8 = c.2 := Nat.mod_eq_of_lt (by omega)
+    rw [m1, m2]
+
+/-- An entry of the zone vertices that the encoding can carry: a list of
+fewer than 2³² − 1 vertices whose patterns fit 64 bits, or none. -/
+def ZoneEntryFits : Option (List Coords) → Prop
+  | none => True
+  | some vs => vs.length < 0xFFFFFFFF ∧ ∀ c ∈ vs, c.1 < 2 ^ 64 ∧ c.2 < 2 ^ 64
+
+theorem parseZoneVerts_flatMap (zs : List (Option (List Coords))) (fuel : Nat)
+    (hfuel : zs.length ≤ fuel) (h : ∀ z ∈ zs, ZoneEntryFits z) :
+    parseZoneVerts fuel (zs.flatMap zoneEntryBytes) = zs := by
+  induction zs generalizing fuel with
+  | nil =>
+    cases fuel with
+    | zero => rfl
+    | succ f => simp [parseZoneVerts]
+  | cons z zs ih =>
+    cases fuel with
+    | zero => simp at hfuel
+    | succ f =>
+      have hf : zs.length ≤ f := by simpa using hfuel
+      have ihz := ih f hf (fun z hz => h z (List.mem_cons_of_mem _ hz))
+      have hz := h z List.mem_cons_self
+      rw [List.flatMap_cons]
+      cases z with
+      | none =>
+        have t : (zoneEntryBytes none ++ zs.flatMap zoneEntryBytes).take 4 = leBytes 4 0xFFFFFFFF :=
+          List.take_left' (leBytes_length 4 _)
+        have d : (zoneEntryBytes none ++ zs.flatMap zoneEntryBytes).drop 4 =
+            zs.flatMap zoneEntryBytes := List.drop_left' (leBytes_length 4 _)
+        have hl : ¬ (zoneEntryBytes none ++ zs.flatMap zoneEntryBytes).length < 4 := by
+          simp [zoneEntryBytes, leBytes_length]
+        have hn : leNat (leBytes 4 0xFFFFFFFF) = 0xFFFFFFFF := by rw [leNat_leBytes]; norm_num
+        rw [parseZoneVerts, if_neg hl, t, hn, if_pos rfl, d, ihz]
+      | some vs =>
+        obtain ⟨hlen, hfit⟩ := hz
+        have e : zoneEntryBytes (some vs) ++ zs.flatMap zoneEntryBytes =
+            leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes) := by
+          simp [zoneEntryBytes, List.append_assoc]
+        have t : (leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes)).take 4 =
+            leBytes 4 vs.length := List.take_left' (leBytes_length 4 _)
+        have d : (leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes)).drop 4 =
+            vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes := List.drop_left' (leBytes_length 4 _)
+        have hvl : (vs.flatMap pairBytes).length = 16 * vs.length :=
+          flatMap_length_const pairBytes 16 pairBytes_length vs
+        have d2 : (leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes)).drop
+            (4 + 16 * vs.length) = zs.flatMap zoneEntryBytes := by
+          rw [← List.append_assoc]
+          exact List.drop_left' (by simp [leBytes_length, hvl])
+        have hn : leNat (leBytes 4 vs.length) = vs.length := by
+          rw [leNat_leBytes]; exact Nat.mod_eq_of_lt (by omega)
+        have hl : ¬ (leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes)).length
+            < 4 := by simp [leBytes_length]
+        have hl2 : ¬ (leBytes 4 vs.length ++ (vs.flatMap pairBytes ++ zs.flatMap zoneEntryBytes)).length
+            < 4 + 16 * vs.length := by simp [leBytes_length, hvl]
+        have hne : vs.length ≠ 0xFFFFFFFF := by omega
+        rw [e, parseZoneVerts, if_neg hl, t, hn, if_neg hne, if_neg hl2, d, d2,
+          takePairs_flatMap vs _ hfit, ihz]
+
+theorem zoneEntryBytes_length_pos (z : Option (List Coords)) : 1 ≤ (zoneEntryBytes z).length := by
+  cases z <;> simp [zoneEntryBytes, leBytes_length] <;> omega
+
+/-- **Decoding inverts the encoding (zone vertices).** The model sees, for
+each zone in order, the vertices the shim wrote for it, or none. -/
+theorem decodeZoneVerts_encodeZoneVerts (zs : List (Option (List Coords)))
+    (h : ∀ z ∈ zs, ZoneEntryFits z) : decodeZoneVerts (encodeZoneVerts zs) = zs := by
+  have hlen : zs.length ≤ (zs.flatMap zoneEntryBytes).length := by
+    induction zs with
+    | nil => simp
+    | cons z zs ih =>
+      have := zoneEntryBytes_length_pos z
+      have := ih (fun z hz => h z (List.mem_cons_of_mem _ hz))
+      simp only [List.flatMap_cons, List.length_append, List.length_cons]
+      omega
+  unfold decodeZoneVerts encodeZoneVerts
+  simp only [ByteArray.size, List.size_toArray, List.toList_toArray]
+  exact parseZoneVerts_flatMap zs _ hlen h
+
+/-- No array is refused: an empty one carries no zone vertices. -/
+theorem decodeZoneVerts_empty : decodeZoneVerts ByteArray.empty = [] := rfl
 
 /-- The scan the model sees: stamp (negative taken as 0, D8), the two limits
 as given, and the decoded readings. -/
@@ -843,26 +995,15 @@ theorem scanOfRaw_fields (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
 
 /-! ## Events -/
 
-/-- No event changes the record array a monitor keeps. -/
-theorem apply_raw (m : Monitor) (e : Event) : (m.apply e).raw = m.raw := by
-  unfold Monitor.apply
-  split
-  · rfl
-  · cases e <;> rfl
-
+/-- No event changes the configuration, whether the monitor is ok, or the
+record of the last shape call. -/
 theorem apply_cfg (m : Monitor) (e : Event) :
-    (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok ∧ (m.apply e).coords = m.coords := by
-  refine ⟨?_, ?_, ?_⟩
+    (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok ∧ (m.apply e).accepted = m.accepted := by
+  refine ⟨?_, ?_, ?_⟩ <;>
   · unfold Monitor.apply
     split
     · rfl
     · cases e <;> rfl
-  · unfold Monitor.apply
-    split
-    · rfl
-    · cases e <;> rfl
-  · unfold Monitor.coords
-    rw [apply_raw]
 
 /-- An ok monitor does what `step` says. -/
 theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
@@ -890,52 +1031,266 @@ theorem apply_st_of_not_ok (m : Monitor) (e : Event) (h : m.ok = false)
   rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, foreign, rfl⟩ | ⟨now, v, scanPts, zoneVerts, rfl⟩ <;>
     simp [h]
 
-/-- The scan call is `Monitor.apply` on a scan event, which stores the scan,
-and remembers the coordinates of its records, or none if the scan was
-reported unusable. -/
-theorem cmOnScan_eq (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
-    (rmin rmax : UInt32) (a : ByteArray) :
-    cmOnScan m now stamp usable rmin rmax a =
-      { m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) with
-        raw := if usable != 0 then some a else none } :=
+/-- A monitor that is not ok never has an output that passes a command or
+slows it down: its output is `silent` or the stop for an invalid source. -/
+theorem apply_out_of_not_ok (m : Monitor) (e : Event) (h : m.ok = false) :
+    (m.apply e).out = .silent ∨ (m.apply e).out = .answer (some .stopSource) none := by
+  unfold Monitor.apply
+  rw [if_neg (by simp [h])]
+  cases e with
+  | cmd now v p z =>
+    by_cases hp : m.st.phase = .active
+    · exact Or.inr (by simp [hp])
+    · exact Or.inl (by simp [hp])
+  | _ => exact Or.inl rfl
+
+/-- The transition codes of `roslean_cm_on_lifecycle`. -/
+theorem lifecycleEvent_codes :
+    lifecycleEvent 0 = some .configure ∧ lifecycleEvent 1 = some .activate ∧
+      lifecycleEvent 2 = some .deactivate ∧ lifecycleEvent 3 = some .cleanup ∧
+      lifecycleEvent 4 = some .shutdown := ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Every other code is no event. -/
+theorem lifecycleEvent_eq_none (t : UInt8) (h : 4 < t) : lifecycleEvent t = none := by
+  have h' : 4 < t.toNat := UInt8.lt_iff_toNat_lt.mp h
+  unfold lifecycleEvent
+  have e : ∀ k : UInt8, k.toNat ≤ 4 → (t == k) = false := by
+    intro k hk
+    rw [beq_eq_false_iff_ne]
+    intro heq
+    rw [heq] at h'
+    omega
+  simp [e 0 (by decide), e 1 (by decide), e 2 (by decide), e 3 (by decide), e 4 (by decide)]
+
+/-- The lifecycle call is `Monitor.apply` on the transition's event. -/
+theorem cmOnLifecycle_eq (m : Monitor) (t : UInt8) (e : Event) (h : lifecycleEvent t = some e) :
+    cmOnLifecycle m t = m.apply e := by
+  simp [cmOnLifecycle, h]
+
+/-- An unknown transition code changes nothing. -/
+theorem cmOnLifecycle_of_unknown (m : Monitor) (t : UInt8) (h : 4 < t) : cmOnLifecycle m t = m := by
+  simp [cmOnLifecycle, lifecycleEvent_eq_none t h]
+
+/-- The phase query returns the code of the model's phase, and the codes are
+distinct. -/
+theorem cmPhase_eq (m : Monitor) :
+    (cmPhase m = 0 ↔ m.st.phase = .unconfigured) ∧ (cmPhase m = 1 ↔ m.st.phase = .inactive) ∧
+      (cmPhase m = 2 ↔ m.st.phase = .active) ∧ (cmPhase m = 3 ↔ m.st.phase = .finalized) := by
+  unfold cmPhase
+  cases m.st.phase <;> simp [phaseCode]
+
+/-- The scan call is `Monitor.apply` on a scan event, which stores the
+scan. -/
+theorem cmOnScan_eq (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
+    (a : ByteArray) :
+    cmOnScan m now stamp rmin rmax a = m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) :=
   rfl
 
-/-- The coordinates remembered after a scan call are those of its records,
-or none if the scan was reported unusable. -/
-theorem cmOnScan_coords (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
-    (rmin rmax : UInt32) (a : ByteArray) :
-    (cmOnScan m now stamp usable rmin rmax a).coords =
-      if usable != 0 then some (decodeCoords a) else none := by
-  rw [cmOnScan_eq]
-  unfold Monitor.coords
-  simp only
-  split <;> rfl
+/-- The shape call is `Monitor.apply` on a shape event; the vertices are
+those of the array, or none if `hasVerts` is 0. -/
+theorem cmOnShape_eq (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8) (verts : ByteArray) :
+    cmOnShape m zone foreign hasVerts verts =
+      { m.apply (.shape zone.toNat (if hasVerts != 0 then some (decodePairs verts) else none)
+          (foreign != 0)) with
+        accepted := m.ok &&
+          (acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0)).isSome } :=
+  rfl
+
+/-- **What "accepted" means.** The query after a shape call returns true iff
+the monitor is ok and the model accepts the message (`acceptShape`;
+characterised by `acceptShape_eq_some_iff`). -/
+theorem cmShapeAccepted_iff (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8)
+    (verts : ByteArray) :
+    cmShapeAccepted (cmOnShape m zone foreign hasVerts verts) = true ↔
+      m.ok = true ∧ ∃ sh, acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts)
+        (foreign != 0) = some sh := by
+  simp [cmShapeAccepted, cmOnShape, Option.isSome_iff_exists]
+
+/-- An accepted shape call installs the shape in its zone, and nothing else
+changes. -/
+theorem cmOnShape_st_of_accepted (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8)
+    (verts : ByteArray) (h : cmShapeAccepted (cmOnShape m zone foreign hasVerts verts) = true) :
+    ∃ sh, acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0) = some sh ∧
+      (cmOnShape m zone foreign hasVerts verts).st =
+        { m.st with shapes := m.st.shapes.set zone.toNat (some sh) } := by
+  obtain ⟨hok, sh, hsh⟩ := (cmShapeAccepted_iff m zone foreign hasVerts verts).mp h
+  refine ⟨sh, hsh, ?_⟩
+  change (m.apply (shapeEvent zone foreign hasVerts verts)).st = _
+  rw [(apply_of_ok m _ hok).1, shapeEvent, step_shape_of_accepted _ _ _ _ _ sh hsh]
+
+/-- A shape call that is not accepted changes no state. -/
+theorem cmOnShape_st_of_refused (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8)
+    (verts : ByteArray) (h : cmShapeAccepted (cmOnShape m zone foreign hasVerts verts) = false) :
+    (cmOnShape m zone foreign hasVerts verts).st = m.st := by
+  change (m.apply (shapeEvent zone foreign hasVerts verts)).st = _
+  cases hok : m.ok with
+  | false => exact apply_st_of_not_ok m _ hok (Or.inr (Or.inl ⟨_, _, _, rfl⟩))
+  | true =>
+    have hn : acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0) = none := by
+      by_contra hc
+      obtain ⟨sh, hsh⟩ := Option.ne_none_iff_exists'.mp hc
+      have := (cmShapeAccepted_iff m zone foreign hasVerts verts).mpr ⟨hok, sh, hsh⟩
+      rw [h] at this
+      cases this
+    rw [(apply_of_ok m _ hok).1, shapeEvent, step_shape_of_refused _ _ _ _ _ hn]
 
 /-- The command call is `Monitor.apply` on a command event with the six
 patterns in the order `linear.x`, `linear.y`, `linear.z`, `angular.x`,
-`angular.y`, `angular.z`, the coordinates remembered from the scan call made
-last (none if that scan was reported unusable), and no zone vertices. -/
-theorem cmOnCmd_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) :
-    cmOnCmd m now lx ly lz ax ay az =
+`angular.y`, `angular.z`, the coordinate pairs of the array `points` (none
+if `hasPoints` is 0) and the decoded zone vertices. -/
+theorem cmOnCmd_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) (hasPoints : UInt8)
+    (points zoneVerts : ByteArray) :
+    cmOnCmd m now lx ly lz ax ay az hasPoints points zoneVerts =
       m.apply (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩
-        m.coords []) := rfl
+        (if hasPoints != 0 then some (decodePairs points) else none)
+        (decodeZoneVerts zoneVerts)) := rfl
 
-/-- **An unusable scan stops the robot by the source rule.** After a scan
-call that the shim reports as unusable (D11), commands carry no coordinates
-for the scan, and with an enabled source and a non-zero source timeout the
-action demanded at every time, in every state, is `stopSource` (N27), until
-a scan is reported usable. This is what the removed event `scanUnusable`
-did. -/
-theorem cmOnScan_unusable_stop (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
-    (a : ByteArray) (he : m.cfg.sourceEnabled = true) (ht : 0 < m.cfg.sourceTimeout) :
-    (cmOnScan m now stamp 0 rmin rmax a).coords = none ∧
-      ∀ (st : State) (t : Nat) (lx ly lz ax ay az : UInt64),
-        ∃ v, cmdEvent none (UInt64.ofNat t) lx ly lz ax ay az =
-            .cmd (UInt64.ofNat t).toNat v none [] ∧
-          evaluate m.cfg st (UInt64.ofNat t).toNat none [] = .stopSource := by
-  refine ⟨rfl, fun st t lx ly lz ax ay az => ⟨_, rfl, ?_⟩⟩
-  rw [evaluate_eq_stopSource_iff]
-  exact ⟨he, ht, Or.inr (Or.inr (noScanPoints_none st))⟩
+/-! ## The plan of a command -/
+
+/-- The plan is one of the three codes. -/
+theorem cmdPlan_cases (cfg : Config) (st : State) (now : Nat) (v : Twist) :
+    cmdPlan cfg st now v = 0 ∨ cmdPlan cfg st now v = 1 ∨ cmdPlan cfg st now v = 3 := by
+  unfold cmdPlan
+  repeat' split
+  all_goals simp
+
+/-- With plan 0 the command is not processed, or its source is invalid
+whatever coordinates it carries. -/
+theorem sourcePoints_of_plan_zero (cfg : Config) (st : State) (now : Nat) (v : Twist)
+    (h : cmdPlan cfg st now v = 0) (hp : st.phase = .active) (hf : v.finite = true)
+    (p : Option (List Coords)) : sourcePoints cfg st now p = none := by
+  unfold cmdPlan at h
+  unfold sourcePoints
+  simp only [hp, ne_eq, not_true_eq_false, if_false, hf, Bool.not_true, Bool.false_eq_true] at h
+  cases he : cfg.sourceEnabled with
+  | false => simp [he] at h
+  | true =>
+    simp only [he, Bool.not_true, Bool.false_eq_true, if_false] at h ⊢
+    cases hs : st.scan with
+    | none =>
+      simp only [hs] at h ⊢
+      split at h
+      · simp at h
+      · rename_i ht; simp [ht]
+    | some s =>
+      simp only [hs] at h ⊢
+      split at h
+      · rename_i ht; simp [ht]
+      · simp at h
+
+/-- With plan 1 the source has no points, whatever coordinates the command
+carries. -/
+theorem sourcePoints_of_plan_one (cfg : Config) (st : State) (now : Nat) (v : Twist)
+    (h : cmdPlan cfg st now v = 1) (p : Option (List Coords)) :
+    sourcePoints cfg st now p = some [] := by
+  unfold cmdPlan at h
+  unfold sourcePoints
+  split at h
+  · simp at h
+  · split at h
+    · simp at h
+    · cases he : cfg.sourceEnabled with
+      | false => simp
+      | true =>
+        simp only [he, Bool.not_true, Bool.false_eq_true, if_false] at h ⊢
+        cases hs : st.scan with
+        | none =>
+          simp only [hs] at h ⊢
+          split at h
+          · rename_i ht; simp [ht]
+          · simp at h
+        | some s =>
+          simp only [hs] at h
+          split at h <;> simp at h
+
+/-- **Plan 0: nothing the shim could look up matters.** The step of a
+command whose plan is 0 is the same for all scan coordinates and all zone
+vertices, so the shim makes no lookup, as upstream makes none. -/
+theorem step_cmd_of_plan_zero (cfg : Config) (st : State) (now : Nat) (v : Twist)
+    (p p' : Option (List Coords)) (z z' : List (Option (List Coords)))
+    (h : cmdPlan cfg st now v = 0) :
+    step cfg st (.cmd now v p z) = step cfg st (.cmd now v p' z') := by
+  by_cases hp : st.phase = .active
+  · cases hf : v.finite with
+    | false => simp [step, hf]
+    | true =>
+      have h1 := sourcePoints_of_plan_zero cfg st now v h hp hf
+      rw [step_cmd _ _ _ _ _ _ hp hf, step_cmd _ _ _ _ _ _ hp hf]
+      simp only [evaluate, shapesAfter, h1]
+  · simp [step, hp]
+
+/-- **Plan 1: the scan's coordinates do not matter.** The step of a command
+whose plan is 1 is the same for all scan coordinates: the shim looks up the
+transforms of the topic zones only. -/
+theorem step_cmd_of_plan_one (cfg : Config) (st : State) (now : Nat) (v : Twist)
+    (p p' : Option (List Coords)) (z : List (Option (List Coords)))
+    (h : cmdPlan cfg st now v = 1) :
+    step cfg st (.cmd now v p z) = step cfg st (.cmd now v p' z) := by
+  have h1 := sourcePoints_of_plan_one cfg st now v h
+  simp only [step, evaluate, shapesAfter, h1]
+
+/-- **Plan 3: upstream looks the scan's transform up.** The plan is 3 iff
+the command is processed, the source is enabled, a scan is stored and it is
+not too old. -/
+theorem cmdPlan_eq_three_iff (cfg : Config) (st : State) (now : Nat) (v : Twist) :
+    cmdPlan cfg st now v = 3 ↔
+      st.phase = .active ∧ v.finite = true ∧ cfg.sourceEnabled = true ∧
+        ∃ s, st.scan = some s ∧ ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) := by
+  unfold cmdPlan
+  by_cases hp : st.phase = .active
+  · cases hf : v.finite with
+    | false => simp [hp]
+    | true =>
+      cases he : cfg.sourceEnabled with
+      | false => simp [hp]
+      | true =>
+        cases hs : st.scan with
+        | none => simp [hp]; split <;> simp
+        | some s =>
+          simp only [hp, ne_eq, not_true_eq_false, if_false, Bool.not_true, Bool.false_eq_true,
+            Option.some.injEq, exists_eq_left', true_and]
+          split <;> rename_i ht <;> simp_all
+  · simp [hp]
+
+/-- The plan query on a monitor that is ok is `cmdPlan`; it returns a number
+and no monitor, so it cannot change one. -/
+theorem cmCmdPlan_of_ok (m : Monitor) (now lx ly lz ax ay az : UInt64) (h : m.ok = true) :
+    cmCmdPlan m now lx ly lz ax ay az =
+      cmdPlan m.cfg m.st now.toNat (twistOfRaw lx ly lz ax ay az) := by
+  simp [cmCmdPlan, h]
+
+/-- **If the plan is 0 the command call depends on neither array.** -/
+theorem cmOnCmd_of_plan_zero (m : Monitor) (now lx ly lz ax ay az : UInt64)
+    (hasPoints hasPoints' : UInt8) (points points' zoneVerts zoneVerts' : ByteArray)
+    (h : cmCmdPlan m now lx ly lz ax ay az = 0) :
+    cmOnCmd m now lx ly lz ax ay az hasPoints points zoneVerts =
+      cmOnCmd m now lx ly lz ax ay az hasPoints' points' zoneVerts' := by
+  unfold cmOnCmd cmdEvent Monitor.apply
+  cases hok : m.ok with
+  | false => simp
+  | true =>
+    rw [cmCmdPlan_of_ok m _ _ _ _ _ _ _ hok] at h
+    simp only [if_true]
+    rw [step_cmd_of_plan_zero m.cfg m.st _ _ (pointsOfRaw hasPoints points)
+      (pointsOfRaw hasPoints' points') (decodeZoneVerts zoneVerts) (decodeZoneVerts zoneVerts') h]
+
+/-- **If the plan is 1 the command call does not depend on the scan
+coordinates.** -/
+theorem cmOnCmd_of_plan_one (m : Monitor) (now lx ly lz ax ay az : UInt64)
+    (hasPoints hasPoints' : UInt8) (points points' zoneVerts : ByteArray)
+    (h : cmCmdPlan m now lx ly lz ax ay az = 1) :
+    cmOnCmd m now lx ly lz ax ay az hasPoints points zoneVerts =
+      cmOnCmd m now lx ly lz ax ay az hasPoints' points' zoneVerts := by
+  unfold cmOnCmd cmdEvent Monitor.apply
+  cases hok : m.ok with
+  | false => simp [cmCmdPlan, hok] at h
+  | true =>
+    rw [cmCmdPlan_of_ok m _ _ _ _ _ _ _ hok] at h
+    simp only [if_true]
+    rw [step_cmd_of_plan_one m.cfg m.st _ _ (pointsOfRaw hasPoints points)
+      (pointsOfRaw hasPoints' points') (decodeZoneVerts zoneVerts) h]
+
+/-! ## Sequences of calls -/
 
 /-- After any sequence of events an ok monitor has the same configuration and
 the state `run` reaches. -/
@@ -950,138 +1305,118 @@ theorem foldl_apply (m : Monitor) (es : List Event) (h : m.ok = true) :
     exact ⟨rfl, h2, rfl⟩
 
 /-- One call of the C interface that delivers an event, with its arguments:
-the two exported functions the node calls after start-up. -/
+the four exported functions the node calls after it has built the monitor.
+(The command without a clock reading, `cmOnCmdNoClock`, is not an event of
+the model and has its own theorems in `NoClock.lean`.) -/
 inductive Call where
-  | scan (now : UInt64) (stamp : Int64) (usable : UInt8) (rangeMin rangeMax : UInt32)
-      (beams : ByteArray)
-  | cmd (now linX linY linZ angX angY angZ : UInt64)
+  | lifecycle (transition : UInt8)
+  | scan (now : UInt64) (stamp : Int64) (rangeMin rangeMax : UInt32) (ranges : ByteArray)
+  | shape (zone : UInt32) (foreign hasVerts : UInt8) (verts : ByteArray)
+  | cmd (now linX linY linZ angX angY angZ : UInt64) (hasPoints : UInt8)
+      (points zoneVerts : ByteArray)
 
 /-- Performs the call. -/
 def Call.exec (m : Monitor) : Call → Monitor
-  | .scan now stamp usable rmin rmax a => cmOnScan m now stamp usable rmin rmax a
-  | .cmd now lx ly lz ax ay az => cmOnCmd m now lx ly lz ax ay az
+  | .lifecycle t => cmOnLifecycle m t
+  | .scan now stamp rmin rmax a => cmOnScan m now stamp rmin rmax a
+  | .shape zone foreign hasVerts verts => cmOnShape m zone foreign hasVerts verts
+  | .cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    cmOnCmd m now lx ly lz ax ay az hasPoints points zoneVerts
 
-/-- The event of the model that a call delivers, given the coordinates
-remembered from the scan call made last. A scan call delivers a `scan`; a
-command call a `cmd` that carries those coordinates (`cmdEvent`). -/
-def Call.event (coords : Option (List Coords)) : Call → Event
-  | .scan now stamp _ rmin rmax a => .scan now.toNat (scanOfRaw stamp rmin rmax a)
-  | .cmd now lx ly lz ax ay az => cmdEvent coords now lx ly lz ax ay az
-
-/-- The coordinates remembered after the call: those of a usable scan call,
-none after an unusable one, unchanged by a command. -/
-def Call.coords (coords : Option (List Coords)) : Call → Option (List Coords)
-  | .scan _ _ usable _ _ a => if usable != 0 then some (decodeCoords a) else none
-  | .cmd _ _ _ _ _ _ _ => coords
-
-/-- The record array kept after the call: that of a usable scan call, none
-after an unusable one, unchanged by a command. It holds the coordinates of
-`Call.coords` (`ROSlean.CollisionMonitor.FFI.Synced`, in `Fast.lean`). -/
-def Call.raw (raw : Option ByteArray) : Call → Option ByteArray
-  | .scan _ _ usable _ _ a => if usable != 0 then some a else none
-  | .cmd _ _ _ _ _ _ _ => raw
-
-/-- The kept record array holds the remembered coordinates. -/
-theorem Call.raw_coords (m : Monitor) (c : Call) :
-    (c.raw m.raw).map decodeCoords = c.coords m.coords := by
-  cases c with
-  | scan now stamp usable rmin rmax a =>
-    simp only [Call.raw, Call.coords]
-    split <;> rfl
-  | cmd now lx ly lz ax ay az => rfl
+/-- The events of the model that a call delivers: one, or none for a
+lifecycle call with an unknown code. Everything an event carries is an
+argument of its call: the interface keeps nothing between calls but the
+monitor. -/
+def Call.events : Call → List Event
+  | .lifecycle t => (lifecycleEvent t).toList
+  | .scan now stamp rmin rmax a => [.scan now.toNat (scanOfRaw stamp rmin rmax a)]
+  | .shape zone foreign hasVerts verts => [shapeEvent zone foreign hasVerts verts]
+  | .cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    [cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts]
 
 /-- The events a sequence of calls delivers. -/
-def events (coords : Option (List Coords)) : List Call → List Event
-  | [] => []
-  | c :: cs => c.event coords :: events (c.coords coords) cs
-
-/-- The coordinates remembered after the calls. -/
-def coordsAfter (coords : Option (List Coords)) (cs : List Call) : Option (List Coords) :=
-  cs.foldl (fun p c => c.coords p) coords
-
-/-- Every call is `Monitor.apply` on the event it delivers, and remembers the
-coordinates of the scan call made last. -/
-theorem exec_eq_apply (m : Monitor) (c : Call) :
-    c.exec m = { m.apply (c.event m.coords) with raw := c.raw m.raw } := by
-  cases c with
-  | scan now stamp usable rmin rmax a => rfl
-  | cmd now lx ly lz ax ay az =>
-    change m.apply (cmdEvent m.coords now lx ly lz ax ay az) =
-      { m.apply (cmdEvent m.coords now lx ly lz ax ay az) with raw := m.raw }
-    have hr := apply_raw m (cmdEvent m.coords now lx ly lz ax ay az)
-    generalize m.apply (cmdEvent m.coords now lx ly lz ax ay az) = m' at hr ⊢
-    cases m'
-    simp only at hr
-    subst hr
-    rfl
+def events (cs : List Call) : List Event := cs.flatMap Call.events
 
 /-- No call changes the configuration or whether the monitor is ok. -/
-theorem exec_cfg (m : Monitor) (c : Call) :
-    (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok ∧ (c.exec m).coords = c.coords m.coords := by
-  rw [exec_eq_apply]
-  exact ⟨(apply_cfg ..).1, (apply_cfg ..).2.1, Call.raw_coords m c⟩
+theorem exec_cfg (m : Monitor) (c : Call) : (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok := by
+  cases c with
+  | lifecycle t =>
+    simp only [Call.exec, cmOnLifecycle]
+    cases lifecycleEvent t with
+    | none => exact ⟨rfl, rfl⟩
+    | some e => exact ⟨(apply_cfg m e).1, (apply_cfg m e).2.1⟩
+  | scan now stamp rmin rmax a => exact ⟨(apply_cfg m _).1, (apply_cfg m _).2.1⟩
+  | shape zone foreign hasVerts verts =>
+    exact ⟨(apply_cfg m (shapeEvent zone foreign hasVerts verts)).1,
+      (apply_cfg m (shapeEvent zone foreign hasVerts verts)).2.1⟩
+  | cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    exact ⟨(apply_cfg m _).1, (apply_cfg m _).2.1⟩
+
+/-- Every call takes an ok monitor to the state `run` reaches on the events
+it delivers. -/
+theorem exec_st (m : Monitor) (c : Call) (h : m.ok = true) :
+    (c.exec m).st = (run m.cfg m.st c.events).1 := by
+  cases c with
+  | lifecycle t =>
+    simp only [Call.exec, cmOnLifecycle, Call.events]
+    cases lifecycleEvent t with
+    | none => rfl
+    | some e =>
+      simp only [Option.toList_some, run_cons, run_nil]
+      exact (apply_of_ok m e h).1
+  | scan now stamp rmin rmax a =>
+    simp only [Call.events, run_cons, run_nil]
+    exact (apply_of_ok m _ h).1
+  | shape zone foreign hasVerts verts =>
+    simp only [Call.events, run_cons, run_nil]
+    exact (apply_of_ok m (shapeEvent zone foreign hasVerts verts) h).1
+  | cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    simp only [Call.events, run_cons, run_nil]
+    exact (apply_of_ok m _ h).1
 
 theorem foldl_exec_cfg (m : Monitor) (cs : List Call) :
-    (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = m.ok ∧
-      (cs.foldl Call.exec m).coords = coordsAfter m.coords cs := by
+    (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = m.ok := by
   induction cs generalizing m with
-  | nil => exact ⟨rfl, rfl, rfl⟩
+  | nil => exact ⟨rfl, rfl⟩
   | cons c cs ih =>
-    rw [List.foldl_cons, (ih _).1, (ih _).2.1, (ih _).2.2, (exec_cfg m c).1, (exec_cfg m c).2.1,
-      (exec_cfg m c).2.2]
-    exact ⟨rfl, rfl, rfl⟩
+    rw [List.foldl_cons, (ih _).1, (ih _).2, (exec_cfg m c).1, (exec_cfg m c).2]
+    exact ⟨rfl, rfl⟩
 
 /-- **Any sequence of calls is the sequence of its events.** After any
-sequence of calls, with no condition on them (scans may be usable or not),
-an ok monitor has the same configuration and the state `run` reaches on the
-events the calls deliver. -/
+sequence of lifecycle, scan, shape and command calls, with no condition on
+them, an ok monitor has the same configuration and the state `run` reaches
+on the events the calls deliver. -/
 theorem foldl_exec_run (m : Monitor) (cs : List Call) (h : m.ok = true) :
     (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = true ∧
-    (cs.foldl Call.exec m).st = (run m.cfg m.st (events m.coords cs)).1 := by
+    (cs.foldl Call.exec m).st = (run m.cfg m.st (events cs)).1 := by
   induction cs generalizing m with
   | nil => exact ⟨rfl, h, rfl⟩
   | cons c cs ih =>
-    obtain ⟨h1, h2, h3⟩ := ih (c.exec m) (by rw [(exec_cfg m c).2.1]; exact h)
-    rw [List.foldl_cons, h1, h3, (exec_cfg m c).1, (exec_cfg m c).2.2]
+    obtain ⟨h1, h2, h3⟩ := ih (c.exec m) (by rw [(exec_cfg m c).2]; exact h)
+    rw [List.foldl_cons, h1, h3, (exec_cfg m c).1, exec_st m c h]
     refine ⟨rfl, h2, ?_⟩
-    have hst : (c.exec m).st = (step m.cfg m.st (c.event m.coords)).1 := by
-      rw [exec_eq_apply]
-      exact (apply_of_ok m _ h).1
-    rw [hst, events, run_cons]
-
-/-- A monitor that is not ok keeps its state under every call. -/
-theorem exec_st_of_not_ok (m : Monitor) (c : Call) (h : m.ok = false) : (c.exec m).st = m.st := by
-  rw [exec_eq_apply]
-  cases c with
-  | scan now stamp usable rmin rmax a => exact apply_st_of_not_ok m _ h (Or.inl ⟨_, _, rfl⟩)
-  | cmd now lx ly lz ax ay az =>
-    exact apply_st_of_not_ok m _ h (Or.inr (Or.inr ⟨_, _, _, _, rfl⟩))
+    simp only [events, List.flatMap_cons, run_append]
 
 /-- **Fail closed, on sequences.** If the monitor was not ok when it was
-created, and is in the active phase (as every monitor of `cmNew` is), then
-after any calls whatever, usable or not, the answer to a command is
-`stopSource`. -/
+created, then after any calls whatever the answer to a command is the stop
+for an invalid source if the node is active, and nothing if it is not: never
+a pass and never a slowdown. -/
 theorem foldl_exec_not_ok (m : Monitor) (cs : List Call) (now lx ly lz ax ay az : UInt64)
-    (h : m.ok = false) (hp : m.st.phase = .active) :
-    (cmOnCmd (cs.foldl Call.exec m) now lx ly lz ax ay az).out =
-      .answer (some .stopSource) none := by
-  have hst : (cs.foldl Call.exec m).st = m.st := by
-    induction cs generalizing m with
-    | nil => rfl
-    | cons c cs ih =>
-      rw [List.foldl_cons, ih (c.exec m) (by rw [(exec_cfg m c).2.1]; exact h)
-        (by rw [exec_st_of_not_ok m c h]; exact hp), exec_st_of_not_ok m c h]
-  rw [cmOnCmd_eq]
-  exact apply_cmd_of_not_ok _ _ _ _ _ (by rw [(foldl_exec_cfg m cs).2.1]; exact h)
-    (by rw [hst]; exact hp)
+    (hasPoints : UInt8) (points zoneVerts : ByteArray) (h : m.ok = false) :
+    (cmOnCmd (cs.foldl Call.exec m) now lx ly lz ax ay az hasPoints points zoneVerts).out =
+      if (cs.foldl Call.exec m).st.phase = .active then .answer (some .stopSource) none
+      else .silent := by
+  have hok : (cs.foldl Call.exec m).ok = false := by rw [(foldl_exec_cfg m cs).2]; exact h
+  unfold cmOnCmd cmdEvent Monitor.apply
+  simp [hok]
 
 /-! ## Reading the output back
 
-The node reads three numbers. They determine the velocity part of the
-output, because the zone index and the ratio are never truncated. -/
+The node reads five numbers. They determine the output, because the zone
+indices and the ratio are never truncated. -/
 
-/-- The velocity action denoted by the three numbers the node reads; `none`
-for kind 0 and for every unknown kind. -/
+/-- The velocity action denoted by the numbers the node reads; `none` for
+kinds 0 and 5 and for every unknown kind. -/
 def actionOfCodes (kind : UInt8) (zone ratio : Nat) : Option Action :=
   if kind = 1 then some .pass
   else if kind = 2 then some (.slowdown zone ratio)
@@ -1089,13 +1424,51 @@ def actionOfCodes (kind : UInt8) (zone ratio : Nat) : Option Action :=
   else if kind = 4 then some .stopSource
   else none
 
-/-- The codes determine the velocity of the output. -/
-theorem actionOfCodes_codes (o : Output) :
-    actionOfCodes (kindOf o) (zoneOf o) (ratioOf o) = o.velocity := by
-  unfold kindOf zoneOf ratioOf
-  rcases o.velocity with _ | a
-  · rfl
-  · cases a <;> rfl
+/-- The report denoted by the numbers the node reads; `none` for code 0 and
+for every unknown code. -/
+def reportOfCodes (report : UInt8) (zone : Nat) : Option Report :=
+  if report = 1 then some .normal
+  else if report = 2 then some (.stop zone)
+  else if report = 3 then some (.slowdown zone)
+  else if report = 4 then some .source
+  else none
+
+/-- The output denoted by the five numbers the node reads: kind 0 is
+`silent`, every other kind a processed command. -/
+def outputOfCodes (kind report : UInt8) (zone ratio reportZone : Nat) : Output :=
+  if kind = 0 then .silent
+  else .answer (actionOfCodes kind zone ratio) (reportOfCodes report reportZone)
+
+/-- The codes determine the output. -/
+theorem outputOfCodes_codes (o : Output) :
+    outputOfCodes (kindOf o) (reportOf o) (zoneOf o) (ratioOf o) (reportZoneOf o) = o := by
+  cases o with
+  | silent => rfl
+  | answer vel rep =>
+    rcases vel with _ | a <;> rcases rep with _ | r
+    · rfl
+    · cases r <;> rfl
+    · cases a <;> rfl
+    · cases a <;> cases r <;> rfl
+
+/-- Kind 0 is `silent` and nothing else: the shim publishes nothing, on any
+topic, exactly when the model's output is `silent`. -/
+theorem kindOf_eq_zero_iff (o : Output) : kindOf o = 0 ↔ o = .silent := by
+  cases o with
+  | silent => simp [kindOf]
+  | answer vel rep =>
+    rcases vel with _ | a
+    · simp [kindOf]
+    · cases a <;> simp [kindOf]
+
+/-- Kind 5 is a processed command whose velocity is withheld. -/
+theorem kindOf_eq_five_iff (o : Output) : kindOf o = 5 ↔ ∃ rep, o = .answer none rep := by
+  cases o with
+  | silent => simp [kindOf]
+  | answer vel rep =>
+    rcases vel with _ | a
+    · simp [kindOf]
+    · cases a <;> simp [kindOf]
 
 /-- A published stop names a configured zone. -/
 theorem step_publish_stopZone (cfg : Config) (st : State) (e : Event) (k : Nat)
@@ -1112,17 +1485,56 @@ theorem step_publish_slowdown (cfg : Config) (st : State) (e : Event) (k r : Nat
   obtain ⟨now, v, scanPts, zoneVerts, -, -, -, ha⟩ := step_velocity cfg st e _ h
   exact evaluate_slowdown cfg st now scanPts zoneVerts k r ha.symm
 
-/-- **The node reads back the model's velocity.** For an ok monitor with at
-most 2³² zones, the kind, zone index and ratio that the three queries return
-after an event determine the velocity of the output of `step` for that event
-exactly: nothing is truncated on the way to C. (A published zone index is
-below the number of zones, and a published ratio is below the pattern of
-1.0.) Kind 0 is "no velocity": the event was not a processed command, or
-the velocity is withheld (R15). -/
+/-- A report names a configured zone. -/
+theorem step_report_zone (cfg : Config) (st : State) (e : Event) (k : Nat)
+    (h : (step cfg st e).2.report = some (.stop k) ∨
+      (step cfg st e).2.report = some (.slowdown k)) : k < cfg.zones.length := by
+  cases e with
+  | cmd now v scanPts zoneVerts =>
+    have key : ∀ r, (step cfg st (.cmd now v scanPts zoneVerts)).2.report = some r →
+        (r = .stop k ∨ r = .slowdown k) → k < cfg.zones.length := by
+      intro r hr hk
+      obtain ⟨-, -, he, -⟩ := (report_eq_some_iff cfg st now v scanPts zoneVerts r).mp hr
+      cases ha : evaluate cfg st now scanPts zoneVerts with
+      | pass => rw [ha] at he; simp [Action.report] at he; subst he; simp at hk
+      | stopSource => rw [ha] at he; simp [Action.report] at he; subst he; simp at hk
+      | stopZone k' =>
+        rw [ha] at he
+        simp only [Action.report] at he
+        subst he
+        have hkk : k' = k := by simpa using hk
+        subst hkk
+        obtain ⟨pts, z, z0, -, -, hz, -⟩ :=
+          evaluate_stopZone_only_if cfg st now scanPts zoneVerts k' ha
+        exact (List.getElem?_eq_some_iff.mp hz).1
+      | slowdown k' r' =>
+        rw [ha] at he
+        simp only [Action.report] at he
+        obtain ⟨-, z, hz, -⟩ := evaluate_slowdown cfg st now scanPts zoneVerts k' r' ha
+        split at he
+        · subst he; simp at hk
+        · subst he
+          have hkk : k' = k := by simpa using hk
+          subst hkk
+          exact (List.getElem?_eq_some_iff.mp hz).1
+    rcases h with h | h
+    · exact key _ h (Or.inl rfl)
+    · exact key _ h (Or.inr rfl)
+  | shape k' verts foreign =>
+    simp only [step] at h
+    split at h <;> simp [Output.report] at h
+  | _ => simp [step, Output.report] at h
+
+/-- **The node reads back the model's output.** For an ok monitor with at
+most 2³² zones, the five numbers that the queries return after an event
+determine the output of `step` for that event exactly: the velocity action,
+the report, and whether the event was a processed command at all. Nothing is
+truncated on the way to C. -/
 theorem readBack_eq (m : Monitor) (e : Event) (hok : m.ok = true)
     (hz : m.cfg.zones.length ≤ 2 ^ 32) :
-    actionOfCodes (cmOutKind (m.apply e)) (cmOutZone (m.apply e)).toNat
-      (cmOutRatio (m.apply e)).toNat = (step m.cfg m.st e).2.velocity := by
+    outputOfCodes (cmOutKind (m.apply e)) (cmOutReport (m.apply e)) (cmOutZone (m.apply e)).toNat
+      (cmOutRatio (m.apply e)).toNat (cmOutReportZone (m.apply e)).toNat =
+        (step m.cfg m.st e).2 := by
   have hzone : zoneOf (step m.cfg m.st e).2 < 2 ^ 32 := by
     unfold zoneOf
     rcases ho : (step m.cfg m.st e).2.velocity with _ | a
@@ -1147,98 +1559,98 @@ theorem readBack_eq (m : Monitor) (e : Event) (hok : m.ok = true)
         obtain ⟨hlt, -⟩ := step_publish_slowdown _ _ _ _ _ ho
         have h1 : F64.one < 2 ^ 64 := by unfold F64.one; norm_num
         simp only; omega
-  simp only [cmOutKind, cmOutZone, cmOutRatio, (apply_of_ok m e hok).2]
+  have hrz : reportZoneOf (step m.cfg m.st e).2 < 2 ^ 32 := by
+    unfold reportZoneOf
+    rcases ho : (step m.cfg m.st e).2.report with _ | r
+    · simp
+    · cases r with
+      | normal => simp
+      | source => simp
+      | stop k => have := step_report_zone m.cfg m.st e k (Or.inl ho); simp only; omega
+      | slowdown k => have := step_report_zone m.cfg m.st e k (Or.inr ho); simp only; omega
+  simp only [cmOutKind, cmOutZone, cmOutRatio, cmOutReport, cmOutReportZone, (apply_of_ok m e hok).2]
   have e1 : (zoneOf (step m.cfg m.st e).2).toUInt32.toNat = zoneOf (step m.cfg m.st e).2 := by
     simp only [Nat.toUInt32, UInt32.toNat_ofNat']; omega
   have e2 : (ratioOf (step m.cfg m.st e).2).toUInt64.toNat = ratioOf (step m.cfg m.st e).2 := by
     simp only [Nat.toUInt64, UInt64.toNat_ofNat']; omega
-  rw [e1, e2]
-  exact actionOfCodes_codes _
+  have e3 : (reportZoneOf (step m.cfg m.st e).2).toUInt32.toNat =
+      reportZoneOf (step m.cfg m.st e).2 := by
+    simp only [Nat.toUInt32, UInt32.toNat_ofNat']; omega
+  rw [e1, e2, e3]
+  exact outputOfCodes_codes _
 
 /-! ## End to end
 
 Stated on the exported functions in the order the node calls them: `cmNew` on
-the builder, then `cmOnScan` and `cmOnCmd` in any order and number (`Call`,
-`Call.exec`), then `cmOnCmd` for the command in question and the three
+the builder, then lifecycle, scan, shape and command calls in any order and
+number (`Call`, `Call.exec`), then the command call in question and the five
 queries. The events of the model are those the calls deliver (`events`), from
-the state after `configure` and `activate` (`startState`); by
-`run_startState` the theorems of `Properties.lean`, `Lifecycle.lean` and
-`Trace.lean`, which hold for every sequence of events, apply with
-`es := [.configure, .activate] ++ events none cs`. -/
+the initial state `State.init`: the theorems of `Properties.lean`,
+`Lifecycle.lean` and `Trace.lean`, which hold for every sequence of events
+from that state, apply with `es := events cs`. -/
 
 /-- **End to end.** Create a monitor from a builder that is ok, make any
-sequence of calls of the two event functions (commands, usable scans and
-unusable scans, in any order), then deliver a velocity command at node-clock
-time `now`. The recorded output is the output of `step` for that command's
-event, in the state `run` reaches from the start state on the events the
-calls deliver, on the configuration the builder holds. -/
+sequence of calls (lifecycle transitions, scans, shape messages, commands,
+in any order), then deliver a velocity command. The recorded output is the
+output of `step` for that command's event, in the state `run` reaches from
+the initial state on the events the calls deliver, on the configuration the
+builder holds. -/
 theorem cm_out_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
-    (hok : cmOk (cmNew b) = true) :
-    (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az).out =
-      (step b.cfg (run b.cfg (startState b.cfg) (events none cs)).1
-        (cmdEvent (coordsAfter none cs) now lx ly lz ax ay az)).2 := by
+    (hasPoints : UInt8) (points zoneVerts : ByteArray) (hok : cmOk (cmNew b) = true) :
+    (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az hasPoints points zoneVerts).out =
+      (step b.cfg (run b.cfg (State.init b.cfg) (events cs)).1
+        (cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts)).2 := by
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
-  have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
   unfold cmOnCmd
-  rw [(apply_of_ok _ _ h2).2, h1, h3, h4]
+  rw [(apply_of_ok _ _ h2).2, h1, h3]
   rfl
 
-/-- **End to end, as the node sees it.** For at most 2³² zones, the three
-numbers the exported queries return after the command determine the velocity
-of the model's output for it. -/
+/-- **End to end, as the node sees it.** For at most 2³² zones, the five
+numbers the exported queries return after the command determine the model's
+output for it: the velocity action, the report, and whether the command was
+processed. -/
 theorem cm_readBack_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
+    (hasPoints : UInt8) (points zoneVerts : ByteArray)
     (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) :
-    let m := cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az
-    actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg (startState b.cfg) (events none cs)).1
-        (cmdEvent (coordsAfter none cs) now lx ly lz ax ay az)).2.velocity := by
+    let m := cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az hasPoints points zoneVerts
+    outputOfCodes (cmOutKind m) (cmOutReport m) (cmOutZone m).toNat (cmOutRatio m).toNat
+        (cmOutReportZone m).toNat =
+      (step b.cfg (run b.cfg (State.init b.cfg) (events cs)).1
+        (cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts)).2 := by
   intro m
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
-  have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
   have h := readBack_eq (cs.foldl Call.exec (cmNew b))
-    (cmdEvent (cs.foldl Call.exec (cmNew b)).coords now lx ly lz ax ay az) h2
+    (cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts) h2
     (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
   have hm : m = (cs.foldl Call.exec (cmNew b)).apply
-      (cmdEvent (cs.foldl Call.exec (cmNew b)).coords now lx ly lz ax ay az) := rfl
-  rw [hm, h, h1, h3, h4]
+      (cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts) := rfl
+  rw [hm, h, h1, h3]
   rfl
 
-/-- **End to end, every output.** The same for every call of the sequence,
-not only for a command at its end: after the first `n + 1` calls the three
-queries return the velocity of the output of `step` for the event of call
-`n`, in the state `run` reaches on the events of the first `n` calls. (The
-node reads the queries after commands only; for a scan call they say "no
-velocity".) -/
-theorem cm_readBack_at (b : Builder) (cs : List Call) (n : Nat) (c : Call)
-    (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) (hc : cs[n]? = some c) :
-    let m := (cs.take (n + 1)).foldl Call.exec (cmNew b)
-    actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg (startState b.cfg) (events none (cs.take n))).1
-        (c.event (coordsAfter none (cs.take n)))).2.velocity := by
-  intro m
-  obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) (cs.take n) hok
-  have h4 := (foldl_exec_cfg (cmNew b) (cs.take n)).2.2
-  have hm : m = c.exec ((cs.take n).foldl Call.exec (cmNew b)) := by
-    simp only [m]
-    rw [List.take_add_one, hc, Option.toList_some, List.foldl_append, List.foldl_cons,
-      List.foldl_nil]
-  have h := readBack_eq ((cs.take n).foldl Call.exec (cmNew b))
-    (c.event ((cs.take n).foldl Call.exec (cmNew b)).coords) h2
-    (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
-  rw [hm, exec_eq_apply]
-  refine Eq.trans ?_ (h.trans ?_)
-  · rfl
-  · rw [h1, h3, h4]
-    rfl
+/-- **End to end: the phase the node is in.** After any calls the phase of
+an ok monitor is the phase `run` reaches on their events; the lifecycle
+theorems (`run_silent_before_activate`, `run_silent_after_deactivate`,
+`run_silent_after_shutdown`) then say when a command is answered at all. -/
+theorem cm_phase_after (b : Builder) (cs : List Call) (hok : cmOk (cmNew b) = true) :
+    cmPhase (cs.foldl Call.exec (cmNew b)) =
+      phaseCode (run b.cfg (State.init b.cfg) (events cs)).1.phase := by
+  obtain ⟨-, -, h3⟩ := foldl_exec_run (cmNew b) cs hok
+  unfold cmPhase
+  rw [h3]
+  rfl
 
 /-- **End to end, when the configuration was refused.** If the builder is not
-ok, the answer to every command, after any calls, is `stopSource`: the node
-publishes zero. -/
+ok, the answer to every command, after any calls, is kind 4 (`stopSource`:
+the node publishes zero) if the monitor is in the active phase and kind 0
+(nothing) otherwise. The node fails its `configure` transition for such a
+monitor and never activates it; this is the backstop. -/
 theorem cm_not_ok_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
-    (hok : cmOk (cmNew b) = false) :
-    cmOutKind (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az) = 4 := by
+    (hasPoints : UInt8) (points zoneVerts : ByteArray) (hok : cmOk (cmNew b) = false) :
+    cmOutKind (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az hasPoints points
+        zoneVerts) =
+      if (cs.foldl Call.exec (cmNew b)).st.phase = .active then 4 else 0 := by
   unfold cmOutKind
-  rw [foldl_exec_not_ok (cmNew b) cs now lx ly lz ax ay az hok rfl]
-  rfl
+  rw [foldl_exec_not_ok (cmNew b) cs now lx ly lz ax ay az hasPoints points zoneVerts hok]
+  split <;> rfl
 
 end ROSlean.CollisionMonitor.FFI
