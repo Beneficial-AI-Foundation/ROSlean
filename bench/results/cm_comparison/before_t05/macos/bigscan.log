@@ -1,0 +1,53 @@
+[INFO] [1795515621.949540000] [collision_monitor]: 
+	collision_monitor lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1795515621.949589000] [collision_monitor]: Configuring
+[INFO] [1795515621.953028000] [collision_monitor]: [scan]: Creating Scan
+[INFO] [1795515621.955899000] [collision_monitor]: [Stop]: Creating Polygon
+[INFO] [1795515621.955911000] [collision_monitor]: [Stop]: Creating Circle
+[INFO] [1795515621.956014000] [collision_monitor]: [Slow]: Creating Polygon
+[INFO] [1795515621.956019000] [collision_monitor]: [Slow]: Creating Circle
+[INFO] [1795515621.962197000] [collision_monitor]: Activating
+[INFO] [1795515622.073277000] [collision_monitor]: Robot to stop due to Stop polygon
+{"readings":1000000,"zones":"circles","scan":"near","iters":20,"lean_out_kind":0,"upstream_action":1,"rss_start_kb":96192,"rss_end_kb":334384,"lean_scan_ns":{"mean":47028840,"min":46346167,"p50":46839750,"p90":48401625,"p99":48414750,"p999":48414750,"max":48414750},"lean_cmd_ns":{"mean":14683540,"min":14515041,"p50":14628250,"p90":14941042,"p99":15204583,"p999":15204583,"max":15204583},"upstream_scan_ns":{"mean":1806,"min":1000,"p50":1709,"p90":2834,"p99":3375,"p999":3375,"max":3375},"upstream_cmd_ns":{"mean":2767396,"min":2725583,"p50":2765125,"p90":2817375,"p99":2818166,"p999":2818166,"max":2818166}}
+[INFO] [1795515623.438251000] [collision_monitor]: [Slow]: Destroying Circle
+[INFO] [1795515623.438274000] [collision_monitor]: [Slow]: Destroying Polygon
+[INFO] [1795515623.438280000] [collision_monitor]: [Stop]: Destroying Circle
+[INFO] [1795515623.438284000] [collision_monitor]: [Stop]: Destroying Polygon
+[INFO] [1795515623.438287000] [collision_monitor]: [scan]: Destroying Scan
+[INFO] [1795515623.438676000] [collision_monitor]: Destroying
+[INFO] [1795515623.621840000] [collision_monitor]: 
+	collision_monitor lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1795515623.621875000] [collision_monitor]: Configuring
+[INFO] [1795515623.625362000] [collision_monitor]: [scan]: Creating Scan
+[INFO] [1795515623.628378000] [collision_monitor]: [Stop]: Creating Polygon
+[INFO] [1795515623.628385000] [collision_monitor]: [Stop]: Creating Circle
+[INFO] [1795515623.628474000] [collision_monitor]: [Slow]: Creating Polygon
+[INFO] [1795515623.628479000] [collision_monitor]: [Slow]: Creating Circle
+[INFO] [1795515623.634621000] [collision_monitor]: Activating
+[INFO] [1795515624.777002000] [collision_monitor]: Robot to stop due to Stop polygon
+{"readings":10000000,"zones":"circles","scan":"near","iters":5,"lean_out_kind":0,"upstream_action":1,"rss_start_kb":658688,"rss_end_kb":2901904,"lean_scan_ns":{"mean":496092342,"min":469108584,"p50":484184958,"p90":564866792,"p99":564866792,"p999":564866792,"max":564866792},"lean_cmd_ns":{"mean":148946950,"min":147475375,"p50":148494875,"p90":151870750,"p99":151870750,"p999":151870750,"max":151870750},"upstream_scan_ns":{"mean":1708,"min":875,"p50":1584,"p90":2583,"p99":2583,"p999":2583,"max":2583},"upstream_cmd_ns":{"mean":30673008,"min":29611750,"p50":29969208,"p90":33934917,"p99":33934917,"p999":33934917,"max":33934917}}
+[INFO] [1795515628.167918000] [collision_monitor]: [Slow]: Destroying Circle
+[INFO] [1795515628.167943000] [collision_monitor]: [Slow]: Destroying Polygon
+[INFO] [1795515628.167950000] [collision_monitor]: [Stop]: Destroying Circle
+[INFO] [1795515628.167953000] [collision_monitor]: [Stop]: Destroying Polygon
+[INFO] [1795515628.167957000] [collision_monitor]: [scan]: Destroying Scan
+[INFO] [1795515628.168496000] [collision_monitor]: Destroying
+[INFO] [1795515628.475050000] [collision_monitor]: 
+	collision_monitor lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1795515628.475084000] [collision_monitor]: Configuring
+[INFO] [1795515628.479629000] [collision_monitor]: [scan]: Creating Scan
+[INFO] [1795515628.483302000] [collision_monitor]: [Stop]: Creating Polygon
+[INFO] [1795515628.483419000] [collision_monitor]: [Slow]: Creating Polygon
+[INFO] [1795515628.490802000] [collision_monitor]: Activating
+{"readings":1000000,"zones":"polygons","scan":"clear","iters":10,"lean_out_kind":1,"upstream_action":0,"rss_start_kb":96144,"rss_end_kb":334304,"lean_scan_ns":{"mean":48674104,"min":47433959,"p50":48855542,"p90":49912125,"p99":49912125,"p999":49912125,"max":49912125},"lean_cmd_ns":{"mean":379981612,"min":378983250,"p50":380005292,"p90":381776708,"p99":381776708,"p999":381776708,"max":381776708},"upstream_scan_ns":{"mean":2475,"min":1750,"p50":2584,"p90":2834,"p99":2834,"p999":2834,"max":2834},"upstream_cmd_ns":{"mean":5700834,"min":5580708,"p50":5695042,"p90":5970292,"p99":5970292,"p999":5970292,"max":5970292}}
+[INFO] [1795515633.319627000] [collision_monitor]: [Slow]: Destroying Polygon
+[INFO] [1795515633.319648000] [collision_monitor]: [Stop]: Destroying Polygon
+[INFO] [1795515633.319653000] [collision_monitor]: [scan]: Destroying Scan
+[INFO] [1795515633.319997000] [collision_monitor]: Destroying
+exit 0 after 12 s

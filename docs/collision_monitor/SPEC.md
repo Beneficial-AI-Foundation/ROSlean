@@ -1100,11 +1100,22 @@ For the user. Each is implemented as upstream does it until decided.
 
 ## Note on testing against upstream
 
-For a comparison on the same messages: `base_shift_correction: false`,
-scans with `frame_id` equal to `base_frame_id`, upstream activated through
-its lifecycle, `state_topic` empty. Expect differences only where D3, D4 and
-D6 say: points within 5 mm of a zone boundary, counts exactly at `min_points`
-when such a point decides, and commands with components below about 10⁻¹⁶² or above 10¹⁵⁴. A
-scan stamp with negative seconds ends upstream (D8). Times agree exactly,
-unlike twist_mux D2: upstream compares integer nanoseconds here; only D7
-remains, at the boundary of `stop_pub_timeout`.
+The comparison was made and is recorded in [COMPARISON.md](COMPARISON.md):
+the node through the fixed scenarios of the black-box harness with every
+expected difference stated by its number here, a randomised differential
+test against upstream's binary judged by the bounds of D4, fault injection,
+and run-time measurements.
+
+How to set the two nodes up for a comparison on the same messages:
+`base_shift_correction: false`; scans with `frame_id` equal to
+`base_frame_id`, or the scan frame's pose given to upstream as a static
+transform and to this node as `<source>.roslean_sensor_pose`; upstream
+activated through its lifecycle; `state_topic` not set for this node.
+Differences then occur only where D3, D4 and D6 say: a point up to 3.5 mm
+(circle) or 4.4 mm (polygon) outside a zone when it decides whether
+`min_points` is reached, always towards "inside" for this node; and commands
+with components below about 10⁻¹⁶² or above 10¹⁵⁴ in a slowdown zone. A scan
+stamp with negative seconds ends upstream (D8). Times agree exactly, unlike
+twist_mux D2: upstream compares integer nanoseconds here; only D7 remains,
+at the boundary of `stop_pub_timeout`, and it does not show under simulated
+time.

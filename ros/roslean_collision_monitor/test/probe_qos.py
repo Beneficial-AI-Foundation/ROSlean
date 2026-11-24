@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prints things about a collision-monitor node that have no fixed expected value.
 
-    probe_qos.py [NODE]
+    probe_qos.py [NODE] [--no-state-topic]
 
 1. The quality of service of the node's subscriptions and publishers.
 2. How many of N commands published back to back are answered. Upstream's
@@ -21,14 +21,17 @@ from cm_harness import HERE, UPSTREAM, Driver, Side, fan, resolve, s
 
 
 def main():
-    exe = resolve(sys.argv[1] if len(sys.argv) > 1 else UPSTREAM)
+    args = [a for a in sys.argv[1:] if a != '--no-state-topic']
+    exe = resolve(args[0] if args else UPSTREAM)
     rclpy.init()
-    side = Side(exe, 'collision_monitor', 'cmd_vel_out', 'cm_state')
+    # --no-state-topic: for a node that refuses the parameter (ROSlean, D13).
+    side = Side(exe, 'collision_monitor', 'cmd_vel_out',
+                None if '--no-state-topic' in sys.argv else 'cm_state')
     side.start(os.path.join(HERE, 'zones.yaml'), ['polygons:=[StopCircle]'])
     d = Driver('probe', [side], False)
     try:
         print('node is', d.bring_up(side))
-        d.wait_connected(False)
+        d.wait_connected()
         for topic in ['scan', 'cmd_vel_in', '/clock']:
             for i in d.get_subscriptions_info_by_topic(topic):
                 q = i.qos_profile

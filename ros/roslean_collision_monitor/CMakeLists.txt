@@ -64,6 +64,34 @@ if(BUILD_TESTING)
   target_link_libraries(smoke_timeouts rclcpp::rclcpp roslean_core::roslean_core)
   add_test(NAME smoke_timeouts COMMAND smoke_timeouts)
 
+  # The core's zones against upstream's zone tests, point by point: the two
+  # bounds of SPEC D4 (nothing upstream counts is missed; nothing is counted
+  # beyond 3.5 mm / 4.4 mm outside), on 6.4 million points near boundaries.
+  add_executable(band_bounds test/band_bounds.cpp)
+  target_include_directories(band_bounds PRIVATE include)
+  target_link_libraries(band_bounds roslean_core::roslean_core)
+  add_test(NAME band_bounds COMMAND band_bounds 20000)
+
+  # EXPECTED TO FAIL (COMPARISON.md, defect 2): what a command costs per
+  # stored reading and zone. Polygon zones cost about 200 ns, the limit
+  # asserted is 25 ns. The answers are right; the time is the defect. When
+  # the test "unexpectedly passes", remove WILL_FAIL.
+  add_executable(cmd_cost test/cmd_cost.cpp)
+  target_include_directories(cmd_cost PRIVATE include)
+  target_link_libraries(cmd_cost roslean_core::roslean_core)
+  add_test(NAME roslean_cmd_cost COMMAND cmd_cost)
+  set_tests_properties(roslean_cmd_cost PROPERTIES WILL_FAIL TRUE)
+
+  if(APPLE)
+    # T2 on macOS: for one angle at which Apple's cosf and __sincosf_stret
+    # differ, the shim's point is the one upstream's binary computes. It
+    # failed while the node was built without optimisation (review CM3/CM4,
+    # finding 5; fixed since) and fails again in such a build.
+    add_executable(t2_point_as_upstream test/t2_point_as_upstream.cpp)
+    target_include_directories(t2_point_as_upstream PRIVATE include)
+    add_test(NAME t2_point_as_upstream COMMAND t2_point_as_upstream)
+  endif()
+
   # The node over real topics under simulated time: pass-through, slowdown,
   # stop, and the configurations it must refuse.
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -116,6 +144,59 @@ if(BUILD_TESTING)
       LABELS long)
   else()
     message(WARNING "nav2_collision_monitor not found: the tests against upstream are not registered")
+  endif()
+
+  # ---- The ROSlean node through the same harness -----------------------
+  # Results and what they mean: docs/collision_monitor/COMPARISON.md.
+  set(_lean "$<TARGET_FILE:collision_monitor>")
+
+  # Every fixed scenario, and the probes of test/probes.py. The expectations
+  # are upstream's; test/profile_roslean.py states each answer that differs,
+  # with the number of the difference in the SPEC, and the configurations
+  # the node must refuse. A stated difference that does not occur fails too.
+  add_test(NAME roslean_scenario
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" "${_lean}" --profile profile_roslean)
+  # LABELS long (five minutes): not part of `pixi run test-quick`.
+  set_tests_properties(roslean_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=91" TIMEOUT 3600
+    LABELS long)
+
+  # Malformed and hostile input. Without upstream the node is driven alone.
+  if(nav2_collision_monitor_FOUND)
+    set(_beside ${_upstream})
+  else()
+    set(_beside "")
+  endif()
+  add_test(NAME roslean_fault_injection
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}" ${_beside}
+      --skip clock-negative)
+  set_tests_properties(roslean_fault_injection PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=120" TIMEOUT 1800 LABELS long)
+  # EXPECTED TO FAIL (COMPARISON.md, defect 1): a /clock message with a
+  # negative time aborts the node; the exception is thrown in rclcpp's clock
+  # thread. The test asserts that the node survives. When the node is fixed
+  # this test "unexpectedly passes": remove WILL_FAIL then. (WILL_FAIL
+  # cannot tell why a test fails. Run by hand, the script prints
+  # "FAIL  the node has exited with code -6" and "2 failure(s) in 3 checks".)
+  add_test(NAME roslean_fault_clock_negative
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}"
+      --only clock-negative)
+  set_tests_properties(roslean_fault_clock_negative PROPERTIES
+    ENVIRONMENT "ROS_DOMAIN_ID=121" TIMEOUT 600 WILL_FAIL TRUE)
+
+  if(nav2_collision_monitor_FOUND)
+    # Statements that only the SPEC makes, put to upstream's binary.
+    add_test(NAME upstream_probes
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" ${_upstream}
+        --profile profile_upstream --own)
+    set_tests_properties(upstream_probes PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=92" TIMEOUT 1200)
+    # ROSlean against upstream on random cases with points at zone
+    # boundaries, judged by the bounds of SPEC D4 (test/cm_bounds.py). The
+    # long run is `pixi run cm-diff` (600 seeds).
+    add_test(NAME roslean_random_diff
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" "${_lean}" ${_upstream} 0 6
+        --roslean)
+    set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800
+      LABELS long)
   endif()
 endif()
 

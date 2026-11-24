@@ -1,0 +1,119 @@
+[
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "first_less_restrictive": 0,
+  "second_less_restrictive": 0,
+  "out_lean": {
+   "n": 852,
+   "mean_ns": 8148068,
+   "p50_ns": 8301958,
+   "p90_ns": 11337041,
+   "p99_ns": 14158667,
+   "p999_ns": 15126542,
+   "max_ns": 15126542
+  },
+  "out_upstream": {
+   "n": 851,
+   "mean_ns": 6113647,
+   "p50_ns": 5879250,
+   "p90_ns": 9151500,
+   "p99_ns": 11247125,
+   "p999_ns": 11344291,
+   "max_ns": 11344291
+  },
+  "readings": 360,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "first_less_restrictive": 0,
+   "second_less_restrictive": 0,
+   "received_out_lean": 852,
+   "received_out_upstream": 851
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "first_less_restrictive": 0,
+  "second_less_restrictive": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 12045133,
+   "p50_ns": 11849208,
+   "p90_ns": 16022250,
+   "p99_ns": 18824334,
+   "p999_ns": 20435875,
+   "max_ns": 20435875
+  },
+  "out_upstream": {
+   "n": 852,
+   "mean_ns": 6015529,
+   "p50_ns": 5698875,
+   "p90_ns": 9440917,
+   "p99_ns": 11283375,
+   "p999_ns": 11340542,
+   "max_ns": 11340542
+  },
+  "readings": 1080,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "first_less_restrictive": 0,
+   "second_less_restrictive": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 852
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 540,
+  "mismatches": 0,
+  "first_less_restrictive": 0,
+  "second_less_restrictive": 0,
+  "out_lean": {
+   "n": 541,
+   "mean_ns": 45430156,
+   "p50_ns": 45239792,
+   "p90_ns": 54055625,
+   "p99_ns": 60188792,
+   "p999_ns": 62815125,
+   "max_ns": 62815125
+  },
+  "out_upstream": {
+   "n": 850,
+   "mean_ns": 5869343,
+   "p50_ns": 5900291,
+   "p90_ns": 9005667,
+   "p99_ns": 10592375,
+   "p999_ns": 11249042,
+   "max_ns": 11249042
+  },
+  "readings": 10000,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 540,
+   "mismatches": 0,
+   "first_less_restrictive": 0,
+   "second_less_restrictive": 0,
+   "received_out_lean": 541,
+   "received_out_upstream": 850
+  }
+ }
+]
