@@ -28,8 +28,8 @@ against a document and not against a run, the document is named.
   theorems of the project depends on `propext`, `Classical.choice` and
   `Quot.sound` only. No `sorry`, `native_decide`, `axiom`, `unsafe`,
   `implemented_by` or `@[extern]` in any Lean file.
-- **The refusals are as stated, with one exception.** 25 configurations
-  were tried on the built node. For Nav2's unchanged `nav2_params.yaml` the
+- **The refusals are as stated, with one exception.** 27 configurations
+  were tried, 23 on the built node and 4 on upstream's for comparison. For Nav2's unchanged `nav2_params.yaml` the
   node prints `2 parameters refused`, where the README and `gaps.html`
   quoted `1 parameter refused`. Corrected.
 - **The whole test suite passed on both**, in one run each: macOS
@@ -157,7 +157,7 @@ No test failed in either run, so nothing was retried.
 What ran beside these on the same machine: during the macOS run, the
 README's two node commands (once, on ROS domain 0) and the container's
 `test-quick` and full run, the latter for half an hour; during
-`test-quick` on macOS, the 25 short starts of the node on ROS domain 231
+`test-quick` on macOS, 26 short starts of a node on ROS domain 231
 and the container's builds. No failure came of it. The whole suite takes
 39 minutes, not "about 20 minutes … longer now" (README corrected).
 
@@ -427,6 +427,7 @@ and the process was still running, as `gaps.html` says.
 | four of these at once | `4 parameters refused: parameter 'use_realtime_priority': …; parameter 'scan.type': …; parameter 'PolygonStop.max_points': …; parameter 'PolygonSlow.action_type': …` | yes, one line of the stated form |
 | a negative `slowdown_ratio` | `parameter 'PolygonSlow.slowdown_ratio': must not be negative (D5)` | (not quoted; D5 as stated) |
 | a negative `source_timeout` | `parameter 'source_timeout': a timeout must be finite, not negative and below 9.2e9 s (D9)` | (not quoted; D9 as stated) |
+| upstream's own example file (`nav2_collision_monitor/params/collision_monitor_params.yaml`), unchanged | configures: the zones and the source it defines without listing (`PolygonLimit`, `FootprintApproach`, `VelocityPolygonStop`, `pointcloud`) are not looked at | yes ("defines … but does not list it") |
 | the example, unchanged: configure, activate | both "Transitioning successful"; no service with "toggle" in its name; topics: `/bond`, `/cmd_vel`, `/cmd_vel_smoothed`, `/collision_monitor_state`, `/polygon_slowdown`, `/polygon_stop`, `/scan`, `/tf`, `/tf_static` and the node's own: no marker topic | yes |
 | `ros2 param set /collision_monitor PolygonStop.enabled false` on the active node | `Setting parameter failed: parameters of this node are read once, when it is configured, from the values given at start-up, and cannot be changed while it runs (docs/collision_monitor/SPEC.md, ND8); to change 'PolygonStop.enabled', restart the node with the new value`; the value stayed `True` | yes |
 
