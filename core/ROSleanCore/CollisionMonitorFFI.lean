@@ -1,5 +1,6 @@
 import ROSleanCore.CollisionMonitor
 import ROSleanCore.CollisionMonitorConvert
+import ROSleanCore.CollisionMonitorFast
 
 /-!
 # C interface to the collision monitor model
@@ -126,6 +127,13 @@ structure Monitor where
   that scan call handed them over; `none` if it was reported as not usable
   (see the head of this file). Every command carries them. -/
   coords : Option (List Coords)
+  /-- The record array of the scan stored last, as it was handed over; `none`
+  if that scan was reported as not usable. It holds what `coords` holds
+  (`coords = raw.map decodeCoords` for every monitor the exported calls can
+  produce: `ROSlean.CollisionMonitor.FFI.synced_after`); the exported command
+  call reads the coordinates from here, without building the patterns
+  (`cmOnCmdFast`). -/
+  raw : Option ByteArray
 
 /-- No zones, source enabled, both timeouts 0, nothing refused, and the
 source not set: the monitor of a new builder is not accepted
@@ -241,7 +249,7 @@ set, no raw value was refused, no vertex was added to no polygon, and
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
-    st := startState b.cfg, out := .silent, coords := none }
+    st := startState b.cfg, out := .silent, coords := none, raw := none }
 
 /-- The configuration was accepted. The node must refuse to start if this is
 `false`. -/
@@ -328,7 +336,8 @@ usable scan arrives (R8). -/
 def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
     (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
   { m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)) with
-    coords := if usable != 0 then some (decodeCoords beams) else none }
+    coords := if usable != 0 then some (decodeCoords beams) else none
+    raw := if usable != 0 then some beams else none }
 
 /-- The event of the model that a command call delivers: it carries the
 coordinates remembered from the scan stored last (none if that scan was not
@@ -339,10 +348,52 @@ def cmdEvent (coords : Option (List Coords)) (nowNs : UInt64)
     coords []
 
 /-- A velocity command arrived at node-clock time `nowNs`; the six components
-are binary64 bit patterns. -/
-@[export roslean_cm_on_cmd]
+are binary64 bit patterns. This is the definition the theorems are stated
+on; the function exported to C is `cmOnCmdFast`, which returns the same
+monitor (`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`). It is exported
+under another name so that a test can run the two side by side
+(`test_cm_ffi.cpp`); the node does not call it. -/
+@[export roslean_cm_on_cmd_reference]
 def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
   m.apply (cmdEvent m.coords nowNs linX linY linZ angX angY angZ)
+
+/-! ## The command call as exported -/
+
+/-- `coordMmOfParts` of the binary64 pattern whose upper half is `hi` and
+whose lower half is `lo` (both below 2³²): the sign is the top bit of `hi`.
+The pattern itself, which is a big number in Lean's runtime when the sign
+bit is set, is never built. -/
+def partsMm (hi lo : Nat) : Int :=
+  coordMmOfParts (decide (0x80000000 ≤ hi)) (hi % 0x80000000 * 0x100000000 + lo)
+
+/-- `coordMm` of the binary64 pattern stored little-endian at offset `o`
+(`coordMmAt_eq`). -/
+def coordMmAt (a : ByteArray) (o : Nat) : Int := partsMm (u32At a (o + 4)) (u32At a o)
+
+/-- The point of record `i` of a scan array: `scanPointMm (coordsAt a i)`
+(`pointAt_eq`). -/
+def pointAt (a : ByteArray) (i : Nat) : Point :=
+  ⟨coordMmAt a (recordSize * i + 4), coordMmAt a (recordSize * i + 12)⟩
+
+/-- `Monitor.apply` on the command event that carries the coordinates of the
+record array `raw`, computed by `stepCmdFast`. -/
+def Monitor.applyCmdFast (m : Monitor) (now : Nat) (v : Twist) : Monitor :=
+  if m.ok then
+    let (st, out) :=
+      match m.raw with
+      | some a => stepCmdFast m.cfg m.st now v (some (a.size / recordSize)) (pointAt a) []
+      | none => stepCmdFast m.cfg m.st now v none (fun _ => ⟨0, 0⟩) []
+    { m with st, out }
+  else
+    { m with out := if m.st.phase = .active then .answer (some .stopSource) none else .silent }
+
+/-- The command call as C sees it. For every monitor that the exported calls
+can produce it returns what `cmOnCmd` returns
+(`ROSlean.CollisionMonitor.FFI.cmOnCmdFast_eq`, `execFast_eq`). -/
+@[export roslean_cm_on_cmd]
+def cmOnCmdFast (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) :
+    Monitor :=
+  m.applyCmdFast nowNs.toNat ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
 
 /-- Applies a command that arrives without a valid clock reading
 (`stepNoClock`) and records its output. A monitor that was not accepted

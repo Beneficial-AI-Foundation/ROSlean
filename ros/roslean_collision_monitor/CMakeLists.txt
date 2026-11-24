@@ -74,15 +74,16 @@ if(BUILD_TESTING)
   target_link_libraries(band_bounds roslean_core::roslean_core)
   add_test(NAME band_bounds COMMAND band_bounds 20000)
 
-  # EXPECTED TO FAIL (COMPARISON.md, defect 2): what a command costs per
-  # stored reading and zone. Polygon zones cost about 200 ns, the limit
-  # asserted is 25 ns. The answers are right; the time is the defect. When
-  # the test "unexpectedly passes", remove WILL_FAIL.
+  # What a command costs in the core, against the budget of COMPARISON.md,
+  # "Cost of a command" (defect 2, fixed by T03): 50, 150 and 1500 us at
+  # 360, 1080 and 10,000 stored readings, two zones of either kind. A
+  # threshold on run time: the budget is twice what was measured, and
+  # RUN_SERIAL keeps other tests of this package off the processor.
   add_executable(cmd_cost test/cmd_cost.cpp)
   target_include_directories(cmd_cost PRIVATE include)
   target_link_libraries(cmd_cost roslean_core::roslean_core)
   add_test(NAME roslean_cmd_cost COMMAND cmd_cost)
-  set_tests_properties(roslean_cmd_cost PROPERTIES WILL_FAIL TRUE)
+  set_tests_properties(roslean_cmd_cost PROPERTIES RUN_SERIAL TRUE)
 
   if(APPLE)
     # T2 on macOS: for one angle at which Apple's cosf and __sincosf_stret

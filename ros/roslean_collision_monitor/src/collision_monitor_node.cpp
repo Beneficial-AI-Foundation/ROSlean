@@ -257,6 +257,7 @@ private:
         "set: the scan is not used, and the source counts as having no data.",
         msg.header.frame_id.c_str(), base_frame_id_.c_str(), source_name_.c_str());
     }
+    warn_about_cost(msg.ranges.size());
     const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges, sensor_pose_);
     monitor_->on_scan(
       t, stamp_ns, usable, bits_of(msg.range_min), bits_of(msg.range_max), beams.data(),
@@ -354,6 +355,47 @@ private:
         break;
       case CollisionMonitor::OutputKind::Silent:
         break;
+    }
+  }
+
+  /// COMPARISON.md, defect 2: a command tests every stored reading against
+  /// every zone, in exact integer arithmetic, and takes time in proportion.
+  /// The budget is 150 us per command at 1080 readings; what a command is
+  /// estimated to cost with the configured zones and a scan of this size is
+  /// said once (and again if a larger scan arrives) when it exceeds
+  /// `kCostWarnNs`. The estimate is the measured cost on one machine, back
+  /// to back (Apple M5: 45 ns per reading, plus 3 ns per reading and circle
+  /// and 2.5 ns per reading and polygon vertex), doubled; an idle or slower
+  /// processor takes several times as long. It changes nothing the node
+  /// does.
+  static constexpr double kCostWarnNs = 1.0e6;  // 1 ms: 5 % of a 20 ms command period
+
+  double estimated_cmd_cost_ns(size_t readings) const
+  {
+    double per_reading = 45.0;
+    for (const auto & zone : zones_) {
+      if (zone.enabled) {
+        per_reading += zone.circle ? 3.0 : 2.5 * static_cast<double>(zone.vertices.size());
+      }
+    }
+    return 2.0 * per_reading * static_cast<double>(readings);
+  }
+
+  void warn_about_cost(size_t readings)
+  {
+    if (readings <= cost_warned_readings_) {
+      return;
+    }
+    const double ns = estimated_cmd_cost_ns(readings);
+    if (ns > kCostWarnNs) {
+      cost_warned_readings_ = readings;
+      RCLCPP_WARN(
+        get_logger(), "A scan of %zu readings with the %zu configured zone(s): each command is "
+        "estimated to take about %.1f ms in the core, more than %.1f ms. Commands are answered "
+        "late, and scans and commands can queue behind them. The answers are not affected. "
+        "Fewer readings or zones make it faster (docs/collision_monitor/COMPARISON.md, "
+        "\"Cost of a command\").",
+        readings, zones_.size(), ns / 1.0e6, kCostWarnNs / 1.0e6);
     }
   }
 
@@ -725,6 +767,7 @@ private:
   // D15. `clock_valid_` selects which of the core's two command calls is
   // made; it is false only while the /clock message received last carried a
   // negative time. Always true without simulated time.
+  size_t cost_warned_readings_{0};  // the largest scan the cost warning was given for
   bool sim_time_{false};
   bool clock_valid_{true};
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;

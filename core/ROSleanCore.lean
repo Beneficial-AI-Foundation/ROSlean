@@ -4,4 +4,5 @@ import ROSleanCore.FFI
 import ROSleanCore.CollisionMonitorPoint
 import ROSleanCore.CollisionMonitor
 import ROSleanCore.CollisionMonitorConvert
+import ROSleanCore.CollisionMonitorFast
 import ROSleanCore.CollisionMonitorFFI

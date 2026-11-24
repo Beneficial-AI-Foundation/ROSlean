@@ -62,6 +62,7 @@ set(ROSLEAN_MODULES
   ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop
   ROSleanCore/CollisionMonitorPoint
   ROSleanCore/CollisionMonitor ROSleanCore/CollisionMonitorConvert
+  ROSleanCore/CollisionMonitorFast
   ROSleanCore/CollisionMonitorFFI)
 set(_generated)
 foreach(_m ${ROSLEAN_MODULES})

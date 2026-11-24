@@ -230,7 +230,7 @@ error. -/
 theorem cmNew_eq (b : Builder) :
     cmNew b = { cfg := b.cfg, ok := b.error == 0, err := b.error,
                 zoneErrs := b.zones.map entryError, st := startState b.cfg, out := .silent,
-                coords := none } := rfl
+                coords := none, raw := none } := rfl
 
 /-- The state a monitor starts in is the initial state with the phase
 `active`: nothing else is touched by `configure` and `activate`. -/
@@ -850,6 +850,13 @@ theorem apply_cfg (m : Monitor) (e : Event) :
   · exact ⟨rfl, rfl, rfl⟩
   · cases e <;> exact ⟨rfl, rfl, rfl⟩
 
+/-- No event changes the record array a monitor keeps. -/
+theorem apply_raw (m : Monitor) (e : Event) : (m.apply e).raw = m.raw := by
+  unfold Monitor.apply
+  split
+  · rfl
+  · cases e <;> rfl
+
 /-- An ok monitor does what `step` says. -/
 theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
     (m.apply e).st = (step m.cfg m.st e).1 ∧ (m.apply e).out = (step m.cfg m.st e).2 := by
@@ -883,7 +890,8 @@ theorem cmOnScan_eq (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8
     (rmin rmax : UInt32) (a : ByteArray) :
     cmOnScan m now stamp usable rmin rmax a =
       { m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) with
-        coords := if usable != 0 then some (decodeCoords a) else none } :=
+        coords := if usable != 0 then some (decodeCoords a) else none
+        raw := if usable != 0 then some a else none } :=
   rfl
 
 /-- The command call is `Monitor.apply` on a command event with the six
@@ -949,6 +957,13 @@ def Call.coords (coords : Option (List Coords)) : Call → Option (List Coords)
   | .scan _ _ usable _ _ a => if usable != 0 then some (decodeCoords a) else none
   | .cmd _ _ _ _ _ _ _ => coords
 
+/-- The record array kept after the call: that of a usable scan call, none
+after an unusable one, unchanged by a command. It holds the coordinates of
+`Call.coords` (`ROSlean.CollisionMonitor.FFI.Synced`, in `Fast.lean`). -/
+def Call.raw (raw : Option ByteArray) : Call → Option ByteArray
+  | .scan _ _ usable _ _ a => if usable != 0 then some a else none
+  | .cmd _ _ _ _ _ _ _ => raw
+
 /-- The events a sequence of calls delivers. -/
 def events (coords : Option (List Coords)) : List Call → List Event
   | [] => []
@@ -961,17 +976,19 @@ def coordsAfter (coords : Option (List Coords)) (cs : List Call) : Option (List 
 /-- Every call is `Monitor.apply` on the event it delivers, and remembers the
 coordinates of the scan call made last. -/
 theorem exec_eq_apply (m : Monitor) (c : Call) :
-    c.exec m = { m.apply (c.event m.coords) with coords := c.coords m.coords } := by
+    c.exec m = { m.apply (c.event m.coords) with
+      coords := c.coords m.coords, raw := c.raw m.raw } := by
   cases c with
   | scan now stamp usable rmin rmax a => rfl
   | cmd now lx ly lz ax ay az =>
-    show m.apply (cmdEvent m.coords now lx ly lz ax ay az) =
-      { m.apply (cmdEvent m.coords now lx ly lz ax ay az) with coords := m.coords }
+    change m.apply (cmdEvent m.coords now lx ly lz ax ay az) =
+      { m.apply (cmdEvent m.coords now lx ly lz ax ay az) with coords := m.coords, raw := m.raw }
     have h := (apply_cfg m (cmdEvent m.coords now lx ly lz ax ay az)).2.2
-    generalize m.apply (cmdEvent m.coords now lx ly lz ax ay az) = m' at h ⊢
+    have hr := apply_raw m (cmdEvent m.coords now lx ly lz ax ay az)
+    generalize m.apply (cmdEvent m.coords now lx ly lz ax ay az) = m' at h hr ⊢
     cases m'
-    simp only at h
-    subst h
+    simp only at h hr
+    subst h hr
     rfl
 
 /-- No call changes the configuration or whether the monitor is ok. -/

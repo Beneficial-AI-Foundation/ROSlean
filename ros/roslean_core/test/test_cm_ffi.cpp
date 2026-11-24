@@ -411,6 +411,96 @@ int main()
       "angular.z counts");
   }
   {
+    // The exported command call against the definition the theorems are
+    // stated on (proved equal in ROSlean/CollisionMonitor/Fast.lean): two
+    // monitors with the same configuration get the same calls, one through
+    // on_cmd and one through on_cmd_reference, and must give the same
+    // answers. Points are drawn around the zone boundaries, on both sides
+    // of zero, with values that are not finite, far away, and subnormal.
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    const auto next = [&rng]() {
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        return rng;
+      };
+    const auto unit = [&next]() {return static_cast<double>(next() >> 11) / 9007199254740992.0;};
+    const double special[] = {0.0, -0.0, kNaN, kInf, -kInf, 5e-324, -5e-324, 1023.9, -1023.9,
+      1024.0, -1024.0, 999.9995, 1e300, -1e300, 0.3, -0.3, 0.4, -0.4, 0.2995, 0.3005, 0.6, 0.001};
+    const auto coord = [&]() {
+        const uint64_t k = next() % 10;
+        if (k == 0) {return special[next() % (sizeof special / sizeof special[0])];}
+        if (k < 6) {return (unit() - 0.5) * 1.4;}  // around the zones
+        if (k < 8) {return (unit() - 0.5) * 0.02 + (next() % 2 ? 0.3 : -0.4);}  // at an edge
+        return (unit() - 0.5) * 20.0;
+      };
+    const auto make = [](int kind, double timeout) {
+        CM::Builder b;
+        b.set_source(true, timeout, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        if (kind == 0) {
+          b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 3, true);
+          b.add_circle(0.6, CM::ZoneAction::Slowdown, 0.5, 2, true);
+        } else {
+          b.add_polygon(CM::ZoneAction::Slowdown, 0.3, 2, true);
+          for (auto v : {std::pair{0.4f, 0.4f}, {0.4f, -0.4f}, {-0.4f, -0.4f}, {-0.4f, 0.4f}}) {
+            b.add_vertex(v.first, v.second);
+          }
+          b.add_polygon(CM::ZoneAction::Stop, 0.5, 3, true);
+          // Not convex, and with a vertex that is not on the millimetre grid.
+          for (auto v : {std::pair{0.3f, 0.3f}, {0.05f, 0.0f}, {0.3f, -0.3f}, {0.0f, -0.3001f},
+              {-0.1f, 0.0f}, {0.0f, 0.3f}})
+          {
+            b.add_vertex(v.first, v.second);
+          }
+          if (kind == 2) {
+            b.add_circle(0.5, CM::ZoneAction::Slowdown, 0.4, 1, true);
+          }
+        }
+        return b.build();
+      };
+    size_t compared = 0;
+    size_t differ = 0;
+    size_t kinds[5] = {0, 0, 0, 0, 0};
+    for (int kind = 0; kind < 3; ++kind) {
+      for (double timeout : {2.0, 0.0}) {
+        auto fast = make(kind, timeout);
+        auto ref = make(kind, timeout);
+        uint64_t now = 0;
+        for (int round = 0; round < 400; ++round) {
+          now += next() % (700 * kMs);
+          if (next() % 3 != 0) {
+            std::vector<Rec> recs(next() % 40);
+            for (auto & r : recs) {
+              r = Rec{next() % 8 == 0 ? 20.0f : 0.5f, coord(), coord()};
+            }
+            const bool usable = next() % 12 != 0;
+            scan(fast, now, static_cast<int64_t>(now), recs, usable);
+            scan(ref, now, static_cast<int64_t>(now), recs, usable);
+          }
+          for (int c = 0; c < 4; ++c) {
+            now += next() % (400 * kMs);
+            const double x = next() % 5 == 0 ? 0.0 : 0.5;
+            const double z = next() % 30 == 0 ? kNaN : 0.0;
+            const auto a = fast.on_cmd(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+            const auto e = ref.on_cmd_reference(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+            ++compared;
+            ++kinds[static_cast<uint8_t>(a.kind) % 5];
+            if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits) {
+              ++differ;
+            }
+          }
+        }
+      }
+    }
+    std::printf(
+      "      fast against reference: %zu commands (silent %zu, pass %zu, slowdown %zu, "
+      "stop by zone %zu, stop by source %zu), %zu differ\n",
+      compared, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], differ);
+    check(differ == 0, "on_cmd answers as on_cmd_reference, the definition the theorems are on");
+    check(
+      kinds[0] > 0 && kinds[1] > 0 && kinds[2] > 0 && kinds[3] > 0 && kinds[4] > 0,
+      "and every kind of answer occurred in the comparison");
+  }
+  {
     // D15: a command without a clock reading (stepNoClock). Always the stop
     // for an invalid source, never withheld; nothing else is disturbed.
     const auto nc = [](CM & m, double x = 0.5) {

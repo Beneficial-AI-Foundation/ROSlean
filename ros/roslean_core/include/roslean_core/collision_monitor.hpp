@@ -250,6 +250,18 @@ private:
     return read_output();
   }
 
+  /// `on_cmd` computed by the definition the theorems are stated on, which
+  /// is slow. The two are proved equal (ROSlean/CollisionMonitor/Fast.lean);
+  /// this call exists so that a test can compare them. Not for the node.
+  Output on_cmd_reference(
+    uint64_t now_ns, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
+    uint64_t ang_x, uint64_t ang_y, uint64_t ang_z)
+  {
+    require_valid();
+    obj_ = roslean_cm_on_cmd_reference(obj_, now_ns, lin_x, lin_y, lin_z, ang_x, ang_y, ang_z);
+    return read_output();
+  }
+
   /// A velocity command arrived while the node has no valid clock reading
   /// (SPEC, D15: the last message on /clock carried a negative time). There
   /// is no time to hand over. The core answers with `StopSource` whenever it
