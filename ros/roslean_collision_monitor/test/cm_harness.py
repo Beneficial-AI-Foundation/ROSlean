@@ -288,11 +288,42 @@ class Driver(Node):
                 ok = ok and self.count_publishers(side.out_topic) == 1
             return ok
 
-        if not self.spin_until(ready, timeout):
-            raise RuntimeError(
-                'node under test did not come up (exit codes %s)'
-                % [sd.proc.poll() for sd in self.sides])
-        self.spin_for(0.5)
+        # The conditions must hold before and after half a second of spinning,
+        # not just once: under load one publisher was counted and none was
+        # listed half a second later (the graph can still show the endpoints
+        # of the previous run's node for a moment, or the node has died).
+        end = time.monotonic() + timeout
+        while True:
+            if not self.spin_until(ready, max(end - time.monotonic(), 0.0)):
+                raise RuntimeError(
+                    'node under test did not come up (exit codes %s)'
+                    % [sd.proc.poll() for sd in self.sides])
+            self.spin_for(0.5)
+            if ready():
+                return
+            if time.monotonic() >= end:
+                raise RuntimeError('the graph did not settle: endpoints appeared and went away '
+                                   '(exit codes %s)' % [sd.proc.poll() for sd in self.sides])
+
+    def endpoint_types(self, topic, publishers, timeout=5.0):
+        """The message types of the publishers (or the subscriptions) of a topic.
+
+        Waits until there is at least one, and raises RuntimeError if none
+        appears: the list of endpoints can lag behind the counts that
+        wait_connected looks at.
+        """
+        get = (self.get_publishers_info_by_topic if publishers
+               else self.get_subscriptions_info_by_topic)
+        found = []
+
+        def some():
+            found[:] = [i.topic_type for i in get(topic)]
+            return bool(found)
+
+        if not self.spin_until(some, timeout):
+            raise RuntimeError('no %s of %s in the graph'
+                               % ('publisher' if publishers else 'subscription', topic))
+        return sorted(set(found))
 
     # -- events ---------------------------------------------------------------
 

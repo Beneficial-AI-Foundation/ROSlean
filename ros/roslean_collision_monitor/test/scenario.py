@@ -839,8 +839,9 @@ def run_scenario(exe, name, opts):
             note(False, 'node refused its configuration')
         else:
             d.wait_connected(tf_listeners=1 if tf and side.lifecycle else 0)
-            pub_type = d.get_publishers_info_by_topic('cmd_vel_out')[0].topic_type
-            sub_types = {i.topic_type for i in d.get_subscriptions_info_by_topic('cmd_vel_in')}
+            pub_types = d.endpoint_types('cmd_vel_out', publishers=True)
+            pub_type = pub_types[0] if len(pub_types) == 1 else str(pub_types)
+            sub_types = set(d.endpoint_types('cmd_vel_in', publishers=False))
             want = 'geometry_msgs/msg/' + ('TwistStamped' if stamped else 'Twist')
             note(pub_type == want and sub_types == {want},
                  f'command topics are {want} (in: {sorted(sub_types)}, out: {pub_type})')

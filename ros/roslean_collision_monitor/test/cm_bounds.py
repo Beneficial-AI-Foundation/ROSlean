@@ -32,11 +32,16 @@ when the library has it. `EPS` is the distance from a boundary below which
 this module does not claim to know what upstream's double arithmetic
 decides; such a point may or may not count for upstream.
 
-The ROSlean node computes its own points, and as built by `pixi run build`
-(no optimisation) it calls `sinf` and `cosf`, so its point can lie one
-float32 step from upstream's: at most 0.25 micrometres at 3 m. `LEAN_SLACK`
-allows for that in bound G; bound S is checked on the outputs and needs no
-allowance.
+The ROSlean node computes its own points. Built with optimisation (the
+default of its CMakeLists since the review CM3/CM4, finding 5) it makes the
+same library call as upstream, and smoke_conversions checks its points
+against upstream's loop bit for bit; with a sensor pose its rotation is its
+own (cos and sin of the yaw in double, upstream: the tf2 matrix of a
+quaternion), which differs by rounding only. So bound G is asserted as
+stated, with no allowance beyond `EPS` (`LEAN_SLACK` is 0; an unoptimised
+build of the node, whose points can lie one float32 step from upstream's,
+0.25 micrometres at 3 m, would need 1e-6 here). Bound S is checked on the
+outputs and needs no allowance.
 """
 
 import ctypes
@@ -51,7 +56,7 @@ from cm_model import f32
 # count as inside for ROSlean, in metres.
 GROWTH = {'circle': 3.5e-3, 'polygon': 4.4e-3}
 EPS = 1e-9
-LEAN_SLACK = 1e-6
+LEAN_SLACK = 0.0
 
 _libm = ctypes.CDLL(ctypes.util.find_library('m') or ctypes.util.find_library('c'))
 for _f in (_libm.cosf, _libm.sinf):
