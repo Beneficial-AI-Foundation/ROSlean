@@ -23,8 +23,7 @@ configuration with the shapes of the topic zones filled in
 (`Config.withShapes`, `liveConfig`); the lemmas at the end of this file say
 what that configuration is, zone by zone.
 
-Rule numbers refer to `docs/collision_monitor/SPEC.md` (`R…`) and
-`docs/collision_monitor/SPEC_NAV2.md` (`N…`).
+Rule numbers (`R…`, `N…`) refer to `docs/collision_monitor/SPEC.md`.
 -/
 
 namespace ROSlean.CollisionMonitor

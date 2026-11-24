@@ -33,8 +33,9 @@
 // through the parameter service is rejected (ND8), and a name that was not
 // given at start-up cannot be set at all.
 //
-// Rule (R..., N...) and difference (D..., ND...) numbers refer to SPEC.md and
-// SPEC_NAV2.md in docs/collision_monitor.
+// Rule (R..., N...) and difference (D..., ND...) numbers refer to
+// docs/collision_monitor/SPEC.md; section numbers (8.3) to SPEC_NAV2.md beside
+// it, the design record of the Nav2 extension.
 
 #include <algorithm>
 #include <array>
@@ -153,7 +154,7 @@ public:
         result.successful = false;
         result.reason = "parameters of this node are read once, when it is configured, from "
         "the values given at start-up, and cannot be changed while it runs "
-        "(docs/collision_monitor/SPEC_NAV2.md, ND8)";
+        "(docs/collision_monitor/SPEC.md, ND8)";
         if (!changes.empty()) {
           result.reason += "; to change '" + changes.front().get_name() +
           "', restart the node with the new value";
@@ -578,6 +579,9 @@ private:
     if (points.size() >= 3) {
       tf = wait_for(request, static_cast<int64_t>(now_ns()));
     }
+    // Nothing is published for a shape message: the clock its wait ended
+    // with is not a stamp for anything later.
+    waited_until_ns_.reset();
     const auto verts = tf ? polygon_vertices(*tf, points) : std::vector<uint8_t>();
     switch (monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size())) {
       case CollisionMonitor::ShapeResult::Shape:

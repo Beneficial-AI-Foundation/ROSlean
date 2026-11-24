@@ -1,3 +1,4 @@
 17:32 finding 1: model, proofs, FFI, node done; next: scenario from the probe, then finding 2
 17:42 finding 2 done (tf2's give-up rule in the wait, buffer cleared at the jump; three scenarios, fail without the fix); finding 6: test of the angle accumulation over 1080 readings catches the missed mutation; next: finding 4
 17:56 findings 3a-3c, 3f, 4, 5, 6 done in code with tests (3d, 3e are document changes); next: long runs in the background, then SPEC merge and THEOREMS
+18:07 SPEC.md is one document (rules N, differences ND, trusted T1-T10 folded in; SPEC_NAV2 keeps the design record and section 12); THEOREMS links refreshed; REVIEWS outcomes set; Docker images built; long runs in progress; next: results, report

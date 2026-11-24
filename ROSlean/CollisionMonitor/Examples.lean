@@ -4,8 +4,7 @@ import ROSleanCore.CollisionMonitor
 # Worked examples for the collision monitor model
 
 Each example is checked by the kernel (`by decide`). Rule numbers refer to
-`docs/collision_monitor/SPEC.md` (`R…`, `D…`) and
-`docs/collision_monitor/SPEC_NAV2.md` (`N…`, `ND…`).
+`docs/collision_monitor/SPEC.md` (`R…`, `D…`, `N…`, `ND…`).
 
 Times are nanoseconds, written with `ms`. Points are millimetres. Floating
 point values appear as IEEE-754 bit patterns; the ones used here are named

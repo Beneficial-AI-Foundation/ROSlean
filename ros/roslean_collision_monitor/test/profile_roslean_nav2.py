@@ -5,7 +5,7 @@
 The expectations of scenario_nav2.py are what upstream's binary does. This
 file is the one place that states an answer the ROSlean node is to give
 differently, each with the number of the difference in
-docs/collision_monitor/SPEC_NAV2.md, section 6. Anything not listed must be
+docs/collision_monitor/SPEC.md, "Deliberate differences". Anything not listed must be
 exactly as upstream, and a listed difference that does not occur is a
 failure too.
 

@@ -6,9 +6,9 @@ import ROSleanCore.CollisionMonitorPoint
 Executable model of the core of Nav2's `nav2_collision_monitor` for one laser
 scan source, one velocity input, circle and polygon zones and the `stop` and
 `slowdown` actions, as specified in `docs/collision_monitor/SPEC.md` (rule
-numbers `R…`, differences `D…` and assumptions `A…` refer to that file), with
-the Nav2 extension of `docs/collision_monitor/SPEC_NAV2.md` (rules `N…`,
-differences `ND…`, events `E1`–`E8`): the lifecycle, scan points and zone
+numbers `R…` and `N…`, differences `D…` and `ND…` and assumptions `A…` refer
+to that file), with the Nav2 extension (events `E1`–`E8`, numbered in
+`docs/collision_monitor/SPEC_NAV2.md`, section 3.2): the lifecycle, scan points and zone
 vertices that arrive with each command already in the base frame, zones whose
 shape arrives on a topic, and the report for the state topic.
 

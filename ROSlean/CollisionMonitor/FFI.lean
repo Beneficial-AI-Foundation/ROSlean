@@ -76,7 +76,7 @@ the node executes.
 What remains outside Lean is the C++ shim: reading the parameters and the
 clock, looking transforms up and applying them (the points and vertices a
 call carries are the shim's word), the floating-point work listed in
-SPEC_NAV2.md, section 7, and acting on the returned decision.
+SPEC.md (T1–T10), and acting on the returned decision.
 -/
 
 namespace ROSlean.CollisionMonitor.FFI

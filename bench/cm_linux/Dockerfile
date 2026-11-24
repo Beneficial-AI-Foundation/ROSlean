@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-jazzy-geometry-msgs ros-jazzy-std-msgs ros-jazzy-sensor-msgs \
       ros-jazzy-visualization-msgs ros-jazzy-diagnostic-updater \
       ros-jazzy-twist-mux ros-jazzy-nav2-collision-monitor \
+      ros-jazzy-nav2-bringup ros-jazzy-nav2-lifecycle-manager \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none

@@ -47,8 +47,7 @@ on the command: a `slowdown k r` output tells the shim to multiply by the
 double with pattern `r`. The theorems bound `r`; the multiplication itself is
 trusted (SPEC, T1). Nor do they say that the coordinates a command carries
 are the images of the stored scan's readings under the right transform: the
-lookup and the arithmetic of the transform are the shim's (SPEC_NAV2, T2,
-T6).
+lookup and the arithmetic of the transform are the shim's (SPEC, T2, T6).
 -/
 
 namespace ROSlean.CollisionMonitor

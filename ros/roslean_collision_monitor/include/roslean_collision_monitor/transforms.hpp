@@ -1,8 +1,8 @@
 // Transforms: the only file of the shim that calls tf2, and the only one
 // that computes with a transform.
 //
-// Everything here is *trusted* (docs/collision_monitor/SPEC_NAV2.md, section
-// 7: T2 and T6). The Lean core receives points in the base frame and does
+// Everything here is *trusted* (docs/collision_monitor/SPEC.md, "Where the
+// velocity is computed": T2 and T6). The Lean core receives points in the base frame and does
 // not see the transform; that the points handed over are the images of the
 // stored readings under the right transform is this file's work, and no
 // theorem covers it. It is kept free of the node, so that it can be read in
