@@ -467,53 +467,71 @@ theorem coordMm64_eq (b : UInt64) : coordMm64 b = coordMm b.toNat := by
 theorem coordMmAt_eq (a : ByteArray) (o : Nat) : coordMmAt a o = coordMm (u64At a o) := by
   rw [coordMmAt, coordMm64_eq, word64At_toNat]
 
-/-- **The point read from the bytes is the model's point** of the record's
+/-- **The point read from the bytes is the model's point** of the pair's
 coordinates. -/
-theorem pointAt_eq (a : ByteArray) (i : Nat) : pointAt a i = scanPointMm (coordsAt a i) := by
-  simp only [pointAt, scanPointMm, coordsAt, coordMmAt_eq]
+theorem pointAt_eq (a : ByteArray) (i : Nat) : pointAt a i = scanPointMm (pairAt a i) := by
+  simp only [pointAt, scanPointMm, pairAt, coordMmAt_eq]
 
 /-! ## The exported command call -/
 
 /-- **The fast command is `Monitor.apply`** on the command event that
-carries the remembered coordinates. -/
-theorem applyCmdFast_eq (m : Monitor) (now : Nat) (v : Twist) :
-    m.applyCmdFast now v = m.apply (.cmd now v m.coords []) := by
-  unfold Monitor.applyCmdFast Monitor.apply Monitor.coords
-  cases m.raw with
-  | none =>
-    simp only [Option.map_none]
-    rw [stepCmdFast_eq m.cfg m.st now v none (fun _ => ⟨0, 0⟩) (fun _ => (0, 0)) []
-      (fun _ => by decide)]
-    rfl
-  | some a =>
-    simp only [Option.map_some]
-    rw [stepCmdFast_eq m.cfg m.st now v (some (a.size / recordSize)) (pointAt a) (coordsAt a) []
-      (pointAt_eq a)]
-    rfl
+carries the coordinate pairs of the array (or none) and the zone vertices. -/
+theorem applyCmdFast_eq (m : Monitor) (now : Nat) (v : Twist) (hasPoints : Bool)
+    (points : ByteArray) (zoneVerts : List (Option (List Coords))) :
+    m.applyCmdFast now v hasPoints points zoneVerts =
+      m.apply (.cmd now v (if hasPoints then some (decodePairs points) else none) zoneVerts) := by
+  unfold Monitor.applyCmdFast Monitor.apply
+  rw [stepCmdFast_eq m.cfg m.st now v (if hasPoints then some (points.size / pairSize) else none)
+    (pointAt points) (pairAt points) zoneVerts (pointAt_eq points)]
+  cases hasPoints <;> rfl
 
-/-- **The exported command call is `cmOnCmd`**, on every monitor: the same
-state, the same output, every field. -/
-theorem cmOnCmdFast_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) :
-    cmOnCmdFast m now lx ly lz ax ay az = cmOnCmd m now lx ly lz ax ay az :=
-  applyCmdFast_eq m _ _
+/-- **The exported command call is `cmOnCmd`**, on every monitor and for all
+arguments: the same state, the same output, every field. -/
+theorem cmOnCmdFast_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) (hasPoints : UInt8)
+    (points zoneVerts : ByteArray) :
+    cmOnCmdFast m now lx ly lz ax ay az hasPoints points zoneVerts =
+      cmOnCmd m now lx ly lz ax ay az hasPoints points zoneVerts := by
+  unfold cmOnCmdFast cmOnCmd cmdEvent pointsOfRaw
+  rw [applyCmdFast_eq]
 
 /-- A call as C makes it: the command call is the exported one. -/
 def Call.execFast (m : Monitor) : Call → Monitor
-  | .scan now stamp usable rmin rmax a => cmOnScan m now stamp usable rmin rmax a
-  | .cmd now lx ly lz ax ay az => cmOnCmdFast m now lx ly lz ax ay az
+  | .lifecycle t => cmOnLifecycle m t
+  | .scan now stamp rmin rmax a => cmOnScan m now stamp rmin rmax a
+  | .shape zone foreign hasVerts verts => cmOnShape m zone foreign hasVerts verts
+  | .cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    cmOnCmdFast m now lx ly lz ax ay az hasPoints points zoneVerts
 
 /-- **What C calls is what the theorems are about.** Each exported call
 returns the monitor that the definition the theorems are stated on returns
-(`Call.exec`: `cmOnScan`, `cmOnCmd`), on every monitor; so does any sequence
-of calls. -/
+(`Call.exec`), on every monitor; so does any sequence of calls. -/
 theorem execFast_eq_exec : Call.execFast = Call.exec := by
   funext m c
   cases c with
-  | scan now stamp usable rmin rmax a => rfl
-  | cmd now lx ly lz ax ay az => exact cmOnCmdFast_eq m now lx ly lz ax ay az
+  | lifecycle t => rfl
+  | scan now stamp rmin rmax a => rfl
+  | shape zone foreign hasVerts verts => rfl
+  | cmd now lx ly lz ax ay az hasPoints points zoneVerts =>
+    exact cmOnCmdFast_eq m now lx ly lz ax ay az hasPoints points zoneVerts
 
 theorem execFast_eq (m : Monitor) (cs : List Call) :
     cs.foldl Call.execFast m = cs.foldl Call.exec m := by
   rw [execFast_eq_exec]
+
+/-- **End to end on the exported call.** `cm_readBack_after` for the command
+call C makes: after any sequence of exported calls, the five numbers read
+after the exported command call determine the model's output for its
+event. -/
+theorem cm_readBack_after_fast (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
+    (hasPoints : UInt8) (points zoneVerts : ByteArray)
+    (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) :
+    let m := cmOnCmdFast (cs.foldl Call.execFast (cmNew b)) now lx ly lz ax ay az hasPoints points
+      zoneVerts
+    outputOfCodes (cmOutKind m) (cmOutReport m) (cmOutZone m).toNat (cmOutRatio m).toNat
+        (cmOutReportZone m).toNat =
+      (step b.cfg (run b.cfg (State.init b.cfg) (events cs)).1
+        (cmdEvent now lx ly lz ax ay az hasPoints points zoneVerts)).2 := by
+  rw [execFast_eq, cmOnCmdFast_eq]
+  exact cm_readBack_after b cs now lx ly lz ax ay az hasPoints points zoneVerts hok hz
 
 end ROSlean.CollisionMonitor.FFI

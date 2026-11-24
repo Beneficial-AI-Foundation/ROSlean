@@ -1,0 +1,1 @@
+2026-11-24 15:06 (a) done: C interface for lifecycle, scan (ranges), shape, cmd_plan, command with points and zone vertices, report queries; theorems in FFI.lean/Fast.lean (lake build 6659 jobs ok); test_cm_ffi 290 checks, 0 failures, 30 s. Next: (b) lifecycle node.
