@@ -298,14 +298,34 @@ private:
   ///   not be looked up; `verts` is then not looked at.
   /// @param verts `size` bytes: 16 per vertex, the binary64 patterns of x and
   ///   y in the base frame, little-endian.
-  /// @return whether the core accepted the message (E7).
-  bool on_shape(uint32_t zone, bool foreign, bool has_verts, const uint8_t * verts, size_t size)
+  /// @return what the core did with the message (E7, ND6).
+  enum class ShapeResult : uint8_t
+  {
+    Ignored = 0,   ///< nothing changed: the zone keeps what it had
+    Shape = 1,     ///< the message is the zone's shape from now on
+    Unusable = 2,  ///< a vertex is not finite or out of range: the zone has no
+                   ///< shape and demands its action until a usable message
+  };
+  ShapeResult on_shape(
+    uint32_t zone, bool foreign, bool has_verts, const uint8_t * verts, size_t size)
   {
     require_valid();
     obj_ = roslean_cm_on_shape(
       obj_, zone, foreign ? 1 : 0, has_verts ? 1 : 0, roslean_core_byte_array(verts, size));
     roslean_core_inc(obj_);
-    return roslean_cm_shape_accepted(obj_) != 0;
+    if (roslean_cm_shape_accepted(obj_) == 0) {
+      return ShapeResult::Ignored;
+    }
+    return shape_unusable(zone) ? ShapeResult::Unusable : ShapeResult::Shape;
+  }
+
+  /// The core holds, for topic zone `zone`, the mark of a polygon message
+  /// with an unusable vertex (ND6).
+  bool shape_unusable(uint32_t zone) const
+  {
+    require_valid();
+    roslean_core_inc(obj_);  // the query consumes one reference
+    return roslean_cm_shape_unusable(obj_, zone) != 0;
   }
 
   /// Which transforms to look up before delivering this command. Changes

@@ -626,7 +626,7 @@ example : outputs cfgTopic (up ++ [near, cmd (ms 1000) fwd, .shape 0 (some boxMs
 -- The accepted shape: whether its frame is foreign, and the vertices in
 -- millimetres.
 example : (final cfgTopic (up ++ [.shape 0 (some boxMsg) false])).shapes
-    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩], false⟩, none] := by decide
 
 -- **Counterexample to "a shape message changes the state iff it is
 -- accepted"** (SPEC_NAV2, section 4, "Shape accepted", as first written): the
@@ -637,16 +637,57 @@ example : (acceptShape cfgTopic (final cfgTopic (up ++ [.shape 0 (some boxMsg) f
 example : final cfgTopic (up ++ [.shape 0 (some boxMsg) false, .shape 0 (some boxMsg) false])
     = final cfgTopic (up ++ [.shape 0 (some boxMsg) false]) := by decide
 
--- Refused messages leave the shape in force (N33, ND6): two points; a NaN
--- coordinate (upstream accepts it and the zone goes blind); a frame whose
+-- Ignored messages leave the shape in force (N33): two points; a frame whose
 -- transform is missing, so that the shim has no vertices to hand over. The
--- robot is still stopped by the box.
+-- robot is still stopped by the box, and passes once the box is moved away.
 example : outputs cfgTopic (up ++ [near, .shape 0 (some boxMsg) false,
       .shape 0 (some [(w0_3, w0_3), (d0, d0)]) false,
-      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) false,
-      .shape 0 none true, cmd (ms 1000) fwd])
-    = [.silent, .silent, .silent, .silent, .silent, .silent, .silent,
-       pubR (.stopZone 0) (.stop 0)] := by decide
+      .shape 0 none true, cmd (ms 1000) fwd, .shape 0 (some farBoxMsg) false,
+      cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, .silent, .silent, .silent, pubR (.stopZone 0) (.stop 0),
+       .silent, pubR .pass .normal] := by decide
+
+-- **A message with an unusable vertex (ND6; review CM5, finding 1).** The
+-- zone holds the far box, which the point 0.2 m ahead is outside of: the
+-- command passes. Then a message with a NaN coordinate arrives. Upstream
+-- takes it as it is and its zone may or may not be triggered; here the zone
+-- demands its action from then on, for every command, until a usable message
+-- arrives. A message that is ignored (two points) does not lift it.
+example : outputs cfgTopic (up ++ [near, .shape 0 (some farBoxMsg) false, cmd (ms 1000) fwd,
+      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) false, cmd (ms 1010) fwd,
+      .shape 0 (some [(w0_3, w0_3), (d0, d0)]) false, cmd (ms 1020) fwd,
+      .shape 0 (some farBoxMsg) false, cmd (ms 1030) fwd])
+    = [.silent, .silent, .silent, .silent, pub .pass, .silent, pubR (.stopZone 0) (.stop 0),
+       .silent, pub (.stopZone 0), .silent, pubR .pass .normal] := by decide
+
+-- The same as the first message of the zone (the review's observation: the
+-- node passed, upstream stopped), and with a vertex beyond the coordinate
+-- limit (999.998 m) instead of a NaN. Without any point, too: the scan has
+-- none inside any shape, and the zone needs one (`cfgTopic`).
+example : outputs cfgTopic (up ++ [behind, cmd (ms 1000) fwd,
+      .shape 0 (some [(w0_3, w0_3), (w0_3, wNeg0_3), (d0, wNeg0_3), (dNaN, w0_3)]) false,
+      cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, pub .pass, .silent, pubR (.stopZone 0) (.stop 0)] := by decide
+example : outputs cfgTopic (up ++ [behind,
+      .shape 0 (some [(d0, d0), (0x408F3FFBE76C8B44, d0), (d0, w0_3)]) true,
+      cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, .silent, pubR (.stopZone 0) (.stop 0)] := by decide
+
+-- What the state holds after such a message: no vertices, the mark, and
+-- "not foreign", so that nothing a command carries is taken for it.
+example : (final cfgTopic (up ++ [.shape 0 (some boxMsg) true,
+      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) true])).shapes
+    = [some TopicShape.unusableMark, none] := by decide
+
+-- A disabled zone demands nothing, with the mark or without.
+example : outputs { cfgTopic with zones := [⟨.topic, .stop, 1, false⟩] } (up ++ [near,
+      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) false, cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, .silent, pub .pass] := by decide
+
+-- A slowdown zone with the mark slows every command down; it does not stop.
+example : outputs { cfgTopic with zones := [⟨.topic, .slowdown d0_5, 1, true⟩] } (up ++ [near,
+      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) false, cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, .silent, pubR (.slowdown 0 d0_5) (.slowdown 0)] := by decide
 
 -- A triangle is enough for a topic zone (N33), where a fixed polygon needs
 -- four vertices (R10).
@@ -687,14 +728,14 @@ example : outputs cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
 -- The vertices of that zone after the command that carried `boxBehind`.
 example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
       .cmdZ (ms 1010) fwd (some boxBehind)])).shapes
-    = [some ⟨true, [⟨-700, 300⟩, ⟨-700, -300⟩, ⟨-1000, -300⟩, ⟨-1000, 300⟩]⟩, none] := by
+    = [some ⟨true, [⟨-700, 300⟩, ⟨-700, -300⟩, ⟨-1000, -300⟩, ⟨-1000, 300⟩], false⟩, none] := by
   decide
 
 -- A shape received in the base frame is not moved by anything a command
 -- carries.
 example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) false,
       .cmdZ (ms 1010) fwd (some boxBehind)])).shapes
-    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩], false⟩, none] := by decide
 
 -- Vertices that are refused leave the shape where it was: a different number
 -- of vertices than the shape has (here a triangle for a box), or a vertex
@@ -703,7 +744,7 @@ example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
       .cmdZ (ms 1010) fwd (some [(w0_3, d0), (d0, w0_3), (d0, wNeg0_3)]),
       .cmdZ (ms 1020) fwd (some [(dNaN, w0_3), (wNeg0_7, wNeg0_3), (dNeg1, wNeg0_3),
         (dNeg1, w0_3)])])).shapes
-    = [some ⟨true, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+    = [some ⟨true, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩], false⟩, none] := by decide
 
 /-! ## The report (N13, N14) -/
 

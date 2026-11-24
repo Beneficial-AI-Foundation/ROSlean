@@ -502,11 +502,14 @@ private:
     scan_stamp_ns_ = stamp_ns;
   }
 
-  /// N33. A polygon message for zone `k`. With at least three points its
+  /// N33, ND6. A polygon message for zone `k`. With at least three points its
   /// transform is looked up (with the wait of N26) and its vertices are
   /// handed over in the base frame; with fewer the core is given the short
-  /// list at once and refuses it. The message is kept only if the core
-  /// accepted it.
+  /// list at once and ignores it. What the shim keeps follows the core's
+  /// answer: the message, if it is the zone's shape now; nothing, if the
+  /// core found a vertex it cannot use (the zone then has no shape and
+  /// demands its action until a usable message arrives, ND6); what it had,
+  /// if the core ignored the message.
   void on_shape(uint32_t k, geometry_msgs::msg::PolygonStamped::ConstSharedPtr msg)
   {
     if (!monitor_ || k >= zones_.size()) {
@@ -519,18 +522,32 @@ private:
       tf = wait_for(request, static_cast<int64_t>(now_ns()));
     }
     const auto verts = tf ? polygon_vertices(*tf, points) : std::vector<uint8_t>();
-    const bool accepted =
-      monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size());
-    if (accepted) {
-      zones_[k].shape = msg;
-      zones_[k].display = *msg;
-    } else {
-      RCLCPP_ERROR(
-        get_logger(), "[%s]: polygon message with %zu point(s) in frame '%s' is ignored: it needs "
-        "at least three points, a transform to '%s', and finite coordinates within 999.997 m "
-        "(N33, ND6); the zone keeps the shape it had",
-        zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
-        base_frame_id_.c_str());
+    switch (monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size())) {
+      case CollisionMonitor::ShapeResult::Shape:
+        zones_[k].shape = msg;
+        zones_[k].display = *msg;
+        break;
+      case CollisionMonitor::ShapeResult::Unusable:
+        // Nothing to look up for later commands and nothing to display: an
+        // empty polygon in the base frame, as before the first message.
+        zones_[k].shape.reset();
+        zones_[k].display = geometry_msgs::msg::PolygonStamped();
+        zones_[k].display.header.frame_id = base_frame_id_;
+        RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 5000,
+          "[%s]: polygon message with %zu point(s) in frame '%s' has a coordinate that is not "
+          "finite or is not within 999.997 m in the base frame. The zone has no shape now and "
+          "%s every command until a usable polygon message arrives (ND6)",
+          zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
+          zones_[k].slowdown ? "slows down" : "stops");
+        break;
+      case CollisionMonitor::ShapeResult::Ignored:
+        RCLCPP_ERROR(
+          get_logger(), "[%s]: polygon message with %zu point(s) in frame '%s' is ignored: it "
+          "needs at least three points and a transform to '%s' (N33); the zone keeps what it had",
+          zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
+          base_frame_id_.c_str());
+        break;
     }
   }
 

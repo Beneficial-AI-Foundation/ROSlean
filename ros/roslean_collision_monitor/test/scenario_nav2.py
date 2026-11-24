@@ -623,6 +623,40 @@ POLYGON_TOPIC = [
           dyn(DEGENERATE)),
 ]
 
+# A NaN in a vertex does not blind upstream's zone in general (review CM5,
+# finding 1): the crossing test skips the two edges at the NaN vertex and
+# counts the others. Which points the zone then catches is an accident of the
+# arithmetic: with the NaN in the 4th vertex of a 2 m square, a reading inside
+# the square and one 5 m behind it both stop; with it in the 1st vertex the
+# reading inside PASSES and the one behind stops. (Observed with
+# review/collision_monitor/nav2/review_probe.py nan-vertex.)
+SQUARE = [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)]
+NAN4 = SQUARE[:3] + [(NAN, 1.0)]
+NAN1 = [(NAN, 1.0)] + SQUARE[1:]
+INSIDE = ray(0.5)
+FAR_BEHIND = ray(5.0, PI)
+POLYGON_TOPIC_NAN = [
+    clock(T),
+    shape(NAN4),
+    scan(INSIDE),
+    cmd(V, ZERO, 'the FIRST shape has a NaN in its 4th vertex, reading 0.5 m ahead: stop',
+        state=DYN),
+    scan(FAR_BEHIND),
+    cmd(V, ZERO, 'reading 5 m behind, outside the square: STILL A STOP'),
+    shape(NAN1),
+    scan(INSIDE),
+    cmd(V, V, 'NaN in the 1st vertex instead, reading 0.5 m ahead, inside the square: PASSES',
+        state=NORMAL),
+    scan(FAR_BEHIND),
+    cmd(V, ZERO, 'NaN in the 1st vertex, reading 5 m behind: stop', state=DYN),
+    shape(SQUARE[:2]),
+    cmd(V, ZERO, 'a message with two points is ignored: nothing changes'),
+    shape(SQUARE),
+    cmd(V, V, 'the square without NaN: the reading 5 m behind is outside, passes', state=NORMAL),
+    scan(INSIDE),
+    cmd(V, ZERO, 'the reading 0.5 m ahead is inside the square: stop', state=DYN),
+]
+
 DYN_SLOW = ('Dyn', SLOWDOWN)
 POLYGON_TOPIC_MOVING = [
     clock(T),
@@ -860,6 +894,8 @@ SCENARIOS = {
     'polygon-topic': dict(
         family='topic-zones', params=[P('Dyn'), 'Dyn.visualize:=true'], steps=POLYGON_TOPIC,
         start='unconfigured', watch=['Dyn'], shapes=['zone_shape']),
+    'polygon-topic-nan': dict(
+        family='topic-zones', params=[P('Dyn')], steps=POLYGON_TOPIC_NAN, shapes=['zone_shape']),
     'polygon-topic-moving': dict(
         family='topic-zones', params=[P('Dyn'), 'Dyn.action_type:=slowdown'],
         steps=POLYGON_TOPIC_MOVING, shapes=['zone_shape']),

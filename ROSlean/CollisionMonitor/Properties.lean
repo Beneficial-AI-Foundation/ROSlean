@@ -135,14 +135,41 @@ theorem yieldsZero_iff (a : Action) (v : Twist) :
       a.isStop = true ∨ v.planarZero = true ∨ ∃ k r, a = .slowdown k r ∧ F64.isZero r = true := by
   cases a <;> simp [Action.yieldsZero, Action.isStop]
 
-/-- A zone of the zones in force is a configured zone with the same action,
-threshold and flag. -/
+/-- A refresh keeps the mark of an unusable message. -/
+theorem refresh_unusable (sh : TopicShape) (verts : Option (List Coords)) :
+    (sh.refresh verts).unusable = sh.unusable := by
+  unfold TopicShape.refresh
+  repeat' split
+  all_goals rfl
+
+/-- The refresh at a command neither sets nor removes the mark of an
+unusable message (ND6). -/
+theorem shapeUnusable_refreshShapes (cfg : Config) (shapes : List (Option TopicShape))
+    (zoneVerts : List (Option (List Coords))) (k : Nat) :
+    shapeUnusable (refreshShapes cfg shapes zoneVerts) k = shapeUnusable shapes k := by
+  unfold shapeUnusable
+  rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD]
+  simp only [refreshShapes, List.getElem?_map, List.getElem?_zipIdx]
+  cases hs : shapes[k]? with
+  | none => simp
+  | some o =>
+    cases o with
+    | none => by_cases hr : cfg.refreshes k = true <;> simp [hr]
+    | some sh => by_cases hr : cfg.refreshes k = true <;> simp [hr, refresh_unusable]
+
+/-- A zone of the zones in force is a configured zone with the same action
+and flag. Its threshold is the configured one, unless the zone is a topic
+zone for which the state holds the mark of an unusable message (ND6): then
+it is 0. -/
 theorem liveConfig_action (cfg : Config) (st : State) (zoneVerts : List (Option (List Coords)))
     (k : Nat)
     (z : Zone) (h : (liveConfig cfg st zoneVerts).zones[k]? = some z) :
-    ∃ z0, cfg.zones[k]? = some z0 ∧ z.action = z0.action ∧ z.minPoints = z0.minPoints ∧
+    ∃ z0, cfg.zones[k]? = some z0 ∧ z.action = z0.action ∧
+      (z.minPoints = z0.minPoints ∨
+        (z0.shape = .topic ∧ shapeUnusable st.shapes k = true ∧ z.minPoints = 0)) ∧
       z.enabled = z0.enabled := by
   obtain ⟨z0, h0, -, h1, h2, h3⟩ := withShapes_action cfg _ k z h
+  rw [shapeUnusable_refreshShapes] at h2
   exact ⟨z0, h0, h1, h2, h3⟩
 
 /-! ## One command: the state -/
@@ -630,7 +657,8 @@ theorem wrong_count (cfg : Config) (st : State) (now : Nat) (v : Twist) (s : Sca
 /-- **Only if (stop zone).** A stop named after zone `k` is demanded only if
 zone `k` of the configuration is a stop zone, is enabled, has a shape (its
 fixed one, or the one the state holds for it), and has at least `minPoints`
-of the tested points inside that shape. -/
+of the tested points inside that shape, or is a topic zone for which the
+state holds the mark of an unusable message (ND6). -/
 theorem evaluate_stopZone_only_if (cfg : Config) (st : State) (now : Nat)
     (scanPts : Option (List Coords))
     (zoneVerts : List (Option (List Coords))) (k : Nat)
@@ -638,18 +666,22 @@ theorem evaluate_stopZone_only_if (cfg : Config) (st : State) (now : Nat)
     ∃ pts z z0, sourcePoints cfg st now scanPts = some pts ∧
       (liveConfig cfg st zoneVerts).zones[k]? = some z ∧ cfg.zones[k]? = some z0 ∧
       z0.action = .stop ∧ z0.enabled = true ∧ z.shape.isSet = true ∧
-      z0.minPoints ≤ pts.countP z.shape.contains := by
+      (z0.minPoints ≤ pts.countP z.shape.contains ∨
+        (z0.shape = .topic ∧ shapeUnusable st.shapes k = true)) := by
   obtain ⟨pts, hpts, z, hz, ha, ht, -⟩ :=
     (evaluate_eq_stopZone_iff cfg st now scanPts zoneVerts k).mp h
   obtain ⟨z0, h0, h1, h2, h3⟩ := liveConfig_action cfg st zoneVerts k z hz
   obtain ⟨t1, t2, t3⟩ := (triggered_iff z pts).mp ht
-  exact ⟨pts, z, z0, hpts, hz, h0, by rw [← h1]; exact ha, by rw [← h3]; exact t1, t2,
-    by rw [← h2]; exact t3⟩
+  refine ⟨pts, z, z0, hpts, hz, h0, by rw [← h1]; exact ha, by rw [← h3]; exact t1, t2, ?_⟩
+  rcases h2 with h2 | ⟨h2, h4, -⟩
+  · left; rw [← h2]; exact t3
+  · exact Or.inr ⟨h2, h4⟩
 
 /-- **Only if (slowdown).** A slowdown is demanded only if no stop zone is
 triggered and the zone it names is an enabled slowdown zone of the
 configuration with that ratio, has a shape, and has at least `minPoints` of
-the tested points inside. So a monitor that stops whenever a slowdown zone
+the tested points inside or is a topic zone for which the state holds the
+mark of an unusable message (ND6). So a monitor that stops whenever a slowdown zone
 triggers is not this one. -/
 theorem evaluate_slowdown_only_if (cfg : Config) (st : State) (now : Nat)
     (scanPts : Option (List Coords))
@@ -659,13 +691,17 @@ theorem evaluate_slowdown_only_if (cfg : Config) (st : State) (now : Nat)
       NoStop (liveConfig cfg st zoneVerts).zones pts ∧
       (liveConfig cfg st zoneVerts).zones[k]? = some z ∧ cfg.zones[k]? = some z0 ∧
       z0.action = .slowdown r ∧ r < F64.one ∧ z0.enabled = true ∧ z.shape.isSet = true ∧
-      z0.minPoints ≤ pts.countP z.shape.contains := by
+      (z0.minPoints ≤ pts.countP z.shape.contains ∨
+        (z0.shape = .topic ∧ shapeUnusable st.shapes k = true)) := by
   obtain ⟨pts, hpts, hns, z, hz, ha, ht, hlt, -⟩ :=
     (evaluate_eq_slowdown_iff cfg st now scanPts zoneVerts k r).mp h
   obtain ⟨z0, h0, h1, h2, h3⟩ := liveConfig_action cfg st zoneVerts k z hz
   obtain ⟨t1, t2, t3⟩ := (triggered_iff z pts).mp ht
-  exact ⟨pts, z, z0, hpts, hns, hz, h0, by rw [← h1]; exact ha, hlt, by rw [← h3]; exact t1, t2,
-    by rw [← h2]; exact t3⟩
+  refine ⟨pts, z, z0, hpts, hns, hz, h0, by rw [← h1]; exact ha, hlt, by rw [← h3]; exact t1, t2,
+    ?_⟩
+  rcases h2 with h2 | ⟨h2, h4, -⟩
+  · left; rw [← h2]; exact t3
+  · exact Or.inr ⟨h2, h4⟩
 
 /-- **Only if (stop at all).** Zero is demanded whatever the command only if
 the source is invalid or a stop zone is triggered. -/

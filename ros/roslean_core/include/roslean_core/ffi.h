@@ -107,8 +107,12 @@ lean_object * roslean_cm_on_scan(
  * only if `has_verts` is not 0 (0: the transform could not be looked up). */
 lean_object * roslean_cm_on_shape(
   lean_object * m, uint32_t zone, uint8_t foreign, uint8_t has_verts, lean_object * verts);
-/* The shape call made last was accepted. */
+/* The shape call made last was accepted: it installed a shape, or the mark
+ * of a message with an unusable vertex. */
 uint8_t roslean_cm_shape_accepted(lean_object * m);
+/* The state holds, for zone `zone`, the mark of a polygon message with an
+ * unusable vertex (ND6). A query. */
+uint8_t roslean_cm_shape_unusable(lean_object * m, uint32_t zone);
 /* Which transforms to look up for this command: 0 none, 1 those of the topic
  * zones, 3 the scan's and the zones'. A query. */
 uint8_t roslean_cm_cmd_plan(
