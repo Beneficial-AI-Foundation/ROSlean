@@ -41,6 +41,22 @@ class Recorder(check_demo.Recorder):
         super().__init__(check_demo.VARIANTS['nav2'])
         self.inputs = []      # (t, velocity): every command to the monitor
         self.attempts = []    # [t_drop, box, t_end, outcome]
+        self.last_scan = None
+
+    def on_scan(self, msg):
+        super().on_scan(msg)
+        self.last_scan = msg
+
+    def readings_in(self, x0, x1, y0, y1):
+        """How many valid readings of the last scan lie in a rectangle of the
+        base frame, computed here from the scan and the lidar's place."""
+        count, angle = 0, self.last_scan.angle_min
+        for r in self.last_scan.ranges:
+            if self.last_scan.range_min <= r <= self.last_scan.range_max:
+                x, y = obstacle.LIDAR_X + r * math.cos(angle), r * math.sin(angle)
+                count += x0 < x < x1 and y0 < y < y1
+            angle += self.last_scan.angle_increment
+        return count
 
     def on_in(self, msg):
         super().on_in(msg)
@@ -134,6 +150,12 @@ def tour_summary(rec, log_text, seconds):
           f'{longest:.1f} s' + (' (still so at the end)' if held == longest and held > 0 else ''))
     moved = check_demo.path_length(rec.between(t1 - 30.0, t1))
     print(f'in the last 30 s the robot moved {moved:.2f} m')
+    x, y, yaw = rec.track[-1][1:]
+    print(f'at the end the robot was at ({x:.2f}, {y:.2f}), heading {math.degrees(yaw):.0f} deg')
+    if rec.last_scan is not None:
+        print('readings of the last scan inside the rectangle of FootprintStop: '
+              f'{rec.readings_in(-0.155, 0.305, -0.155, 0.155)}, of FootprintSlow: '
+              f'{rec.readings_in(-0.205, 0.705, -0.205, 0.205)} (min_points is 6)')
 
 
 def main():

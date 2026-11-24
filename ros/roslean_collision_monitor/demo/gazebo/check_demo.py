@@ -70,7 +70,6 @@ VARIANTS = {
     'nav2': dict(launch='cm_nav2_launch.py', cmd_in='cmd_vel_smoothed', cmd_out='cmd_vel',
                  stop_edge=0.305, node='collision_monitor'),    # nav2_monitor.yaml
 }
-STOP_EDGE = VARIANTS['mux']['stop_edge']
 STATE_ACTIONS = {0: 'do nothing', 1: 'stop', 2: 'slowdown', 3: 'approach', 4: 'limit'}
 
 
