@@ -435,6 +435,15 @@ example : outputs cfg (up ++ [clear, cmd (ms 1000) fwd, .shutdown, cmd (ms 1100)
 example : (run cfg (State.init cfg) (up ++ [.shutdown, .configure, .activate])).1.phase
     = .finalized := by decide
 
+-- **Counterexample to "if the phase is not active, no zero is on record"**
+-- (SPEC_NAV2, section 4, "Lifecycle invariants", as first written): a node
+-- shut down while a stop is in force is finalized with `prevZero` set and
+-- the previous report `source`. The invariant holds for the unconfigured and
+-- the inactive phase (`Inv.quiet`); here the fields are never read again.
+example : (run cfg (State.init cfg) (up ++ [cmd (ms 1000) fwd, .shutdown])).1
+    = { State.init cfg with phase := .finalized, prevZero := true, stopStamp := ms 1000,
+                            prevReport := .source } := by decide
+
 -- Transitions the lifecycle does not allow change nothing: `activate` while
 -- unconfigured, `cleanup` while active.
 example : (run cfg (State.init cfg) [.activate]).1 = State.init cfg := by decide
@@ -527,6 +536,16 @@ example : outputs cfgTopic (up ++ [near, cmd (ms 1000) fwd, .shape 0 boxMsg .bas
 -- The accepted shape: the vertices as received, and in millimetres.
 example : (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base])).1.shapes
     = [some ⟨boxMsg, false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+
+-- **Counterexample to "a shape message changes the state iff it is
+-- accepted"** (SPEC_NAV2, section 4, "Shape accepted", as first written): the
+-- same message a second time is accepted and changes nothing. Only "only if"
+-- holds (`step_shape_changes`, `step_shape_same`).
+example : (acceptShape cfgTopic (run cfgTopic (State.init cfgTopic)
+      (up ++ [.shape 0 boxMsg .base])).1 0 boxMsg .base).isSome = true := by decide
+example : (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base,
+      .shape 0 boxMsg .base])).1
+    = (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base])).1 := by decide
 
 -- Refused messages leave the shape in force (N33, ND6): two points; a NaN
 -- coordinate (upstream accepts it and the zone goes blind); a frame whose

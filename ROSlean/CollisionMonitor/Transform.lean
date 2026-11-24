@@ -105,7 +105,8 @@ theorem abs_sval64 (b : Nat) : |sval64 b| = val64 b := by
   · rw [abs_neg, abs_of_nonneg (val64_nonneg b)]
   · exact abs_of_nonneg (val64_nonneg b)
 
-private theorem zpow_shift (s B : ℕ) : (2 : ℝ) ^ ((s : ℤ) - (B : ℤ)) = (2 : ℝ) ^ s / (2 : ℝ) ^ B := by
+private theorem zpow_shift (s B : ℕ) :
+    (2 : ℝ) ^ ((s : ℤ) - (B : ℤ)) = (2 : ℝ) ^ s / (2 : ℝ) ^ B := by
   rw [zpow_sub₀ (by norm_num), zpow_natCast, zpow_natCast]
 
 theorem dval_ofF64 (b : Nat) : dval (Dy.ofF64 b) = sval64 b := by

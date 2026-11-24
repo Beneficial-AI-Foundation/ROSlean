@@ -19,6 +19,13 @@ one of the model's integers is here, in exact integer arithmetic: there is no
 "Refused" is `none`: the builder then marks the configuration as not accepted
 (`ROSleanCore.CollisionMonitorFFI`).
 
+Since the model applies a transform to every scan point
+(`Xform.pointMm`, `ROSleanCore.CollisionMonitorXform`), `coordMm` is no
+longer on the path of a scan: it remains as the reference for the identity
+transform (`Xform.identity.pointMm x y = (coordMm x, coordMm y)` for finite
+coordinates, proved in `ROSlean/CollisionMonitor/Transform.lean`) and as the
+exported query `roslean_cm_coord_mm`.
+
 A finite binary64 value with pattern `b` has magnitude
 `F64.mant b * 2 ^ F64.shift b / 2 ^ 1075`, and a finite binary32 value has
 magnitude `F32.mant b * 2 ^ F32.shift b / 2 ^ 150`. The first three conversions

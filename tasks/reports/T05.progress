@@ -3,3 +3,5 @@
 2026-11-24T09:25:48Z core model done: CollisionMonitorXform.lean (exact transform), events E1-E8, state, Output.answer; core/ builds; old FFI entry points kept (signatures unchanged). Root proofs not yet adapted. next: Basic, Transform, Properties, Trace, FFI proofs
 2026-11-24T09:42:38Z Basic, Geometry, Transform (new), Properties, Lifecycle (new) build without sorry; next: Trace, FFI proofs, Examples, then docs
 2026-11-24T09:52:21Z whole root package builds without sorry (6653 jobs): Trace, FFI proofs, Examples adapted; next: print axioms, pixi build + C-level tests, then THEOREMS.md/SPEC.md/SPEC_NAV2.md and report
+2026-11-24T09:56:04Z THEOREMS.md rewritten; pixi run build failed at link (module list in ros/roslean_core/CMakeLists.txt lacks the new module): one line added; next: pixi run build again (up to 10 min), then C-level tests
+2026-11-24T10:05:30Z pixi run build passes (4 packages) after the CMake line; roslean_core tests 2/2, smoke_conversions and smoke_timeouts pass; SPEC.md, SPEC_NAV2.md updated; origin/collision-monitor merged (no new commits); next: final re-run of builds and network-free tests (about 5 min), report, push
