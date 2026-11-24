@@ -457,11 +457,21 @@ private:
   {
     std::string why;
     auto tf = try_lookup(*tf_buffer_, request, &why);
+    bool slept = false;
     while (!tf && rclcpp::ok() && clock_valid_ &&
       clock_while_waiting(start_ns) < start_ns + tolerance_ns_)
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      slept = true;
       tf = try_lookup(*tf_buffer_, request, &why);
+    }
+    if (slept) {
+      // Once more at the end, as tf2 does; and the clock the wait ended with
+      // is kept for the stamp of the polygons (publish_polygons).
+      if (!tf && clock_valid_) {
+        tf = try_lookup(*tf_buffer_, request, &why);
+      }
+      waited_until_ns_ = clock_while_waiting(start_ns);
     }
     if (!tf) {
       RCLCPP_ERROR_THROTTLE(
@@ -541,6 +551,7 @@ private:
       lz = bits_of(cmd.linear.z), ax = bits_of(cmd.angular.x), ay = bits_of(cmd.angular.y),
       az = bits_of(cmd.angular.z);
     const uint64_t t = now_ns();
+    waited_until_ns_.reset();
     std::optional<std::vector<uint8_t>> points;
     std::vector<uint8_t> zone_verts;
     if (clock_valid_) {
@@ -689,11 +700,20 @@ private:
   }
 
   /// N16 (T8): every visualised zone, with the node clock as the stamp.
+  /// Under simulated time, after a callback that waited for a transform,
+  /// rclcpp's clock still shows the time before the wait; the stamp is then
+  /// the clock reading the wait ended with, which is what upstream's clock
+  /// shows at this point.
   void publish_polygons()
   {
+    rclcpp::Time stamp = now();
+    if (sim_time_ && waited_until_ns_ && *waited_until_ns_ > stamp.nanoseconds()) {
+      stamp = rclcpp::Time(*waited_until_ns_, stamp.get_clock_type());
+    }
+    waited_until_ns_.reset();
     for (auto & zone : zones_) {
       if (zone.pub) {
-        zone.display.header.stamp = now();
+        zone.display.header.stamp = stamp;
         zone.pub->publish(zone.display);
       }
     }
@@ -1189,6 +1209,9 @@ private:
   bool sim_time_{false};
   bool clock_valid_{true};
   int64_t sim_clock_ns_{0};  // the usable /clock message seen last (for waits only)
+  // The clock reading at which the last wait of the current callback ended,
+  // if it waited: for the stamp of the polygons only.
+  std::optional<int64_t> waited_until_ns_;
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
   // Transforms (T6).

@@ -1134,7 +1134,7 @@ created; the node stays unconfigured and the process stays up (N3).
 | Footprint subscription | only with `approach` | Refused with it |
 | Zone bound to a subset of sources | `<zone>.sources_names` other than the one source | Refused |
 | Deprecated `max_points` | `<zone>.max_points` set | Refused (D10) |
-| Component | loading as `nav2_collision_monitor::CollisionMonitor` into a container | See ND10 and the report of task T06 |
+| Component | loading the node into a component container | Provided as `roslean_collision_monitor::CollisionMonitorNode` (library `collision_monitor_component`; test `smoke_component`), without the handling of D15, which lives in the stand-alone executable's `main` (ND10) |
 | Toggle and run-time parameters | `~/toggle`; setting a parameter while the node runs | Not provided; a change is rejected (ND8) |
 | The removed sensor pose | `<source>.roslean_sensor_pose` | Refused, with a message that points to TF |
 | Zone names the state topic cannot report | two zones of one name, a zone named `invalid source`, an empty name | Refused (ND5) |

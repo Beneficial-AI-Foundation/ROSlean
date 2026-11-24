@@ -17,10 +17,10 @@ scripts and the monitor's narrator are in this directory.
 
 Arguments:
   monitor_package:=nav2_collision_monitor
-                           run upstream's node instead of the Lean one. It is
-                           a lifecycle node, so a lifecycle manager is started
-                           for it; the transform from the lidar to the base
-                           that it looks up comes from robot_state_publisher.
+                           run upstream's node instead of the Lean one. Both
+                           are lifecycle nodes, so a lifecycle manager is
+                           started; the transform from the lidar to the base
+                           that they look up comes from robot_state_publisher.
   planner:=nav2            Nav2 instead of the patrol script
   tour:=false              with Nav2: do not send goals automatically
   rviz:=false              with Nav2: no RViz window
@@ -101,7 +101,6 @@ def generate_launch_description():
         urdf = f.read().replace('${namespace}', '')  # a placeholder in the file
     use_nav2 = LaunchConfigurationEquals('planner', 'nav2')
     use_patrol = LaunchConfigurationEquals('planner', 'patrol')
-    upstream_monitor = LaunchConfigurationEquals('monitor_package', 'nav2_collision_monitor')
 
     return LaunchDescription([
         DeclareLaunchArgument('planner', default_value='patrol', choices=['patrol', 'nav2']),
@@ -146,14 +145,13 @@ def generate_launch_description():
         Node(package=LaunchConfiguration('monitor_package'), executable='collision_monitor',
              name=GATE, parameters=[os.path.join(here, 'monitor.yaml'), sim_time],
              output='screen'),
-        # Upstream's node does nothing until it is configured and activated.
+        # Either node is a lifecycle node (the Lean one since task T06) and
+        # does nothing until it is configured and activated.
         Node(package='nav2_lifecycle_manager', executable='lifecycle_manager',
              name='lifecycle_manager_' + GATE,
-             parameters=[sim_time, {'autostart': True, 'node_names': [GATE]}],
-             condition=upstream_monitor),
-        # The robot's frames, from the URDF. Upstream's monitor looks up
-        # base_scan -> base_footprint here; Nav2 needs them as well. The Lean
-        # monitor does not use them.
+             parameters=[sim_time, {'autostart': True, 'node_names': [GATE]}]),
+        # The robot's frames, from the URDF. Either monitor looks up
+        # base_scan -> base_footprint here; Nav2 needs them as well.
         Node(package='robot_state_publisher', executable='robot_state_publisher',
              parameters=[sim_time, {'robot_description': urdf}]),
 

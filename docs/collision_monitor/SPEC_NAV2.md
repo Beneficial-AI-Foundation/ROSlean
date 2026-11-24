@@ -884,6 +884,36 @@ command call reads each coordinate into a machine word (`coordMmAt`,
 table "Cost of a command through the calls of section 8" below. `test_cm_ffi` is back to 47 s (169 s after T05, 39 to 42 s
 before).
 
+**Cost of a command through the calls of section 8 (T06, measured).** One
+machine (Apple M5, macOS arm64), nothing else running. `bench_cm` runs the
+callback bodies of both nodes in one process on the same messages; the Lean
+side does what the node does for a command (clock, plan, the points of
+every stored reading under the transform, the core, the product, publish)
+with the identity as the transform and no TF buffer; upstream is its own
+class. Median of 20,000 commands (4,000 at 10,000 readings), nothing in a
+zone, microseconds:
+
+| Stored readings | Two circles: Lean / upstream | Two 4-vertex polygons: Lean / upstream | Budget (core alone) |
+| --- | --- | --- | --- |
+| 360 | 10.3 / 1.7 | 16.5 / 2.8 | 50 |
+| 1000 | 27.8 / 3.5 | 44.8 / 6.4 | |
+| 1080 | 30.0 / 4.1 | 48.9 / 7.2 | 150 |
+| 10,000 | 281 / 31 | 438 / 60 | 1500 |
+
+So a command costs 6 to 9 times upstream's and stays under the budget T03
+set for the core alone, the shim's work included. The scan callback takes
+10 ns per reading (the ranges are copied and decoded), where upstream
+stores a pointer. The core alone (`cmd_cost`, the points handed over as
+bytes): 13.7 and 22.9 us at 360 readings, 26.7 and 44.2 at 1080, 251 and 409
+at 10,000. Through the two node binaries over topics
+(`run_cm_bench.py node`, 50 commands and 25 scans a second for 20 s per
+size): both nodes answered every command (851, 851 and 850) with no answer
+differing; the median latency, which is mostly the measuring program's and
+the middleware's, was 5.8, 6.7 and 7.5 ms for the Lean node and 6.3, 6.6 and
+6.4 ms for upstream at 360, 1080 and 10,000 readings. Not measured: a
+transform from the TF buffer in the loop, base shift correction, topic
+zones, Linux.
+
 **Cost of B, measured (history).**
 `review/collision_monitor/nav2/TransformCost.lean` is a Mathlib-free
 prototype of the exact transform on unbounded integers, compiled with

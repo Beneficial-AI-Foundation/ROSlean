@@ -22,7 +22,7 @@ the node executes.
 * **Refusals.** A monitor is ok only if the source was set, no raw value was
   refused, no vertex was given to no polygon, and `Config.ok` holds
   (`cmOk_iff`, `cmOk_cfg_ok`). The builder is fail-closed over any sequence
-  of its five calls (`BuilderCall`): if any call, anywhere in the sequence,
+  of its six calls (`BuilderCall`): if any call, anywhere in the sequence,
   carries a refused value (a timeout, a radius, `min_points`, a vertex), the
   monitor is not ok, whatever the other calls are (`not_ok_of_refused_call`);
   so is it if a vertex is added when the zone added last is not a polygon
@@ -30,45 +30,53 @@ the node executes.
   (`not_ok_without_set_source`). What is refused is characterised in
   `ROSlean.CollisionMonitor.Convert`.
 * **Fail closed.** A monitor that is not ok answers every command with
-  `stopSource`, after any sequence of calls (`apply_cmd_of_not_ok`,
-  `foldl_exec_not_ok`).
-* **Scan decoding.** The byte array of a scan is decoded by a total function
-  into `size / 20` readings and as many coordinate pairs
-  (`decodeBeams_length`, `decodeCoords_length`, `getElem_decodeBeams`,
-  `getElem_decodeCoords`), every decoded pattern fits its field
-  (`beamAt_lt`, `coordsAt_lt`), and decoding inverts the encoding the shim
-  performs (`decodeBeams_encodeBeams`, `decodeCoords_encodeBeams`). The
-  coordinates are in the base frame already. They are kept as bit patterns
-  and travel with every command; the model converts them with `coordMm`
-  when the command is evaluated. They always fit the stored scan
-  (`fits_decode`), and the points are those of the valid records
-  (`points_decode`).
+  `stopSource` while it is in the active phase, and with nothing otherwise,
+  after any sequence of calls: never a pass, never a slowdown
+  (`apply_cmd_of_not_ok`, `apply_out_of_not_ok`, `foldl_exec_not_ok`).
+* **Decoding.** Each of the four byte arrays of the interface (the ranges
+  of a scan, the coordinate pairs of a command, the vertices of a shape
+  message, the zone vertices of a command) is decoded by a total function
+  (`decodeBeams_length`, `decodePairs_length`, `decodeZoneVerts_empty`),
+  every decoded pattern fits its field (`beamAt_lt`, `pairAt_lt`), and
+  decoding inverts the encoding the shim performs
+  (`decodeBeams_encodeRanges`, `decodePairs_encodePairs`,
+  `decodeZoneVerts_encodeZoneVerts`). Coordinates are in the base frame and
+  are kept as bit patterns; the model converts them when a command is
+  evaluated (`coordMm`) or a shape is taken (`vertexCoordMm`). The pairs of
+  a command fit the stored scan iff there is one per reading (`fits_decode`),
+  and the points are then those of the valid readings (`points_decode`).
 * **Events.** Each call is `step` on the event it delivers
-  (`cmOnScan_eq`, `cmOnCmd_eq`, `exec_eq_apply`). The event of a command
-  carries the coordinates of the scan call made last
-  (`Call.event`, `events`), or none if that scan was reported unusable. So
-  after any sequence of calls, with no condition on them, the state is the
-  one `run` reaches on the events they deliver (`foldl_exec_run`), from the
-  state after `configure` and `activate` (`startState`, `run_startState`).
-* **Read-back.** The three numbers the node reads after a command determine
-  the velocity part of the model's output exactly (`readBack_eq`). The
-  report and the difference between `silent` and a withheld velocity are
-  not exposed by this interface yet (task T06).
+  (`cmOnLifecycle_eq`, `cmOnScan_eq`, `cmOnShape_eq`, `cmOnCmd_eq`,
+  `exec_st`), and everything an event carries is an argument of its call:
+  the interface keeps nothing between calls but the monitor. So after any
+  sequence of calls, with no condition on them, the state is the one `run`
+  reaches on the events they deliver (`events`, `foldl_exec_run`), from the
+  initial state `State.init`.
+* **The plan of a command.** `cmCmdPlan` tells the shim which transforms to
+  look up. If it says none, the command call returns the same monitor
+  whatever the two arrays hold; if it says "the zones' only", whatever the
+  scan coordinates are (`cmOnCmd_of_plan_zero`, `cmOnCmd_of_plan_one`); and
+  it says "the scan's" exactly when the command is processed, the source is
+  enabled and a scan is stored that is not too old (`cmdPlan_eq_three_iff`).
+* **Shape messages.** The query after a shape call says whether the model
+  accepted the message (`cmShapeAccepted_iff`); only then does the state
+  change (`cmOnShape_st_of_accepted`, `cmOnShape_st_of_refused`).
+* **Read-back.** The five numbers the node reads after a command determine
+  the model's output exactly: whether the command was processed, the
+  velocity action or that it is withheld, and the report (`readBack_eq`,
+  `outputOfCodes_codes`, `kindOf_eq_zero_iff`).
 * **End to end.** `cm_readBack_after`: create a monitor from a builder that is
-  ok, make any sequence of calls of the two exported event functions (scans
-  usable or not, commands), then deliver a command; what the three exported
-  queries return is the velocity of the output of `step` for that command,
-  in the state `run` reaches on the delivered events, on the configuration
-  the builder holds. The statement is on the exported functions as the node
-  calls them.
+  ok, make any sequence of lifecycle, scan, shape and command calls, then
+  deliver a command; what the five exported queries return is the output of
+  `step` for that command, in the state `run` reaches on the delivered
+  events from `State.init`, on the configuration the builder holds. The
+  statement is on the exported functions as the node calls them
+  (`cm_readBack_after_fast` in `Fast.lean` for the command call C makes).
 
 What remains outside Lean is the C++ shim: reading the parameters and the
-clock, the floating-point work listed in the SPEC as T1 to T3, and acting on
-the returned decision.
-
-This file describes the interface as it stands after tasks T05 and T05b: the
-calls of the node of SPEC.md, read in the extended model. The calls of
-SPEC_NAV2.md, section 8, and their theorems are task T06.
+clock, looking transforms up and applying them (the points and vertices a
+call carries are the shim's word), the floating-point work listed in
+SPEC_NAV2.md, section 7, and acting on the returned decision.
 -/
 
 namespace ROSlean.CollisionMonitor.FFI
