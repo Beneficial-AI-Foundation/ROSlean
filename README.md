@@ -109,12 +109,11 @@ What has been run where:
   `pixi run test` with `29 tests, 0 errors, 0 failures`, the turtlesim demo
   and the three Gazebo checks.
 - **Linux arm64 through pixi** (the same audit; a plain `ubuntu:24.04`
-  container in Docker on that Mac): **`pixi run build` fails as the tree
-  is**, first for want of `strip`, then linking `test_cm_ffi`. With
-  `apt-get install binutils` and, in an empty build tree,
-  `pixi run bash -c 'export LDFLAGS="$LDFLAGS -pthread"; colcon build --symlink-install --base-paths ros --cmake-args -G Ninja'`
-  it builds, and `pixi run test` gives `28 tests, 0 errors, 0 failures`
+  container in Docker on that Mac): at the audited commit `pixi run build`
+  failed there, first for want of `strip`, then linking `test_cm_ffi`;
+  with two workarounds `pixi run test` gave `28 tests, 0 errors, 0 failures`
   (beside upstream 1.3.13, which is what `pixi.lock` pins on Linux).
+  Both were repaired after the audit (commits `f9fcdeb`, `da8fd3d`: `strip` is found from the compiler's name, `test_cm_ffi` links `Threads`). On the repaired tree, in the same kind of container, `pixi run build` succeeds as written, the library is stripped, and five tests were run and pass (`test_mux_ffi`, `test_cm_ffi`, `smoke_conversions`, `smoke_transforms`, `smoke_node`); the full suite was not run again there.
   `pixi run prove` needs neither step. The demos and `pixi run cm-check`
   need a display.
 - **Linux x86-64** (Ubuntu 24.04, through pixi): twist_mux: `pixi run build`

@@ -138,6 +138,9 @@ Decided by the user on 2026-11-24:
 | (T10) With the stop zone, Nav2's own tour ended with the robot standing for good in three runs of six (both nodes; stock `approach` reached 11 places). Should the documented edit stay "a fixed stop polygon" with this said, or recommend a slowdown-only zone under a real planner? | Stays a stop polygon with a slowdown zone, with the result stated plainly in the tutorial, the README and the site. **Open for the user** |
 | (T10) The two pictures in the tutorial were made by Gazebo's own screenshot service (the 3D scene only); the screen was locked, so nobody watched a window. | Keep them, labelled as such, until a person takes screenshots at an unlocked screen |
 | (T10) One start of the Nav2 variant in 28 failed (Nav2's lifecycle manager stopped at `behavior_server` on a cold start). Should the launch file wait for the simulated clock? | Not changed; recorded |
+| (T12) Linux through pixi did not build (no `strip` found; `test_cm_ffi` linked without the thread library). | Repaired by the orchestrator after the audit and checked in a plain `ubuntu:24.04` arm64 container: the build succeeds as written; five tests pass; the full suite was not run again there |
+| (T12) Three sentences on the site omit a hypothesis of the theorem they cite (`stale`/`no_transform`: source enabled; `noClock_velocity`: node active; `run_stop`: fixed-shape zone, fresh fitting scan). | **Open: not yet corrected** |
+| (T12) The site's collision-monitor links point to `main`, where the files do not exist until `collision-monitor` is merged. | Left; they resolve when the user merges |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |

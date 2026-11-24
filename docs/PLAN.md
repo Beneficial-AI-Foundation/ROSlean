@@ -144,7 +144,7 @@ point markers. What follows is the rest.
   Ubuntu 24.04 (arm64 container): no `strip` is found for
   `libleanshared.so`, and `test_cm_ffi` does not link without `-pthread`
   ([AUDIT.md](AUDIT.md), findings 1 and 2). With two workarounds the full
-  suite passes there. (`pixi run test` as a whole, which no task had run,
+  suite passes there. Both were repaired after the audit (commits `f9fcdeb`, `da8fd3d`: `strip` is found from the compiler's name, `test_cm_ffi` links `Threads`). On the repaired tree, in the same kind of container, `pixi run build` succeeds as written, the library is stripped, and five tests were run and pass (`test_mux_ffi`, `test_cm_ffi`, `smoke_conversions`, `smoke_transforms`, `smoke_node`); the full suite was not run again there. (`pixi run test` as a whole, which no task had run,
   was run by the audit: macOS arm64, 29 tests, 0 failures; the Linux
   container, 28 tests, 0 failures.)
 - **x86-64, and Linux on its own hardware.** The node with the Nav2

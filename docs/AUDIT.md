@@ -23,7 +23,8 @@ against a document and not against a run, the document is named.
   two places, on a plain `ubuntu:24.04`: no `strip` is found, and
   `test_cm_ffi` does not link without `-pthread`. With two workarounds
   that change no file of the repository, everything that needs no display
-  passed. Findings 1 and 2.
+  passed. Findings 1 and 2. **After the audit** (added by the orchestrator,
+  not part of the audit's own runs): Both were repaired after the audit (commits `f9fcdeb`, `da8fd3d`: `strip` is found from the compiler's name, `test_cm_ffi` links `Threads`). On the repaired tree, in the same kind of container, `pixi run build` succeeds as written, the library is stripped, and five tests were run and pass (`test_mux_ffi`, `test_cm_ffi`, `smoke_conversions`, `smoke_transforms`, `smoke_node`); the full suite was not run again there.
 - **The theorems are as stated.** All 73 theorem names in the README and on
   the pages exist, their statements say what the text says (three small
   omissions of a hypothesis, finding 9), and every one of the 1,084
