@@ -60,9 +60,20 @@ T00 ([reports/T00.md](reports/T00.md)) on one cloud session: x86-64, Ubuntu
 | `(cd core && lake build)` | The executable Lean core. No Mathlib. | 2 s |
 | `lake exe cache get && lake build` | All theorems. The setup script has already fetched the cache (1.5 min). | 30 s |
 | `pixi run build` | `colcon build` of the ROS packages. | 1 min |
-| `pixi run test` | All colcon tests (11 tests in 4 packages). | 20 min |
+| `pixi run test-quick` | The colcon tests without those labelled `long`: the C interface tests, the smoke tests of the node, the mux scenarios. | 1 to 2 min |
+| `pixi run test` | All colcon tests (11 tests in 4 packages). Almost all of the time is waiting: real nodes driven in real time, against upstream. | 20 min |
 | `review/collision_monitor/run_upstream_probe.sh $PWD/.pixi/envs/default` | Runs upstream's `nav2_collision_monitor` binary. | 1 min |
 | `pixi run cm-check-cloud` | Headless Gazebo check of the demo. | 1 to 3 min; see below |
+
+### Which tests to run
+
+While working and when finishing a task, run `pixi run test-quick`, plus the
+single long tests your task is about (for example
+`colcon test --base-paths ros --packages-select roslean_collision_monitor --ctest-args -R upstream_scenario`).
+The full `pixi run test` is run once, at the very end of the whole effort,
+by whoever orchestrates; a task does not run it. Say in the report which
+tests you ran. A test you add that takes more than about a minute gets
+`LABELS long` in its `set_tests_properties`, like the existing ones.
 
 ### What the network allows
 
