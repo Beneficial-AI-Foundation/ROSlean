@@ -7,6 +7,10 @@ velocity command sources by priority, freshness and locks.
 Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
 [`site/`](site), deployed by the `pages.yml` workflow on pushes to `main`).
 
+**IMPORTANT** This repo is in an exploratory, still very unstable phase. 
+
+## Learn more
+
 - [twist_mux.md](twist_mux.md): scope, and where to start as a new reader.
 - [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
   and every deliberate difference.
@@ -167,4 +171,4 @@ Two things the theorems make precise that are easy to get wrong:
   clamped to 255. An input at 255 can never be blocked. Give an e-stop lock a
   priority above every input.
 - When all inputs are silent the mux publishes nothing; it does not send a
-  stop command. Stopping is the base driver's job, as with upstream.
+  stop command. Stopping is the base driver's job, as with the original `twist_mux` node.
