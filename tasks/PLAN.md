@@ -53,8 +53,8 @@ same row group can run at the same time.
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | merged 56ac73b |
-| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | running (started from T03's pushed branch, before T03's merge) |
-| [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
+| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | merged 173b52a |
+| [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | running |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | open |
 | [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | open |
@@ -123,6 +123,11 @@ Decided by the user on 2026-11-24:
 | (T03) Without a usable clock reading the node answers every command with a stop, also with `source_timeout: 0` or a disabled source. | Keep: there is no "as upstream" here, upstream's process ends (D15) |
 | (T03) `main` catches every exception that leaves a callback and goes on, with an error in the log. | Keep for now; T08 reviews it (an exception caught and ignored can hide a fault) |
 | (T03) `roslean_cmd_cost` is a run-time threshold inside `test-quick`. | Keep it there; if it proves flaky on a loaded machine it gets `LABELS long` |
+| (T06) Composition works (the node loads as a component), but as a component the node lacks the handling of a negative `/clock` (D15), which lives in `main`. Which form is supported? | The stand-alone executable is the supported and documented form; the component is offered with that limitation stated. T08 reviews whether the component should get the protection |
+| (T06) The node waits for a missing transform in a loop of its own (N26), because T03's "no clock thread" and tf2's blocking wait do not fit under simulated time. Keep, or give rclcpp its clock thread back? | Keep; T08 reviews the loop against upstream's rule |
+| (T06) The old scenario profile does not compare state messages for the Lean node (`STATE_TOPIC = False`). | T08 decides in its review whether the 32 differing checks are stated differences or defects, and turns the comparison on where it can |
+| (T06) The component's plugin name is `roslean_collision_monitor::CollisionMonitorNode`; SPEC_NAV2.md proposed `…::CollisionMonitor`. | Keep the name that is built; T09 corrects the document |
+| (T06) `test-quick` takes 6 minutes with `smoke_component` (9 s) and `roslean_nav2_bond` (21 s) in it. | Leave them in |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
 | (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
