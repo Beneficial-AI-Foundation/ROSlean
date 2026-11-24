@@ -1,3 +1,5 @@
 2026-11-24 18:56 started from 8152520; task files read; next: lake exe cache get, pixi install, pixi run build (about 10 min)
 2026-11-24 19:00 environment built (4 packages); wrote cm_nav2_launch.py, nav2_monitor.yaml, check_demo.py --nav2; next: first headless run of the Nav2 variant (up to 8 min)
 2026-11-24 19:08 Nav2 variant written (cm_nav2_launch.py, nav2_monitor.yaml, check_demo.py --nav2); first headless run failed (Nav2 stuck configuring behavior_server on a cold start), second passed with the whole Nav2 stack; screen is locked, screencapture shows the lock screen; next: 10 runs with our node, 4 with upstream, one after the other (about 20 min)
+2026-11-24 19:18 series done: Nav2 variant, our node 10 of 10 passed, upstream 4 of 4; next: misconfiguration messages, approach comparison, tours (about 25 min), then tutorial
+2026-11-24 19:37 misconfiguration messages, box profile (approach vs stop) and two of three tours measured (stock Nav2: 11 goals in 300 s; our node with stop zones: 1 goal, then held); next: last tour, mux-variant runs, screenshots, tutorial

@@ -42,11 +42,11 @@ ACTIONS = {0: 'do nothing', 1: 'STOP', 2: 'SLOWDOWN', 3: 'APPROACH', 4: 'LIMIT'}
 EXPLANATION = {
     'pass':
         'monitor: the command passes unchanged; no zone is occupied\n'
-        '    theorems run_pass_through, output_eq_publish_pass_iff',
+        '    theorems run_pass_through, velocity_eq_pass_iff',
     'slowdown':
         'monitor: SLOWDOWN, the command is published times {ratio:.2f}: the slowdown zone is\n'
         '    occupied and the stop zone is not\n'
-        '    theorems output_eq_publish_slowdown_iff, run_slowdown_bound, run_no_amplification',
+        '    theorems velocity_eq_slowdown_iff, run_slowdown_bound, run_no_amplification',
     'stop':
         'monitor: STOP, zero is published instead of the command: scans are arriving, so\n'
         '    the stop zone is occupied\n'
@@ -59,7 +59,7 @@ EXPLANATION = {
         'monitor: publishes NOTHING although commands arrive: it has published zero for\n'
         '    stop_pub_timeout and a stop is still demanded. The last message the base got\n'
         '    is a zero; {holder} (SPEC R15, A3)\n'
-        '    theorems output_eq_silent_iff, run_silent_last_published_zero',
+        '    theorems velocity_eq_none_iff, run_withheld_last_published_zero',
     'zero':
         'monitor: the command itself is zero and is passed on (for stop_pub_timeout, then\n'
         '    nothing: SPEC R15)\n'
@@ -67,7 +67,7 @@ EXPLANATION = {
     'idle':
         'monitor: no command arrives, so nothing is published, whatever the lidar sees\n'
         '    (the monitor acts only on commands: SPEC R1)\n'
-        '    theorem run_scan_output',
+        '    theorem output_of_not_cmd',
 }
 
 
