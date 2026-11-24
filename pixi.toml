@@ -38,6 +38,17 @@ prove = "lake exe cache get && lake build ROSlean"
 # Run-time comparison with upstream twist_mux (docs/BENCHMARK.md). Fetches upstream's sources.
 bench-build = { cmd = "colcon build --symlink-install --base-paths ros bench --cmake-args -G Ninja" }
 bench = { cmd = "bash -c 'source install/setup.bash && python3 bench/roslean_bench/scripts/run_bench.py all --out bench/results'", depends-on = ["bench-build"] }
+# Collision monitor against upstream nav2_collision_monitor (docs/collision_monitor/COMPARISON.md).
+# cm-diff: 600 random cases, ROSlean beside upstream, in one process: 13 to 25 s per case, so about 3 h
+# (pass seeds to do fewer: pixi run cm-diff 0 50; bench/cm_linux/run.sh splits the seeds over six processes).
+cm-diff = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/random_diff.py roslean_collision_monitor/collision_monitor nav2_collision_monitor/collision_monitor ${@:-0 600} --roslean' cm-diff", depends-on = ["build"] }
+# cm-faults: every fault-injection case, both nodes, the very large scans included. The case clock-negative fails at present (COMPARISON.md, defect 1).
+cm-faults = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/fault_injection.py roslean_collision_monitor/collision_monitor nav2_collision_monitor/collision_monitor --big'", depends-on = ["build"] }
+# bench-cm: per-call latency in process, latency through the nodes, and a 30-minute soak (about 40 minutes).
+bench-cm = { cmd = "bash -c 'source install/setup.bash && python3 bench/roslean_bench/scripts/run_cm_bench.py all --out bench/results'", depends-on = ["bench-build"] }
+# cm-linux-image: the Linux image in which the comparison was also run (Docker; ROS and Nav2 from apt).
+# Then: bench/cm_linux/run.sh OUT_DIR versions scenarios selftest random points faults qos bench soak ctest
+cm-linux-image = "docker build -f bench/cm_linux/Dockerfile -t roslean-cm-linux ."
 demo = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_twist_mux demo_launch.py'", depends-on = ["build"] }
 # Run these in other terminals while the demo is up.
 # The lock commands wait for both subscribers (the mux and the narrator) and

@@ -1,0 +1,67 @@
+162 circles and 178 polygons, 100000 points each
+
+circle zones: 16200000 points within 6 mm of a boundary; the two tests disagree on 5287523 (32.64 %)
+  distance outside upstream's zone   points   inside for the core
+  -1.00 to -0.75 mm             527950   100.00 %   (inside for upstream)
+  -0.75 to -0.50 mm             601524   100.00 %   (inside for upstream)
+  -0.50 to -0.25 mm             730533   100.00 %   (inside for upstream)
+  -0.25 to +0.00 mm            1062381   100.00 %   (inside for upstream)
+  +0.00 to +0.25 mm            1817354   100.00 %
+  +0.25 to +0.50 mm             735467   100.00 %
+  +0.50 to +0.75 mm             604220   100.00 %
+  +0.75 to +1.00 mm             529874   100.00 %
+  +1.00 to +1.25 mm             481840    97.59 %
+  +1.25 to +1.50 mm             434913    91.61 %
+  +1.50 to +1.75 mm             400318    81.11 %
+  +1.75 to +2.00 mm             370744    65.95 %
+  +2.00 to +2.25 mm             347169    46.98 %
+  +2.25 to +2.50 mm             319982    30.19 %
+  +2.50 to +2.75 mm             298298    15.91 %
+  +2.75 to +3.00 mm             275652     6.40 %
+  +3.00 to +3.25 mm             259281     1.41 %
+  +3.25 to +3.50 mm             240946     0.16 %
+  +3.50 to +3.75 mm             221467     0.00 %
+  +3.75 to +4.00 mm             204812     0.00 %
+  +4.00 to +4.25 mm             189813     0.00 %
+  +4.25 to +4.50 mm             171200     0.00 %
+  +4.50 to +4.75 mm             153203     0.00 %
+  +4.75 to +5.00 mm             135745     0.00 %
+  farthest point outside upstream's zone that the core counts: 3.409 mm (bound 3.5 mm)
+  nearest point outside upstream's zone that the core does not count: 1.000 mm
+ok    S (circle): 0 points inside for upstream and outside for the core
+ok    G (circle): 0 points counted by the core beyond 3.5 mm
+
+polygon zones: 17800000 points within 6 mm of a boundary; the two tests disagree on 6487576 (36.45 %)
+  distance outside upstream's zone   points   inside for the core
+  -1.00 to -0.75 mm             544706   100.00 %   (inside for upstream)
+  -0.75 to -0.50 mm             634712   100.00 %   (inside for upstream)
+  -0.50 to -0.25 mm             775572   100.00 %   (inside for upstream)
+  -0.25 to +0.00 mm            1182644   100.00 %   (inside for upstream)
+  +0.00 to +0.25 mm            2018996   100.00 %
+  +0.25 to +0.50 mm             837255   100.00 %
+  +0.50 to +0.75 mm             695692    99.97 %
+  +0.75 to +1.00 mm             619410    99.74 %
+  +1.00 to +1.25 mm             561066    98.76 %
+  +1.25 to +1.50 mm             511318    95.85 %
+  +1.50 to +1.75 mm             469412    90.71 %
+  +1.75 to +2.00 mm             438449    83.29 %
+  +2.00 to +2.25 mm             416569    72.84 %
+  +2.25 to +2.50 mm             380587    58.46 %
+  +2.50 to +2.75 mm             355577    43.85 %
+  +2.75 to +3.00 mm             334185    30.71 %
+  +3.00 to +3.25 mm             315532    14.55 %
+  +3.25 to +3.50 mm             288400     5.60 %
+  +3.50 to +3.75 mm             270776     1.37 %
+  +3.75 to +4.00 mm             249647     0.24 %
+  +4.00 to +4.25 mm             236044     0.03 %
+  +4.25 to +4.50 mm             213390     0.00 %
+  +4.50 to +4.75 mm             191889     0.00 %
+  +4.75 to +5.00 mm             174583     0.00 %
+  farthest point outside upstream's zone that the core counts: 4.167 mm (bound 4.4 mm)
+  nearest point outside upstream's zone that the core does not count: 0.360 mm
+ok    S (polygon): 0 points inside for upstream and outside for the core
+ok    G (polygon): 0 points counted by the core beyond 4.4 mm
+
+real	2m24.102s
+user	2m24.089s
+sys	0m0.004s

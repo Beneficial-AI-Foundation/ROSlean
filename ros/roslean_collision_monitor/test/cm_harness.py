@@ -145,9 +145,12 @@ class Side:
                 '-r', f'__node:={self.name}',
                 '-p', 'use_sim_time:=true',
                 '-p', f'cmd_vel_out_topic:={self.out_topic}',
-                '-p', f'state_topic:={self.state_topic}',
                 # Nav2 lifecycle nodes: no bond with a lifecycle manager.
                 '-p', 'bond_heartbeat_period:=0.0']
+        # A node without a state topic (state_topic None) is not given the
+        # parameter at all: the ROSlean node refuses it (SPEC, D13).
+        if self.state_topic:
+            args += ['-p', f'state_topic:={self.state_topic}']
         for p in params:
             args += ['-p', p]
         self.log = open(log, 'w') if log else None
@@ -189,9 +192,10 @@ class Driver(Node):
         for side in sides:
             self.create_subscription(
                 self.T, side.out_topic, lambda m, sd=side: sd.out.append(m), 10)
-            self.create_subscription(
-                CollisionMonitorState, side.state_topic,
-                lambda m, sd=side: sd.states.append(m), 10)
+            if side.state_topic:
+                self.create_subscription(
+                    CollisionMonitorState, side.state_topic,
+                    lambda m, sd=side: sd.states.append(m), 10)
 
     def spin_for(self, seconds):
         end = time.monotonic() + seconds
@@ -267,25 +271,59 @@ class Driver(Node):
         if transforms:
             self.tf_pub.publish(TFMessage(transforms=transforms))
 
-    def wait_connected(self, need_tf, timeout=20.0):
-        """Wait until every node has all its subscriptions and its publisher."""
+    def wait_connected(self, tf_listeners=0, timeout=20.0):
+        """Wait until every node has all its subscriptions and its publisher.
+
+        tf_listeners: how many of the nodes must have subscribed to the
+        static transforms (the lifecycle nodes, if transforms are published).
+        """
         n = len(self.sides)
 
         def ready():
             ok = (self.clock_pub.get_subscription_count() >= n
                   and self.cmd_pub.get_subscription_count() == n
-                  and self.scan_pub.get_subscription_count() == n)
-            if need_tf:
-                ok = ok and self.tf_pub.get_subscription_count() >= n
+                  and self.scan_pub.get_subscription_count() == n
+                  and self.tf_pub.get_subscription_count() >= tf_listeners)
             for side in self.sides:
                 ok = ok and self.count_publishers(side.out_topic) == 1
             return ok
 
-        if not self.spin_until(ready, timeout):
-            raise RuntimeError(
-                'node under test did not come up (exit codes %s)'
-                % [sd.proc.poll() for sd in self.sides])
-        self.spin_for(0.5)
+        # The conditions must hold before and after half a second of spinning,
+        # not just once: under load one publisher was counted and none was
+        # listed half a second later (the graph can still show the endpoints
+        # of the previous run's node for a moment, or the node has died).
+        end = time.monotonic() + timeout
+        while True:
+            if not self.spin_until(ready, max(end - time.monotonic(), 0.0)):
+                raise RuntimeError(
+                    'node under test did not come up (exit codes %s)'
+                    % [sd.proc.poll() for sd in self.sides])
+            self.spin_for(0.5)
+            if ready():
+                return
+            if time.monotonic() >= end:
+                raise RuntimeError('the graph did not settle: endpoints appeared and went away '
+                                   '(exit codes %s)' % [sd.proc.poll() for sd in self.sides])
+
+    def endpoint_types(self, topic, publishers, timeout=5.0):
+        """The message types of the publishers (or the subscriptions) of a topic.
+
+        Waits until there is at least one, and raises RuntimeError if none
+        appears: the list of endpoints can lag behind the counts that
+        wait_connected looks at.
+        """
+        get = (self.get_publishers_info_by_topic if publishers
+               else self.get_subscriptions_info_by_topic)
+        found = []
+
+        def some():
+            found[:] = [i.topic_type for i in get(topic)]
+            return bool(found)
+
+        if not self.spin_until(some, timeout):
+            raise RuntimeError('no %s of %s in the graph'
+                               % ('publisher' if publishers else 'subscription', topic))
+        return sorted(set(found))
 
     # -- events ---------------------------------------------------------------
 

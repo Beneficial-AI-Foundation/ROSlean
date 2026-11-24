@@ -21,6 +21,13 @@ Options:
   --settle S                wall seconds allowed for delivery (default 0.2)
   --logs DIR                keep the node's output, one file per scenario
   --list                    list the scenarios and exit
+  --profile MODULE          the node is not upstream's: MODULE (a Python module
+                            next to this script, e.g. profile_roslean) states,
+                            scenario by scenario, every answer that is expected
+                            to differ from upstream's and why, the scenarios
+                            the node must refuse, and scenarios of its own.
+                            Everything not stated must be as upstream.
+  --own                     with --profile: run only the profile's own scenarios
 
 The node runs with `use_sim_time`; this script publishes `/clock`, the scans,
 the commands and (where a scenario asks for it) static transforms.
@@ -30,6 +37,7 @@ import argparse
 import math
 import os
 import sys
+import tempfile
 
 import rclpy
 
@@ -763,35 +771,94 @@ def check_answer(d, msg, outs, states, out, state, check_state):
     return None
 
 
+def override_for(expect, label):
+    """The profile's entry for the check with this label: (out, tag, reason) or None."""
+    hits = [v for k, v in expect.get('diffs', {}).items() if k in label]
+    if len(hits) > 1:
+        raise SystemExit(f'profile: more than one expected difference matches {label!r}')
+    return hits[0] if hits else None
+
+
 def run_scenario(exe, name, opts):
-    """Returns (number of checks, number of failures), or None if skipped."""
-    sc = SCENARIOS[name]
+    """Returns (number of checks, number of failures, tags of expected differences),
+    or None if skipped."""
+    sc = opts.scenarios[name]
+    expect = opts.expect.get(name, {})
+    tags = []
     tf = sc.get('tf', [])
-    if tf and opts.no_tf:
+    params = list(sc['params'])
+    if tf and not opts.profile_tf:
+        # A node without transforms: the profile must say, for every scenario
+        # that publishes one, what takes its place.
+        if 'skip' in expect:
+            tag, why = expect['skip']
+            print(f'--- {name}: not run [{tag}: {why}]')
+            return None
+        if not ({'refused', 'params', 'no_tf'} & set(expect)):
+            raise SystemExit(f'profile: {name} needs a transform; say what replaces it')
+        tf = []
+    elif tf and opts.no_tf:
         print(f'--- {name}: skipped (needs a transform)')
         return None
+    if 'params' in expect:
+        tag, why, extra = expect['params']
+        params += extra
+        tags.append(tag)
     stamped = sc.get('stamped', False)
-    side = Side(exe, 'collision_monitor', 'cmd_vel_out', 'cm_state')
+    side = Side(exe, 'collision_monitor', 'cmd_vel_out',
+                'cm_state' if opts.state_topic else None)
     log = os.path.join(opts.logs, f'{name}.log') if opts.logs else None
-    side.start(os.path.join(HERE, 'zones.yaml'), sc['params'], log)
+    if 'refused' in expect and not log:
+        # The node's output is needed: it must name the refused parameter.
+        log = os.path.join(tempfile.mkdtemp(prefix='roslean_cm_scenario_'), f'{name}.log')
+    side.start(os.path.join(HERE, 'zones.yaml'), params, log)
     d = Driver('scenario_driver', [side], stamped, scan_frame=sc.get('scan_frame', 'base_footprint'))
     check_state = not opts.ignore_state
     lines = []  # (ok, text)
+    used = set()
 
     def note(ok, text):
         lines.append((ok, text))
 
+    def expected(label, out):
+        """The expected output of a check, and a marker for the line."""
+        ov = override_for(expect, label)
+        if ov is None:
+            return out, ''
+        used.add(id(ov))
+        tags.append(ov[1])
+        if repr(ov[0]) == repr(out):
+            # repr tells -0.0 from 0.0. An entry that states upstream's own
+            # answer is not a difference and would only inflate the count.
+            note(False, f'profile: the expected difference {label!r} is upstream\'s answer')
+        return ov[0], f'[{ov[1]}: {ov[2]}] '
+
     try:
         d.publish_tf(tf)
         status = d.bring_up(side, opts.lifecycle)
-        if sc.get('refused'):
-            note(status == 'refused', f'configuration is refused (node is {status})')
+        must_refuse = sc.get('refused') or 'refused' in expect
+        if must_refuse:
+            mark = ''
+            if 'refused' in expect:
+                tag, why, param = expect['refused']
+                tags.append(tag)
+                mark = f'[{tag}: {why}] '
+            note(status == 'refused', f'{mark}configuration is refused (node is {status})')
+            if 'refused' in expect and status == 'refused':
+                # Refused for the stated reason and for nothing else: a node
+                # that exits for another reason would pass the check above.
+                side.stop()
+                with open(log) as f:
+                    text = f.read()
+                want = f"1 parameter refused: parameter '{param}'"
+                note(want in text, f'{mark}the node names the reason: "{want}"')
         elif status != 'active':
             note(False, 'node refused its configuration')
         else:
-            d.wait_connected(need_tf=bool(tf) and side.lifecycle)
-            pub_type = d.get_publishers_info_by_topic('cmd_vel_out')[0].topic_type
-            sub_types = {i.topic_type for i in d.get_subscriptions_info_by_topic('cmd_vel_in')}
+            d.wait_connected(tf_listeners=1 if tf and side.lifecycle else 0)
+            pub_types = d.endpoint_types('cmd_vel_out', publishers=True)
+            pub_type = pub_types[0] if len(pub_types) == 1 else str(pub_types)
+            sub_types = set(d.endpoint_types('cmd_vel_in', publishers=False))
             want = 'geometry_msgs/msg/' + ('TwistStamped' if stamped else 'Twist')
             note(pub_type == want and sub_types == {want},
                  f'command topics are {want} (in: {sorted(sub_types)}, out: {pub_type})')
@@ -800,6 +867,9 @@ def run_scenario(exe, name, opts):
             crashed = False
             for step in sc['steps']:
                 before = (len(side.out), len(side.states))
+                if step[0] == 'crash' and override_for(expect, step[2]) is not None:
+                    # The profile says this node survives: an ordinary command.
+                    step = ('cmd', step[1], None, None, step[2])
                 if step[0] == 'clock':
                     d.set_clock(step[1], opts.settle)
                 elif step[0] == 'scan':
@@ -818,16 +888,18 @@ def run_scenario(exe, name, opts):
                     break
                 elif step[0] == 'late':
                     _, t_ns, out, state, label = step
+                    out, mark = expected(label, out)
                     d.set_clock(t_ns, 0.0)
                     d.spin_until(lambda: len(side.out) > before[0], 2.0)
                     d.spin_for(opts.settle)
                     outs, states = side.out[before[0]:], side.states[before[1]:]
                     why = check_answer(d, last_cmd, outs, states, out, state, check_state)
-                    note(why is None, f'{describe(d, outs, states)}   {label}'
+                    note(why is None, f'{mark}{describe(d, outs, states)}   {label}'
                          + (f'   [{why}]' if why else ''))
                     continue
                 else:
                     _, vel, out, state, label = step
+                    out, mark = expected(label, out)
                     ident += 1
                     msg = last_cmd = d.make_cmd(vel, ident)
                     want_n = 0 if out is None else 1
@@ -835,7 +907,7 @@ def run_scenario(exe, name, opts):
                         msg, opts.settle,
                         wait_for=(lambda i, o, st: len(o) >= want_n) if want_n else None)
                     why = check_answer(d, msg, outs, states, out, state, check_state)
-                    note(why is None, f'{describe(d, outs, states)}   {label}'
+                    note(why is None, f'{mark}{describe(d, outs, states)}   {label}'
                          + (f'   [{why}]' if why else ''))
                     continue
                 # Clock, scan and quiet steps must not make the node publish.
@@ -846,16 +918,19 @@ def run_scenario(exe, name, opts):
             d.spin_for(opts.settle)
             if side.proc.poll() is not None and not crashed:
                 note(False, f'node exited with code {side.proc.returncode}')
+            for key, ov in expect.get('diffs', {}).items():
+                if id(ov) not in used:
+                    note(False, f'profile: no check matched the expected difference {key!r}')
     except RuntimeError as e:
         note(False, str(e))
     finally:
         side.stop()
         d.destroy_node()
 
-    print(f'--- {name}  ({" ".join(sc["params"])})')
+    print(f'--- {name}  ({" ".join(params)})')
     for ok, text in lines:
         print(f"{'ok  ' if ok else 'FAIL'}  {text}")
-    return len(lines), sum(not ok for ok, _ in lines)
+    return len(lines), sum(not ok for ok, _ in lines), tags
 
 
 def main():
@@ -871,13 +946,29 @@ def main():
     ap.add_argument('--settle', type=float, default=0.2)
     ap.add_argument('--logs', default='')
     ap.add_argument('--list', action='store_true')
+    ap.add_argument('--profile', default='')
+    ap.add_argument('--own', action='store_true')
     opts = ap.parse_args()
+    opts.scenarios, opts.expect = dict(SCENARIOS), {}
+    opts.state_topic = opts.profile_tf = True
+    if opts.profile:
+        import importlib
+        profile = importlib.import_module(opts.profile)
+        opts.scenarios.update(profile.SCENARIOS)
+        opts.expect = profile.EXPECT
+        unknown = [n for n in opts.expect if n not in opts.scenarios]
+        if unknown:
+            sys.exit(f'profile: unknown scenario(s): {unknown}')
+        opts.state_topic, opts.profile_tf = profile.STATE_TOPIC, profile.TF
+        if not opts.state_topic:
+            opts.ignore_state = True
     if opts.list:
-        print('\n'.join(SCENARIOS))
+        print('\n'.join(opts.scenarios))
         return
-    names = [n for n in opts.only.split(',') if n] or list(SCENARIOS)
+    names = [n for n in opts.only.split(',') if n] or list(
+        profile.SCENARIOS if opts.own and opts.profile else opts.scenarios)
     skip = [n for n in opts.skip.split(',') if n]
-    unknown = [n for n in names + skip if n not in SCENARIOS]
+    unknown = [n for n in names + skip if n not in opts.scenarios]
     if unknown:
         sys.exit(f'unknown scenario(s): {unknown}')
     names = [n for n in names if n not in skip]
@@ -888,6 +979,7 @@ def main():
     rclpy.init()
     checks = bad = skipped = 0
     failed = []
+    tags = {}
     try:
         for rep in range(opts.repeat):
             if opts.repeat > 1:
@@ -901,11 +993,16 @@ def main():
                 bad += result[1]
                 if result[1]:
                     failed.append(name)
+                for tag in result[2]:
+                    tags[tag] = tags.get(tag, 0) + 1
     finally:
         rclpy.shutdown()
     print(f'{bad} failure(s) in {checks} checks, {len(names) * opts.repeat - skipped} scenario runs'
           + (f', {skipped} skipped' if skipped else '')
           + (f'; failed: {sorted(set(failed))}' if failed else ''))
+    if opts.profile:
+        print('expected differences from upstream, by number in the SPEC: '
+              + (', '.join(f'{t}: {n}' for t, n in sorted(tags.items())) or 'none'))
     sys.exit(1 if bad else 0)
 
 

@@ -1,0 +1,105 @@
+==> /out/random_0.log <==
+ok    seed=99 zones=2 tf=0 yaw=None stamped=0 commands=103 boundary-dependent=4 differ=4 published-differ=4 farthest=0.340mm 14.6s
+circle zones: 17568 point tests, 965 of them within 3.5 mm outside the zone; 108 answers differ because of such a point, the deciding point 0.000 to 1.672 mm outside (median 0.082)
+polygon zones: 18853 point tests, 893 of them within 4.4 mm outside the zone; 83 answers differ because of such a point, the deciding point 0.000 to 2.661 mm outside (median 0.293)
+0 case(s) outside the bounds in 100 random cases, 8880 commands, of which 241 depend on a point in a growth band; the two nodes demand different velocities for 191 and publish differently for 234; 0 case(s) passed only on the slow retry
+
+==> /out/random_1.log <==
+ok    seed=199 zones=2 tf=1 yaw=None stamped=0 commands=90 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 13.3s
+circle zones: 19934 point tests, 1203 of them within 3.5 mm outside the zone; 103 answers differ because of such a point, the deciding point 0.000 to 2.056 mm outside (median 0.171)
+polygon zones: 16282 point tests, 808 of them within 4.4 mm outside the zone; 86 answers differ because of such a point, the deciding point 0.000 to 3.016 mm outside (median 0.175)
+0 case(s) outside the bounds in 100 random cases, 9053 commands, of which 249 depend on a point in a growth band; the two nodes demand different velocities for 189 and publish differently for 263; 0 case(s) passed only on the slow retry
+
+==> /out/random_2.log <==
+ok    seed=299 zones=2 tf=1 yaw=None stamped=0 commands=80 boundary-dependent=3 differ=3 published-differ=3 farthest=0.098mm 12.2s
+circle zones: 18791 point tests, 940 of them within 3.5 mm outside the zone; 114 answers differ because of such a point, the deciding point 0.000 to 1.326 mm outside (median 0.055)
+polygon zones: 18756 point tests, 949 of them within 4.4 mm outside the zone; 94 answers differ because of such a point, the deciding point 0.000 to 3.044 mm outside (median 0.693)
+0 case(s) outside the bounds in 100 random cases, 9018 commands, of which 257 depend on a point in a growth band; the two nodes demand different velocities for 208 and publish differently for 266; 0 case(s) passed only on the slow retry
+
+==> /out/random_3.log <==
+ok    seed=399 zones=1 tf=1 yaw=None stamped=0 commands=83 boundary-dependent=4 differ=4 published-differ=8 farthest=0.048mm 17.2s
+circle zones: 16442 point tests, 817 of them within 3.5 mm outside the zone; 106 answers differ because of such a point, the deciding point 0.000 to 1.580 mm outside (median 0.059)
+polygon zones: 18294 point tests, 911 of them within 4.4 mm outside the zone; 132 answers differ because of such a point, the deciding point 0.000 to 2.541 mm outside (median 0.215)
+0 case(s) outside the bounds in 100 random cases, 9134 commands, of which 282 depend on a point in a growth band; the two nodes demand different velocities for 238 and publish differently for 303; 0 case(s) passed only on the slow retry
+
+==> /out/random_4.log <==
+ok    seed=499 zones=1 tf=1 yaw=None stamped=0 commands=75 boundary-dependent=2 differ=1 published-differ=1 farthest=0.445mm 12.9s
+circle zones: 15159 point tests, 767 of them within 3.5 mm outside the zone; 85 answers differ because of such a point, the deciding point 0.000 to 1.837 mm outside (median 0.060)
+polygon zones: 20788 point tests, 942 of them within 4.4 mm outside the zone; 80 answers differ because of such a point, the deciding point 0.000 to 2.836 mm outside (median 0.394)
+0 case(s) outside the bounds in 100 random cases, 8760 commands, of which 232 depend on a point in a growth band; the two nodes demand different velocities for 165 and publish differently for 228; 0 case(s) passed only on the slow retry
+
+==> /out/random_5.log <==
+ok    seed=599 zones=3 tf=0 yaw=None stamped=1 commands=64 boundary-dependent=7 differ=2 published-differ=2 farthest=0.124mm 10.9s
+circle zones: 17021 point tests, 834 of them within 3.5 mm outside the zone; 150 answers differ because of such a point, the deciding point 0.000 to 1.496 mm outside (median 0.039)
+polygon zones: 20796 point tests, 963 of them within 4.4 mm outside the zone; 120 answers differ because of such a point, the deciding point 0.000 to 3.106 mm outside (median 0.207)
+0 case(s) outside the bounds in 100 random cases, 9198 commands, of which 331 depend on a point in a growth band; the two nodes demand different velocities for 270 and publish differently for 318; 0 case(s) passed only on the slow retry
+
+==> /out/yaw_0.log <==
+ok    seed=1059 zones=1 tf=1 yaw=-2.5 stamped=0 commands=85 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 12.5s
+circle zones: 10096 point tests, 613 of them within 3.5 mm outside the zone; 87 answers differ because of such a point, the deciding point 0.000 to 1.791 mm outside (median 0.158)
+polygon zones: 10381 point tests, 638 of them within 4.4 mm outside the zone; 85 answers differ because of such a point, the deciding point 0.000 to 2.572 mm outside (median 0.092)
+0 case(s) outside the bounds in 60 random cases, 5501 commands, of which 186 depend on a point in a growth band; the two nodes demand different velocities for 172 and publish differently for 191; 0 case(s) passed only on the slow retry
+
+==> /out/yaw_1.log <==
+ok    seed=1119 zones=1 tf=1 yaw=-1.5707963267948966 stamped=0 commands=68 boundary-dependent=3 differ=3 published-differ=3 farthest=0.747mm 12.9s
+circle zones: 11868 point tests, 599 of them within 3.5 mm outside the zone; 82 answers differ because of such a point, the deciding point 0.000 to 1.553 mm outside (median 0.007)
+polygon zones: 11710 point tests, 532 of them within 4.4 mm outside the zone; 45 answers differ because of such a point, the deciding point 0.000 to 2.653 mm outside (median 0.077)
+0 case(s) outside the bounds in 60 random cases, 5512 commands, of which 169 depend on a point in a growth band; the two nodes demand different velocities for 127 and publish differently for 171; 0 case(s) passed only on the slow retry
+
+seeds 0-599:
+cases                               600
+cases outside the bounds            0 []
+cases passed only on the slow retry 0 []
+commands                            54043
+scans                               32289
+point tests, circle                 104915, in the growth band 5526
+point tests, polygon                113769, in the growth band 5466
+commands that depend on a band point 1592 (2.95 %)
+commands with different demands     1261 (2.33 % of all, 79.21 % of the dependent ones)
+commands published differently      1612
+
+| Deciding point outside upstream's zone by | Circle | Polygon |
+| --- | ---: | ---: |
+| below 1 µm | 281 | 82 |
+| 0.001 mm to 0.25 mm | 154 | 192 |
+| 0.25 mm to 0.5 mm | 93 | 100 |
+| 0.5 mm to 1 mm | 48 | 61 |
+| 1 mm to 1.5 mm | 71 | 56 |
+| 1.5 mm to 2 mm | 10 | 28 |
+| 2 mm to 2.5 mm | 9 | 46 |
+| 2.5 mm to 3 mm | 0 | 25 |
+| 3 mm to 3.5 mm | 0 | 5 |
+| 3.5 mm to 4 mm | 0 | 0 |
+| 4 mm to 4.4 mm | 0 | 0 |
+| beyond 4.4 mm | 0 | 0 |
+| all | 666 | 595 |
+| farthest | 2.056 mm | 3.106 mm |
+
+seeds 1000-1119, --yaw:
+cases                               120
+cases outside the bounds            0 []
+cases passed only on the slow retry 0 []
+commands                            11013
+scans                               6659
+point tests, circle                 21964, in the growth band 1212
+point tests, polygon                22091, in the growth band 1170
+commands that depend on a band point 355 (3.22 %)
+commands with different demands     299 (2.71 % of all, 84.23 % of the dependent ones)
+commands published differently      362
+
+| Deciding point outside upstream's zone by | Circle | Polygon |
+| --- | ---: | ---: |
+| below 1 µm | 62 | 15 |
+| 0.001 mm to 0.25 mm | 54 | 70 |
+| 0.25 mm to 0.5 mm | 23 | 14 |
+| 0.5 mm to 1 mm | 10 | 14 |
+| 1 mm to 1.5 mm | 11 | 1 |
+| 1.5 mm to 2 mm | 9 | 1 |
+| 2 mm to 2.5 mm | 0 | 10 |
+| 2.5 mm to 3 mm | 0 | 5 |
+| 3 mm to 3.5 mm | 0 | 0 |
+| 3.5 mm to 4 mm | 0 | 0 |
+| 4 mm to 4.4 mm | 0 | 0 |
+| beyond 4.4 mm | 0 | 0 |
+| all | 169 | 130 |
+| farthest | 1.791 mm | 2.653 mm |

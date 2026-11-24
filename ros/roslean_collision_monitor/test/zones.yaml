@@ -140,3 +140,9 @@
       radius: 0.5
       action_type: "none"
       min_points: 1
+    # Only the required parameters: min_points and slowdown_ratio take their
+    # defaults (4 and 0.5).
+    Defaults:
+      type: "circle"
+      radius: 0.5
+      action_type: "slowdown"

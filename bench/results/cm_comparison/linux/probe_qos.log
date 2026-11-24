@@ -1,0 +1,19 @@
+node is active
+subscription scan: sensor_msgs/msg/LaserScan, BEST_EFFORT, VOLATILE
+subscription cmd_vel_in: geometry_msgs/msg/Twist, RELIABLE, VOLATILE
+subscription /clock: rosgraph_msgs/msg/Clock, BEST_EFFORT, VOLATILE
+publisher cmd_vel_out: geometry_msgs/msg/Twist, RELIABLE, VOLATILE
+burst of   2: answered [1, 1, 1, 1, 1], last command answered [1, 1, 1, 1, 1]
+burst of   5: answered [2, 2, 2, 2, 2], last command answered [1, 1, 1, 1, 1]
+burst of  20: answered [6, 6, 7, 5, 3], last command answered [1, 1, 1, 1, 1]
+burst of 100: answered [10, 10, 10, 10, 10], last command answered [1, 1, 1, 1, 1]
+node is active
+subscription scan: sensor_msgs/msg/LaserScan, BEST_EFFORT, VOLATILE
+subscription cmd_vel_in: geometry_msgs/msg/Twist, RELIABLE, VOLATILE
+subscription /clock: rosgraph_msgs/msg/Clock, BEST_EFFORT, VOLATILE
+publisher cmd_vel_out: geometry_msgs/msg/Twist, RELIABLE, VOLATILE
+publisher cm_state: nav2_msgs/msg/CollisionMonitorState, RELIABLE, VOLATILE
+burst of   2: answered [1, 1, 1, 1, 1], last command answered [1, 1, 1, 1, 1]
+burst of   5: answered [3, 2, 1, 2, 2], last command answered [1, 1, 1, 1, 1]
+burst of  20: answered [7, 9, 10, 10, 10], last command answered [1, 1, 1, 1, 1]
+burst of 100: answered [10, 10, 10, 10, 10], last command answered [1, 1, 1, 1, 1]

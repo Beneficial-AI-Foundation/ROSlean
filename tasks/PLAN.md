@@ -48,11 +48,11 @@ same row group can run at the same time.
 | [T00](T00-cloud-setup.md) | Cloud environment: set-up script, what runs there | — | yes | merged 586f733 |
 | [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | merged 39ad5e1 |
 | [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | merged c2d5f85 |
-| [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | running |
-| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02 | yes | open |
+| [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | merged 259589a |
+| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | open |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | running |
-| [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | open |
+| [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | running |
 | [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
@@ -111,7 +111,11 @@ Decided by the user on 2026-11-24:
 | Publish zero for a non-finite command? | As upstream: ignored |
 | Refuse zones that protect nothing (no zones, radius 0, `source_timeout: 0`)? | Accept and warn |
 | Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | In C++, as upstream (option A). T05, already merged, built option B; T05b reworks the model and proofs, T06 writes the shim code. T02 measured B through the node at about 20 times upstream's time per command |
+| With the transform in C++: compile the shim to match upstream's floating-point results bit for bit on each platform (upstream's arm64 binary fuses multiply-adds), or keep `-ffp-contract=off`? | Keep `-ffp-contract=off`: the same results on every platform, T01's test stands. Our points may differ from upstream's in the last bit on arm64 |
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
+| (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
+| (T02) The cost of a command: target? | Not decided. T03 measures after T05b and proposes a budget per command; until then T02's `roslean_cmd_cost` (25 ns per reading and zone) stays an expected failure |
+| (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
 | (T04) A footprint zone fed from odom is left behind when its publisher stops: accept, give shapes a maximum age, or document only the fixed polygon? | Accept, as upstream; document the fixed polygon as the recommended edit |

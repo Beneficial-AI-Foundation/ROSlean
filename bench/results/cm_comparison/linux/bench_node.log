@@ -1,0 +1,6 @@
+   360 readings     out_lean: 851 answers, latency us p50 3169 p90 3558 p99 3784 max 4467; answers that differ between the nodes: 0 of 851
+   360 readings out_upstream: 851 answers, latency us p50 384 p90 535 p99 746 max 1750; answers that differ between the nodes: 0 of 851
+  1080 readings     out_lean: 850 answers, latency us p50 5804 p90 6285 p99 6990 max 7718; answers that differ between the nodes: 0 of 850
+  1080 readings out_upstream: 850 answers, latency us p50 260 p90 336 p99 448 max 656; answers that differ between the nodes: 0 of 850
+ 10000 readings     out_lean: 678 answers, latency us p50 34071 p90 42169 p99 46317 max 48287; answers that differ between the nodes: 1 of 677
+ 10000 readings out_upstream: 850 answers, latency us p50 235 p90 281 p99 368 max 843; answers that differ between the nodes: 1 of 677
