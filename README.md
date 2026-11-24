@@ -180,9 +180,12 @@ runs the tests including the comparison with apt's `ros-jazzy-twist-mux`, and
 checks that the install tree is self-contained; the build fails if any of
 that fails. The final image holds ROS and the install tree only.
 `--build-arg RUN_TESTS=0` skips the tests. The collision monitor is in the
-same image. With the collision monitor in its present form the image has
-been built on arm64 with `RUN_TESTS=0` only; its tests have not been run in
-this image since the Nav2 extension.
+same image. With the collision monitor in its present form the image was
+built once on arm64 with the tests (the audit, docs/AUDIT.md): `28 tests,
+0 errors, 0 failures` beside apt's `nav2_collision_monitor` 1.3.14 and
+`twist_mux` 4.5.0, 39 minutes in all; four scenarios that need
+`nav2_bringup`'s parameter file are not run there. Not built on x86-64 in
+this form.
 
 Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
 `colcon build --base-paths ros` in this directory, which is what the

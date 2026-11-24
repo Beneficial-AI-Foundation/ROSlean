@@ -17,6 +17,8 @@ against a document and not against a run, the document is named.
   `pixi run test` all ended with exit code 0; the mux and the collision
   monitor start as the README says. The demos were started; nobody saw a
   window (the screen was locked).
+- **The Docker image builds as the README says**, with its tests: 28
+  tests, 0 failures, beside apt's upstream 1.3.14.
 - **Linux arm64 through pixi: `pixi run build` fails as the tree is**, in
   two places, on a plain `ubuntu:24.04`: no `strip` is found, and
   `test_cm_ffi` does not link without `-pthread`. With two workarounds
@@ -90,7 +92,8 @@ anyone else.
 | `pixi run cm-check --monitor nav2_collision_monitor` | `PASSED in 32 s (27 s simulated)`: first zero at 0.265 m, 4 mm, at rest 0.263 m | 34 s | |
 | `pixi run cm-check --nav2` (the tutorial's, not in the README's list) | `PASSED in 62 s (57 s simulated)` on its first start in this fresh environment: the node `collision_monitor` active, `Managed nodes are active`, the executable is the fresh clone's `roslean_collision_monitor/collision_monitor`; first zero at 0.275 m, 0 mm, at rest 0.275 m, no flicker | 63 s | |
 | `pixi run cm-gazebo-scenario` (with a window), stopped by the audit after 90 s | From the log, in order: box dropped 1.2 m ahead; `monitor: SLOWDOWN, the command is published times 0.40`; `monitor: STOP, zero is published instead of the command`; `the robot is at rest, 0.26 m from the box`; `monitor: publishes NOTHING although commands arrive`; `box removed`; `the command passes unchanged`; `the robot drives on`. The window was **not seen** | 90 s | |
-| `docker build -f docker/Dockerfile …` | PENDING-DOCKER | | |
+| `docker build -f docker/Dockerfile -t … .` from the fresh clone, as the README gives it (tests on), with `--no-cache` and under the tag `t12-audit-roslean-twist-mux`, because the README's tag exists on this machine | Built, exit 0. In the image's build: `Summary: 28 tests, 0 errors, 0 failures, 0 skipped` beside apt's `nav2_collision_monitor` 1.3.14 and `twist_mux` 4.5.0; `roslean_scenario` 318 checks in 73 runs; `roslean_nav2_scenario` `0 failure(s) in 272 checks, 40 scenario runs, 6 not run` (four because `nav2_bringup`, whose parameter file they use, is not in the image; the two the profile never runs); the install check passed (57 exported symbols, `libleanshared.so` 194 MB). The image is 1.65 GB. The README said the tests had not been run in this image since the Nav2 extension: corrected | 39 min 17 s | |
+| `docker run --rm <image>` (without `--network host`) | The mux starts with the example configuration (five handler lines as on macOS); stopped after 25 s. The third command, with `-v $PWD/my.yaml`, was not run | | |
 
 Altogether a fresh macOS machine needs about 21 GB (12 GB in the
 repository, 8.5 GB in the home directory) and, on this network, about five
@@ -276,6 +279,12 @@ Matters of substance, left as they are. Numbered for reference.
     freshly installed environment, where T10's first start failed. One
     start; it says nothing about how often Nav2 fails to come up. The
     pages give T10's count (one failed start, none in 27 further ones).
+13. **The tests and the demos leave files in `/tmp`.** After one
+    `test-quick` and one `test` on macOS: 164 entries
+    `/tmp/roslean_cm_*` and `/tmp/roslean_random_diff_*` (logs and
+    parameter files of the scenario runs). After the launches and
+    `cm-check --nav2`: 40 `launch_params_*`, a copy of Nav2's launch
+    file and of the parameter file. Nothing removes them.
 
 ## Discrepancies corrected in this branch
 
@@ -286,8 +295,10 @@ Matters of substance, left as they are. Numbered for reference.
 | README "Linux and deployment" | `libroslean_core` on macOS: 4 MB | 2.5 MB | Observed: 2,470,280 bytes in `install/roslean_core/lib/` |
 | README "Quick start" | "about 6 GB"; no word on `git`, `curl`, how to clone, the toolchain, Mathlib's size, a new shell | the measured sizes; the prerequisites; a `git clone` line | (A) and (B) above |
 | README, "or by hand" | three `ros2` commands with no environment | "inside the environment (`pixi run bash`, then `source install/setup.bash`)" | Observed: `ros2: No such file or directory` |
+| README "Linux and deployment" | "its tests have not been run in this image since the Nav2 extension" | the audit's build with tests and its summary line | the Docker row of (A) |
 | README "Quick start", "What has been run where" | "`pixi run test` … about 20 minutes before the collision monitor's Nav2 extension, longer now"; no entry for Linux through pixi on the present tree | "about 40 minutes"; an entry for the fresh-clone run on macOS and one for Linux arm64 through pixi, with the two failures and the workarounds | (A), (B), and the two full runs |
 | `details.html`, "Further reading" | a link "API documentation" to `docs/` | removed | No `site/docs/`; the Pages workflow publishes `site/` with no build step; the deployed URL returns 404 |
+| `gaps.html`, "Platforms never tested", row "Linux arm64, container" | on the final node only the Nav2 scenarios, 20 random cases and the bond test | adds the audit's two full runs on Linux arm64 (the Docker image beside 1.3.14, pixi beside 1.3.13) | the Docker row of (A); "The full test suite" |
 | `gaps.html`, "Platforms never tested", last row; `docs/PLAN.md`, "Not done", first item | "`pixi run test` as a whole was not run by any task" | the two runs of the audit and their summary lines; the Linux build failure as what is not done | "The full test suite" |
 | README "Demo", "Under Nav2"; `index.html` "The demo" and the note under "Collision monitor"; `details.html` "The demo"; `gaps.html` "Under Nav2" and "Does it fit your robot"; `docs/PLAN.md` row T10 and "Not done" | pointers to the tutorial "for the run with a simulated robot", written before T10 reported; "in one run with the node as a lifecycle node" | T10's results, below | `tasks/reports/T10.md`; TUTORIAL_COLLISION_MONITOR.md, sections 5 and 7. Read, not re-run, except as noted under (A) |
 
@@ -508,6 +519,8 @@ Removed at the end: the fresh clone and the empty home directory under
 `$TMPDIR/t12-fresh/`, the container `t12-fresh-b`, the image built from the
 README's Dockerfile (under the tag `t12-audit-roslean-twist-mux`, so that
 the existing `roslean-twist-mux` image was not replaced), the `ros2`
-daemons the fresh clone had started. Left: the `ubuntu:24.04` and
-`ros:jazzy-ros-base` base images in Docker's store, and Docker's build
-cache.
+daemons the fresh clone had started, the files of finding 13. Left: the
+`ros:jazzy-ros-base` base image in Docker's store (`ubuntu:24.04`, which the
+audit had pulled, was removed), Docker's build cache, and whatever Fast DDS
+keeps in `/tmp/boost_interprocess`, which other sessions use too. The logs
+of the runs are in the session's scratch directory, not in the repository.
