@@ -94,6 +94,11 @@ lean_object * roslean_cm_on_scan(
 lean_object * roslean_cm_on_cmd(
   lean_object * m, uint64_t now_ns, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
   uint64_t ang_x, uint64_t ang_y, uint64_t ang_z);
+/* A command that arrives while the node has no valid clock reading (SPEC,
+ * D15): there is no time argument. Answered with kind 4 when processed. */
+lean_object * roslean_cm_on_cmd_no_clock(
+  lean_object * m, uint64_t lin_x, uint64_t lin_y, uint64_t lin_z,
+  uint64_t ang_x, uint64_t ang_y, uint64_t ang_z);
 uint8_t roslean_cm_out_kind(lean_object * m);
 uint32_t roslean_cm_out_zone(lean_object * m);
 uint64_t roslean_cm_out_ratio(lean_object * m);

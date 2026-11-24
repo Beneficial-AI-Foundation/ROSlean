@@ -411,6 +411,47 @@ int main()
       "angular.z counts");
   }
   {
+    // D15: a command without a clock reading (stepNoClock). Always the stop
+    // for an invalid source, never withheld; nothing else is disturbed.
+    const auto nc = [](CM & m, double x = 0.5) {
+        return m.on_cmd_no_clock(d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.2));
+      };
+    auto m = standard();
+    scan(m, 0, 0, at(2000, 0));
+    check(is(fwd(m, 1 * kMs), Kind::Pass), "no clock: with a clock and a clear scan, pass");
+    check(is(nc(m), Kind::StopSource), "no clock: stop although the scan is clear and fresh");
+    bool all = true;
+    for (int k = 0; k < 50; ++k) {
+      all = is(nc(m), Kind::StopSource) && all;
+    }
+    check(all, "no clock: the zero is published every time, never withheld");
+    check(is(nc(m, kNaN), Kind::Silent), "no clock: a non-finite command is ignored (R2)");
+    check(is(fwd(m, 2 * kMs), Kind::Pass), "clock back: the stored scan is used again, pass");
+    // R15 starts anew after a command without a clock.
+    scan(m, 3 * kMs, 3 * kMs, at(100, 0));
+    check(is(fwd(m, 1000 * kMs), Kind::StopZone, 0), "stop by the zone");
+    check(is(fwd(m, 2000 * kMs + 1), Kind::Silent), "withheld after stop_pub_timeout");
+    check(is(nc(m), Kind::StopSource), "no clock while zero is withheld: published");
+    check(is(fwd(m, 9000 * kMs), Kind::StopSource),
+      "clock back, scan too old: the stop is published, not withheld");
+    check(is(fwd(m, 10000 * kMs), Kind::StopSource), "and for stop_pub_timeout from then");
+    check(is(fwd(m, 10000 * kMs + 1), Kind::Silent), "then withheld again");
+    // With the staleness check off and with the source disabled: still a stop.
+    CM::Builder b0;
+    b0.set_source(true, 0.0, std::nullopt);
+    b0.set_stop_pub_timeout(1.0);
+    b0.add_circle(0.3, CM::ZoneAction::Stop, 0.5, 4, true);
+    auto m0 = b0.build();
+    check(m0.ok() && is(fwd(m0, 1), Kind::Pass), "timeout 0, no scan: pass with a clock");
+    check(is(nc(m0), Kind::StopSource), "timeout 0: stop without a clock");
+    CM::Builder b1;
+    b1.set_source(false, 2.0, std::nullopt);
+    b1.set_stop_pub_timeout(1.0);
+    auto m1 = b1.build();
+    check(m1.ok() && is(fwd(m1, 1), Kind::Pass), "source disabled, no zones: pass with a clock");
+    check(is(nc(m1), Kind::StopSource), "source disabled: stop without a clock");
+  }
+  {
     // Argument order and meaning of add_circle and set_source.
     CM::Builder b;
     b.set_source(true, 0.0, std::nullopt);  // timeout 0: no data is "no points"

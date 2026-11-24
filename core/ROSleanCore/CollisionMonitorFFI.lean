@@ -344,6 +344,23 @@ are binary64 bit patterns. -/
 def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
   m.apply (cmdEvent m.coords nowNs linX linY linZ angX angY angZ)
 
+/-- Applies a command that arrives without a valid clock reading
+(`stepNoClock`) and records its output. A monitor that was not accepted
+answers as it answers every command: `stopSource` in the active phase. -/
+def Monitor.applyNoClock (m : Monitor) (v : Twist) : Monitor :=
+  if m.ok then
+    let (st, out) := stepNoClock m.st v
+    { m with st, out }
+  else
+    { m with out := if m.st.phase = .active then .answer (some .stopSource) none else .silent }
+
+/-- A velocity command arrived while the node has no valid clock reading
+(SPEC, D15); the six components are binary64 bit patterns. There is no time
+argument. The answer is `stopSource` whenever the command is processed. -/
+@[export roslean_cm_on_cmd_no_clock]
+def cmOnCmdNoClock (m : Monitor) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
+  m.applyNoClock ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
+
 /-! ## Output queries -/
 
 /-- The code of an output's kind: 0 nothing to publish (`silent`, or a

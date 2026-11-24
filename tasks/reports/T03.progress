@@ -1,0 +1,3 @@
+2026-11-24 13:41 started on 55dcc45; reading done; builds running; next: the clock defect
+2026-11-24 13:41 started on base 8bd13c8-or-later (origin/collision-monitor); reading done; builds running; next: the clock defect
+2026-11-24 13:52 clock defect fixed in model (stepNoClock), interface, node; NoClock.lean proved; clock-negative fault case passes beside upstream (8 checks). Baseline cmd_cost on 55dcc45: 208 us circles, 640 us polygons at 1080. Next: item 2a, cheap conversion, fast command path

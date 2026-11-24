@@ -40,6 +40,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "roslean_collision_monitor/conversions.hpp"
 #include "roslean_core/collision_monitor.hpp"
+#include "rosgraph_msgs/msg/clock.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace roslean_collision_monitor
@@ -89,7 +90,13 @@ public:
       // Every parameter given at start-up is declared; no other name can be
       // set later (finding 2 of the review CM3/CM4).
       rclcpp::NodeOptions().allow_undeclared_parameters(false)
-      .automatically_declare_parameters_from_overrides(true))
+      .automatically_declare_parameters_from_overrides(true)
+      // D15: rclcpp takes /clock messages in a thread of its own by default,
+      // and a message with a negative time makes it throw there, where
+      // nothing can catch it: the process ends. Without that thread the
+      // message is taken in by the executor that spins this node, and the
+      // exception arrives in main(), which goes on (see there).
+      .use_clock_thread(false))
   {
     // Everything is read, checked and handed to the core before any
     // subscription exists. A refusal does not end the reading: all of them
@@ -146,6 +153,18 @@ public:
     scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       scan_topic, rclcpp::SensorDataQoS(),
       [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(*msg);});
+    // D15: under simulated time the node looks at /clock itself, beside
+    // rclcpp's own subscription, to know whether the message received last
+    // is one that rclcpp can use. It reads nothing else from the message;
+    // the time still comes from now().
+    sim_time_ = get_or<bool>("use_sim_time", false);
+    if (sim_time_) {
+      clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
+        "/clock", rclcpp::ClockQoS(),
+        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {
+          set_clock_valid(clock_message_usable(msg->clock.sec));
+        });
+    }
 
     // D2: parameters were read once, above. From here on every change is
     // rejected, with the reason, instead of being accepted and ignored.
@@ -168,8 +187,38 @@ public:
       stamped ? "TwistStamped" : "Twist", scan_topic.c_str(), zones_.size());
   }
 
+  /// An exception left a callback and was caught in main(). Under simulated
+  /// time the one known cause is a /clock message that rclcpp refuses (D15),
+  /// so the clock counts as not valid until a usable message arrives; the
+  /// node's own look at the message says the same, and whichever of the two
+  /// comes first counts.
+  void on_callback_exception(const char * what)
+  {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "An exception left a callback and was caught; the node goes on: %s", what);
+    if (sim_time_) {
+      set_clock_valid(false);
+    }
+  }
+
 private:
   // ---- events ------------------------------------------------------------
+
+  void set_clock_valid(bool valid)
+  {
+    if (valid == clock_valid_) {
+      return;
+    }
+    clock_valid_ = valid;
+    if (valid) {
+      RCLCPP_INFO(get_logger(), "The clock is valid again: commands are evaluated as usual.");
+    } else {
+      RCLCPP_ERROR(
+        get_logger(), "A message on /clock carries a negative time, which cannot be used. Until "
+        "a usable one arrives every command is answered with zero velocity (D15).");
+    }
+  }
 
   // One clock reading per event (D7). The core takes unsigned nanoseconds.
   uint64_t now_ns()
@@ -218,9 +267,14 @@ private:
   /// publish. Returns false if nothing is to be published.
   bool on_cmd(const geometry_msgs::msg::Twist & cmd, geometry_msgs::msg::Twist & out)
   {
-    const uint64_t t = now_ns();
-    const auto decision = monitor_->on_cmd(
-      t, bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
+    // D15: without a valid clock reading there is no time to hand over, and
+    // the core is told so; it answers with a stop.
+    const auto decision = clock_valid_ ?
+      monitor_->on_cmd(
+      now_ns(), bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
+      bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z)) :
+      monitor_->on_cmd_no_clock(
+      bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
       bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z));
     log_change(decision);
     // What to publish for the answer is apply_answer (conversions.hpp, with
@@ -668,6 +722,12 @@ private:
   CollisionMonitor::OutputKind logged_kind_{CollisionMonitor::OutputKind::Silent};
   uint32_t logged_zone_{0};
   uint64_t logged_ratio_bits_{0};
+  // D15. `clock_valid_` selects which of the core's two command calls is
+  // made; it is false only while the /clock message received last carried a
+  // negative time. Always true without simulated time.
+  bool sim_time_{false};
+  bool clock_valid_{true};
+  rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
   std::string base_frame_id_;
   SensorPose sensor_pose_;
@@ -688,7 +748,21 @@ int main(int argc, char * argv[])
     roslean::initialize();
     // Single-threaded: the core processes one event at a time (A1), and the
     // Lean runtime is initialised for this thread only.
-    rclcpp::spin(std::make_shared<roslean_collision_monitor::CollisionMonitorNode>());
+    auto node = std::make_shared<roslean_collision_monitor::CollisionMonitorNode>();
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
+    // D15: no topic content may end the node. An exception that leaves a
+    // callback (rclcpp's own /clock callback throws on a negative time) ends
+    // spin(); the message that caused it has been taken, so spinning again
+    // goes on with the next one. A refused configuration is thrown by the
+    // constructor above, outside this loop, and still ends the process.
+    while (rclcpp::ok()) {
+      try {
+        executor.spin();
+      } catch (const std::exception & e) {
+        node->on_callback_exception(e.what());
+      }
+    }
   } catch (const std::exception & e) {
     RCLCPP_FATAL(rclcpp::get_logger("collision_monitor"), "%s", e.what());
     result = EXIT_FAILURE;

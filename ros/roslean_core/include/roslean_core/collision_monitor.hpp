@@ -247,14 +247,23 @@ private:
   {
     require_valid();
     obj_ = roslean_cm_on_cmd(obj_, now_ns, lin_x, lin_y, lin_z, ang_x, ang_y, ang_z);
-    Output out;
-    roslean_core_inc(obj_);  // each query consumes one reference
-    out.kind = static_cast<OutputKind>(roslean_cm_out_kind(obj_));
-    roslean_core_inc(obj_);
-    out.zone = roslean_cm_out_zone(obj_);
-    roslean_core_inc(obj_);
-    out.ratio_bits = roslean_cm_out_ratio(obj_);
-    return out;
+    return read_output();
+  }
+
+  /// A velocity command arrived while the node has no valid clock reading
+  /// (SPEC, D15: the last message on /clock carried a negative time). There
+  /// is no time to hand over. The core answers with `StopSource` whenever it
+  /// processes the command (active, all components finite), whatever the
+  /// configuration, the stored scan and the zones; the zero is never
+  /// withheld.
+  /// @return what to publish.
+  Output on_cmd_no_clock(
+    uint64_t lin_x, uint64_t lin_y, uint64_t lin_z, uint64_t ang_x, uint64_t ang_y,
+    uint64_t ang_z)
+  {
+    require_valid();
+    obj_ = roslean_cm_on_cmd_no_clock(obj_, lin_x, lin_y, lin_z, ang_x, ang_y, ang_z);
+    return read_output();
   }
 
   // The conversions Lean applies, on their own: for tests and log messages.
@@ -308,6 +317,19 @@ private:
 private:
   explicit CollisionMonitor(lean_object * obj)
   : obj_(obj) {}
+
+  /// The output of the event applied last, read back from the core.
+  Output read_output()
+  {
+    Output out;
+    roslean_core_inc(obj_);  // each query consumes one reference
+    out.kind = static_cast<OutputKind>(roslean_cm_out_kind(obj_));
+    roslean_core_inc(obj_);
+    out.zone = roslean_cm_out_zone(obj_);
+    roslean_core_inc(obj_);
+    out.ratio_bits = roslean_cm_out_ratio(obj_);
+    return out;
+  }
 
   void require_valid() const
   {

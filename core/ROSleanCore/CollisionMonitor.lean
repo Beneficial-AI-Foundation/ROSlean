@@ -648,6 +648,32 @@ def step (cfg : Config) (st : State) : Event → State × Output
             else some a)
           (if r = st.prevReport then none else some r))
 
+/-- E9 (SPEC, D15): a velocity command arrives while the node has **no valid
+clock reading** (the last message on `/clock` carried a negative time).
+Upstream's process ends on such a clock message; this node goes on, and
+this function says what it answers until the clock is valid again.
+
+The command carries no time, no scan coordinates and no zone vertices:
+without a clock neither the age of the scan (R7) nor the period of R15 can
+be judged. It is processed under the same two conditions as any command
+(active phase, N4; finite, R2) and is then always answered with the stop for
+an invalid source, whatever the configuration, the stored scan and the
+zones. The zero is never withheld: R15 measures a time, and there is none.
+For the same reason the record of published zeros is reset (`prevZero :=
+false`), so that the period of R15 starts anew with the first command that
+has a clock reading again. The phase, the stored scan, the shapes and
+`stopStamp` are unchanged.
+
+This is a transition of its own and not a constructor of `Event`, so that
+`step` and every theorem about it stand as they are; the theorems about it
+are in `ROSlean/CollisionMonitor/NoClock.lean`. -/
+def stepNoClock (st : State) (v : Twist) : State × Output :=
+  if st.phase ≠ .active then (st, .silent)
+  else if !v.finite then (st, .silent)
+  else
+    ({ st with prevZero := false, prevReport := .source },
+      .answer (some .stopSource) (if Report.source = st.prevReport then none else some .source))
+
 /-- Runs a sequence of events from a state, returning the final state and the
 output for each event. -/
 def run (cfg : Config) (st : State) : List Event → State × List Output
