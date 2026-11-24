@@ -18,7 +18,12 @@ missing afterwards.
 model (`core/ROSleanCore/CollisionMonitor.lean`) and the theorems
 ([THEOREMS.md](THEOREMS.md)). Where the model or a theorem differs from what
 T04 wrote in those sections, the text below is corrected and marked
-"(T05)". The C interface and the node (section 8) are not implemented yet.
+"(T05)". Task T06 has implemented section 8: the C interface
+(`core/ROSleanCore/CollisionMonitorFFI.lean`), the node
+(`ros/roslean_collision_monitor/src/collision_monitor_node.cpp`) and the
+shim's transform code (`include/roslean_collision_monitor/transforms.hpp`).
+Where the implementation differs from the proposal, the text is corrected
+and marked "(T06)"; the edits of section 9 are made in SPEC.md.
 
 **The transform is applied in C++ (option A).** T04 recommended applying the
 sensor-to-base transform in Lean in exact arithmetic (option B of section
@@ -872,9 +877,11 @@ command. Of the 0.21 ms, about 0.14 ms is `coordMm` on 2160 coordinates
 conversion is slow here because a coordinate is kept as a `Nat` pattern and
 a pattern with the sign bit set is a big number for Lean's runtime; before
 the extension the decoder took sign and magnitude apart
-(`coordMmOfParts`, 41 ns per reading). T06's decoder can do that again, with
-a proof that it computes `Scan.points`; this is an open item for T06, not
-done here. `test_cm_ffi` is back to 47 s (169 s after T05, 39 to 42 s
+(`coordMmOfParts`, 41 ns per reading). Tasks T03 and T06 closed this: the
+command call reads each coordinate into a machine word (`coordMmAt`,
+`pointAt`), proved to compute the same points (`stepCmdFast_eq`,
+`cmOnCmdFast_eq`); the cost of a command through the new call is in the
+table "Cost of a command through the calls of section 8" below. `test_cm_ffi` is back to 47 s (169 s after T05, 39 to 42 s
 before).
 
 **Cost of B, measured (history).**
@@ -965,7 +972,7 @@ In addition to D1–D14 of SPEC.md, which stay unless section 9 changes them.
 | ND7 | tf2 does not return a non-finite or all-zero quaternion, by N25 [S] | (T05b) Such a transform counts as a failed lookup: the **shim** checks the seven numbers before it uses them and hands over "none" (8.4; trusted and tested there, since the model no longer sees the transform) | Totality; fail closed. Not reachable through tf2 as read. Without the check a NaN would become a saturated point, which lies in no zone. |
 | ND8 | `~/toggle`; `enabled` of a zone or source changeable at run time (R19) | Not provided; an attempt to change a parameter at run time is refused | Scope. Was part of D2. |
 | ND9 | `~/collision_points_marker` (N17) | Not provided | Display only. (T05b) Under option A the shim has the base-frame points and could publish them; still out of scope. |
-| ND10 | Loadable as the component `nav2_collision_monitor::CollisionMonitor` (N18) | A stand-alone executable only, unless T06 finds the Lean runtime can be loaded into Nav2's container | See section 8.5. |
+| ND10 | Loadable as the component `nav2_collision_monitor::CollisionMonitor` (N18) | (T06) Loadable as the component `roslean_collision_monitor::CollisionMonitorNode` (library `collision_monitor_component`), and as the stand-alone executable `collision_monitor`. Observed (test `smoke_component`, macOS): in `component_container_isolated`, in one process with upstream's monitor and Nav2's lifecycle manager, the node is configured, activated and bonded by the manager and answers commands. **In a container the handling of D15 is not there**: an exception that leaves a callback (a `/clock` message with a negative time) is the container's to catch, and Nav2's containers do not | See section 8.5. The stand-alone executable is the form that has every property claimed. |
 | ND11 | A zone without `points` and with an action other than `approach` and no `polygon_sub_topic` fails configuration with a message about `polygon_sub_topic` (N29) | The same failure, and if `footprint_topic` is set the message says that `footprint_topic` is read for `approach` only and names the two ways out | The edit users will try first (N29). |
 | ND12 | A circle's radius can arrive on a topic (N36) | Refused | Scope. |
 
@@ -1075,8 +1082,8 @@ used: they can only suppress.
 
 ### 8.2 Scan and shape events
 
-(T05b: rewritten for option A. The encodings are proposals; T06 may choose
-others but not other meanings.)
+(T05b: rewritten for option A. T06 implemented the encodings as proposed
+here.)
 
 | Call | Arguments |
 | --- | --- |
@@ -1151,15 +1158,40 @@ others but not other meanings.)
    publishes the velocity for kinds 1 to 4 as today; publishes the
    visualised polygons for kinds 1 to 5 (N16); for kind 0 nothing.
 
-Theorems T06 owes for these calls (`ROSlean/CollisionMonitor/FFI.lean`): a
-sequence of calls yields `run` of the corresponding events; the numbers
-read back determine the model's output, including the report; if
-`cmd_plan` is 0 or 1 the result of `on_cmd` does not depend on `points`,
-and if it is 0 not on `zone_verts`; `cmd_plan` does not change the monitor;
-decoding of `ranges`, `points`, `verts` and `zone_verts` is total and
-inverts the shim's encoding. (The present interface has the corresponding
-theorems for its one array: `decodeBeams_encodeBeams`,
-`decodeCoords_encodeBeams`, `fits_decode`, `points_decode`.)
+(T06) As implemented, three details beyond the list above:
+
+- **The wait of N26 is the node's own loop** (`wait_for`), with upstream's
+  rule (sleep 10 ms of wall time at a time while the node clock is before
+  the start of the lookup plus `transform_tolerance`, try again each time,
+  and once more at the end), around `try_lookup` of `transforms.hpp`, which
+  never waits. `tf2_ros::Buffer::lookupTransform` with a timeout is not
+  called: it reads the node clock, and under simulated time that clock
+  cannot advance inside a callback of this node, which runs without
+  rclcpp's clock thread (SPEC.md, D15). While it waits the node takes the
+  `/clock` messages of its own subscription by hand. If one of them carries
+  a negative time the wait ends and the command is delivered as "without a
+  clock reading" (`roslean_cm_on_cmd_no_clock`): a stop.
+- **After a failed lookup for the scan with a non-zero source timeout the
+  zones' lookups are not made**: upstream does not reach its zone loop then
+  (N34), and the core leaves the shapes unchanged in that case (E8, step 4),
+  so nothing is lost and no wait is added. Whether the timeout is zero the
+  shim asks the core's conversion (`roslean_cm_source_timeout_ns`).
+- **The array of zone vertices ends after the last zone that has
+  vertices**; a zone it does not reach has none.
+
+Theorems for these calls (`ROSlean/CollisionMonitor/FFI.lean`, `Fast.lean`;
+THEOREMS.md, "The C interface and the conversions"): a sequence of calls
+yields `run` of the corresponding events from the initial state
+(`foldl_exec_run`); the five numbers read back determine the model's
+output, including the report (`cm_readBack_after`, and
+`cm_readBack_after_fast` on the calls C makes); if `cmd_plan` is 0 the
+result of `on_cmd` depends on neither array, if it is 1 not on `points`
+(`cmOnCmd_of_plan_zero`, `cmOnCmd_of_plan_one`); `cmd_plan` returns a number
+and no monitor; decoding of `ranges`, `points`, `verts` and `zone_verts` is
+total and inverts the shim's encoding (`decodeBeams_encodeRanges`,
+`decodePairs_encodePairs`, `decodeZoneVerts_encodeZoneVerts`); the exported
+command call is the definition the theorems are stated on
+(`cmOnCmdFast_eq`, `execFast_eq`).
 
 ### 8.4 What stays in C++
 
@@ -1214,13 +1246,29 @@ theorems for its one array: `decodeBeams_encodeBeams`,
   points to TF.
 - **Composition.** T06 tries whether the node can be registered as an
   rclcpp component and loaded into `nav2_container` beside Nav2's own
-  nodes (the Lean runtime is initialised once per process). If it can, the
-  plugin name is `roslean_collision_monitor::CollisionMonitor`. If not,
-  ND10 stands.
+  nodes (the Lean runtime is initialised once per process). (T06) It can:
+  the plugin is `roslean_collision_monitor::CollisionMonitorNode` in the
+  library `collision_monitor_component`; see ND10 for what was observed and
+  for what a container does not give (D15). In a container with one
+  executor for all nodes (`component_container`) a command that waits for a
+  transform holds up every node of the container, as upstream's does.
+- (T06) **Zone names** (ND5) are checked by the shim when it reads
+  `polygons`: the core knows zones by index. **Parameters** are read in
+  `on_configure`; every later change is rejected (ND8), except the
+  declarations that `on_configure` itself causes (the QoS overrides of the
+  TF listener's subscriptions). On cleanup the core's monitor is dropped
+  after the `cleanup` event, and the next `configure` builds a new one from
+  the parameters: its state is the model's state after `cleanup` (no scan,
+  no shapes, nothing published yet).
 
 ### 8.6 What a user changes to run it in Nav2
 
-To be true once T06 is done; T10 demonstrates it.
+(T06) True of the node as it is: the package's
+`collision_monitor_params.yaml` starts it unchanged, and the collision
+monitor section of `nav2_params.yaml` with either edit below (scenarios
+`footprint-*` of `scenario_nav2.py`). T10 demonstrates it in Nav2. The
+package's own launch file, `launch/collision_monitor_launch.py`, starts the
+node with a lifecycle manager.
 
 1. **Parameters.** In the `collision_monitor` section, the zone must not be
    `approach`. Either the footprint as a fixed polygon, which is the
@@ -1268,7 +1316,7 @@ To be true once T06 is done; T10 demonstrates it.
 
 ## 9. Edits to make to SPEC.md later
 
-Not made by this task. T05 and T06 make them when the code exists.
+Not made by task T04. (T06) Made now, in SPEC.md; its head says how.
 
 1. **Scope paragraph and title of "Rules as implemented upstream"**: add
    the lifecycle, transforms and topic zones; refer here for N….

@@ -274,30 +274,30 @@ if(BUILD_TESTING)
       TIMEOUT 1800 LABELS long)
   endif()
 
-  # The ROSlean node through the same three tests. EXPECTED TO FAIL until the
-  # node has the extension (tasks/T06): today it is not a lifecycle node, and
-  # each script stops at its first check ("the node offers no lifecycle
-  # services (or has exited)": it exits, because it refuses `state_topic`),
-  # within seconds. T08 removes WILL_FAIL, adds LABELS long to the
-  # first and the third, and completes test/profile_roslean_nav2.py, which
-  # states the differences from upstream that a scenario can see (ND4, ND5,
-  # ND6, ND11). (WILL_FAIL cannot tell why a test fails; run by hand, the
-  # scripts print that line.)
+  # The ROSlean node through the same three tests (since tasks/T06 it has the
+  # extension). test/profile_roslean_nav2.py states the differences from
+  # upstream that a scenario can see (ND4, ND5, ND6, ND11) and the two
+  # scenarios that are not run for this node.
   add_test(NAME roslean_nav2_scenario
     COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario_nav2.py" "${_lean}"
-      --profile profile_roslean_nav2 --first-failure)
+      --profile profile_roslean_nav2)
   set_tests_properties(roslean_nav2_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=143"
-    TIMEOUT 1800 WILL_FAIL TRUE)
+    TIMEOUT 1800 LABELS long)
   add_test(NAME roslean_nav2_bond
     COMMAND "${Python3_EXECUTABLE}" "${_test}/bond_manager.py" "${_lean}")
-  set_tests_properties(roslean_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=144" TIMEOUT 300
-    WILL_FAIL TRUE)
+  set_tests_properties(roslean_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=144" TIMEOUT 300)
   if(nav2_collision_monitor_FOUND)
     # Beside upstream on the same messages; both must give the model's answer.
     add_test(NAME roslean_nav2_random
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_nav2.py" "${_lean}" ${_upstream} 0 3)
     set_tests_properties(roslean_nav2_random PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=145"
-      TIMEOUT 1800 WILL_FAIL TRUE)
+      TIMEOUT 1800 LABELS long)
+    # The node as an rclcpp component in a container of the kind Nav2 uses,
+    # beside upstream's monitor and Nav2's lifecycle manager in one process
+    # (SPEC_NAV2.md, 8.5, ND10). Half a minute, on the wall clock.
+    add_test(NAME smoke_component
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/smoke_component.py")
+    set_tests_properties(smoke_component PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=147" TIMEOUT 300)
   endif()
 endif()
 

@@ -7,7 +7,10 @@ nodes="$prefix/roslean_twist_mux/lib/roslean_twist_mux/twist_mux
 $prefix/roslean_collision_monitor/lib/roslean_collision_monitor/collision_monitor"
 status=0
 
-refs=$(grep -rIl -e '\.elan' -e '/src/' "$prefix")
+# The source tree is /src in the build image: an absolute path /src/..., not
+# a relative one such as nav2_collision_monitor/src/circle.cpp in a comment
+# of an installed test source.
+refs=$(grep -rIlE -e '\.elan' -e '(^|[^[:alnum:]_.-])/src/' "$prefix")
 if [ -n "$refs" ]; then
   echo "FAIL: files that mention the toolchain or the source tree:"; echo "$refs"; status=1
 fi
