@@ -17,8 +17,17 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
   not. The zones grow as stated and no more: the farthest point outside
   upstream's zone that the core counted was 3.409 mm for a circle (bound
   3.5) and 4.167 mm for a polygon (bound 4.4).
-- *Defects, open.* Two. A `/clock` message with a negative time aborts the
-  node (as it aborts upstream). And a command is slow. On the node before
+- *Defects, fixed by task T03 (2026-11-24, after this document's runs).*
+  Both of the two this document reported as open: the node no longer ends
+  on a `/clock` message with a negative time (SPEC D15; it answers with
+  zero until the clock is usable again), and a command with 1080 stored
+  readings costs 47 µs with two circle zones and 65 µs with two polygon
+  zones in a hot loop on macOS, where it cost 208 µs and 640 µs after the
+  transform moved to C++ (T05b) and 2.7 ms and 3.1 ms when this document's
+  runs were made. See [Defects](#defects) and
+  [Cost of a command](#cost-of-a-command). The text of this item as it
+  stood, for the record: *Two. A `/clock` message with a negative time
+  aborts the node (as it aborts upstream). And a command is slow.* On the node before
   the model was extended for transforms (commit `91c21f9`): 0.4 ms for a
   1080-reading scan and two polygon zones, 50 to 70 times upstream. On the
   node as merged now, which applies an exact transform in Lean to every
@@ -95,7 +104,7 @@ on Linux by the step of `bench/cm_linux/run.sh` given in the last column.
 | Core against upstream's zone tests, point by point | `band_bounds 100000 7` (ctest `band_bounds` with 20,000) | 34.0 million points, 340 zones: both bounds hold | the same | `points` |
 | Fault injection, both nodes | `fault_injection.py NODE UPSTREAM --big` (ctest `roslean_fault_injection` without the large scans; `pixi run cm-faults`) | 23 cases, 124 checks, 122 as expected; one case kills the node (2 checks) | the same | `faults` |
 | Quality of service and bursts | `probe_qos.py NODE --no-state-topic`, `probe_qos.py UPSTREAM` | as upstream | as upstream | `qos` |
-| Cost of a command per reading and zone | `cmd_cost` (ctest `roslean_cmd_cost`, expected to fail) | [below](#defects) | below | `ctest` |
+| Cost of a command | `cmd_cost` (ctest `roslean_cmd_cost`; since T03 it asserts a budget and passes) | [below](#cost-of-a-command) | not repeated after T03 | `ctest` |
 | Per-call latency in process | `run_cm_bench.py core` | [below](#per-call-latency) | below | `bench` |
 | Latency through the nodes | `run_cm_bench.py node` | [below](#through-the-nodes) | below | `bench` |
 | Memory | `run_cm_bench.py soak --minutes 32`; `bench_cm --which lean --scan slow --soak 100000 --iters 1000000 --warmup 0` | [below](#memory) | below | `soak` |
@@ -494,10 +503,15 @@ for the number of commands answered in a burst.
 | 500 scans back to back | the last counts | same |
 | Scan in a foreign frame; empty frame name; base frame name with a blank or a slash; a name of 100,000 characters | stop (D11), also discarding the stored scan | stop (no transform) |
 | Clock jumps back 50 s, 100 s, to 0 | an expired scan is used again; a stop period that began "later" publishes zero again (A2) | same |
-| **`/clock` message of −5 s** | **aborts** (defect 1) | aborts |
+| **`/clock` message of −5 s** | when this document's runs were made: **aborts** (defect 1). Since T03: zero velocity for every command until a usable `/clock` message arrives, then as before (D15) | aborts |
 
-So one input crashes the Lean node, on both platforms (exit by signal 6).
-Everything else is handled, and handled as the SPEC says.
+When these runs were made one input crashed the Lean node, on both
+platforms (exit by signal 6). Since task T03 none does: the case
+`clock-negative` (a `/clock` of −5 s, of −1 ns short of 0, of −2³¹ s, each
+followed by a usable one) passes with upstream beside the node and gone
+after the first message; all 23 cases, 129 checks, 0 failures on macOS
+(`bench/results/cm_comparison/t03/fault_injection.log`). Everything else
+is handled, and handled as the SPEC says.
 
 ## Defects
 
@@ -507,94 +521,104 @@ not under fault injection, not in the point test.
 
 ### Open
 
-Found in the node, the shim or the model (category c). Not fixed here; each
-has a registered test that is expected to fail.
+None known. The two that this document reported as open were fixed by task
+T03; they follow.
 
-1. **A `/clock` message with a negative time ends the process.** With
-   `use_sim_time`, a `rosgraph_msgs/Clock` message with `sec < 0` ends the
+### Fixed by task T03
+
+Found in the node, the shim or the model (category c). Each had a registered
+test that was expected to fail; both tests are ordinary tests now.
+
+1. **A `/clock` message with a negative time ended the process.** With
+   `use_sim_time`, a `rosgraph_msgs/Clock` message with `sec < 0` ended the
    node with `terminating due to uncaught exception of type
    std::runtime_error: cannot store a negative time point in rclcpp::Time`
-   (signal 6; the node's own log, both platforms). The exception comes from
-   rclcpp's time source, which by default runs in a thread of its own, where
-   the node cannot catch it (this is rclcpp's design; the thread was not
-   inspected here). The shim's `std::max(now().nanoseconds(), 0)` is never
-   reached. Upstream dies in the same way with the same message, so this is
-   not a difference, but the SPEC's aim is that no input ends the node (D8,
-   "Bad data (c)"), and A2 says nothing is assumed about the clock.
-   Smallest reproduction: a node started with `-p use_sim_time:=true`, then
-   `ros2 topic pub --once /clock rosgraph_msgs/msg/Clock "{clock: {sec: -5}}"`;
-   or `fault_injection.py NODE --only clock-negative`, which prints
-   `FAIL  the node has exited with code -6` and `2 failure(s) in 3 checks`.
-   Registered as `roslean_fault_clock_negative`, which asserts that the
-   node survives and is marked `WILL_FAIL`. A fix probably needs the node
-   option `use_clock_thread(false)` and a `catch` around the spin, or a
-   clock subscription of the node's own; the node cannot repair it inside
-   a callback. Severity: low on a robot (a simulator would have to publish
-   a negative time), but it is the one way found to end the process from a
-   topic.
+   (signal 6, both platforms). Upstream dies in the same way. The exception
+   comes from rclcpp's time source, which by default runs in a thread of its
+   own, where the node cannot catch it.
 
-2. **A command is slow, and since the model was extended it is too slow
-   for an ordinary scanner.** (The figures of the merged node are with
-   T05's exact transform in Lean, option B, which is being replaced by a
-   transform in C++; they are to be repeated after T05b and T06. The
-   figures "before the extension" are of the code that option A returns
-   to in this respect, and the defect was there too, seven to eight times
-   smaller for polygons.) Each command places every stored reading in
-   the base frame again and then tests every point against every zone, all
-   in exact integer arithmetic.
+   *The fix* (SPEC D15, T9). The node is created with
+   `use_clock_thread(false)`, so the `/clock` subscription is served by the
+   executor that spins the node; the exception leaves `spin()`, `main`
+   catches it and spins again (the message has been taken; the next one is
+   handled normally). Under simulated time the node also looks at each
+   `/clock` message itself: while the one received last has `sec < 0` it
+   has no valid clock reading, and it hands every command to the core
+   through a call of its own, `roslean_cm_on_cmd_no_clock`, which has no
+   time argument. In the model that is the transition `stepNoClock`: in the
+   active phase a finite command is answered with the stop for an invalid
+   source, whatever the configuration, the stored scan and the zones; the
+   zero is not withheld after `stop_pub_timeout`. With the next usable
+   `/clock` message commands are evaluated as before. Proved
+   (`ROSlean/CollisionMonitor/NoClock.lean`): the answer is that stop
+   (`noClock_velocity`), nothing but `prevZero` and `prevReport` changes
+   (`noClock_state`), no later decision changes
+   (`evaluate_after_noClock`), and the first command with a clock again has
+   its velocity published (`velocity_after_noClock`). Trusted: when the
+   node has no clock reading (the sign of `sec`, in C++).
 
-   | Per command, in a hot loop (option B) | macOS | Linux (container) | Upstream |
-   | --- | ---: | ---: | ---: |
-   | 360 readings, two polygons | 1.0 ms | 0.85 ms | 3 to 5 µs |
-   | 1080 readings, two polygons | 3.1 ms | 2.5 ms | 8 to 12 µs |
-   | 1080 readings, two circles | 2.7 ms | 2.1 ms | 4 to 9 µs |
-   | 10,000 readings, two polygons | 29 ms | 24 ms | 64 to 77 µs |
+   *Difference from upstream:* D15. Upstream ends; the node stops the robot
+   and goes on.
 
-   That is 1.9 to 2.9 µs per reading; scan and command callbacks together
-   take 180 to 810 times what upstream's take
-   ([Per-call latency](#per-call-latency)). A node is not called in a hot
-   loop: with one command every 20 ms the same call at 1080 readings takes
-   about 7.5 ms on macOS with either kind of zone (in one of three runs
-   12 ms with polygons) and 5.7 ms (circles) or 6.8 ms (polygons) in the
-   container (`cmd_cost`).
+   *Test:* `roslean_fault_clock_negative` (`fault_injection.py NODE UPSTREAM
+   --only clock-negative`), no longer `WILL_FAIL`: 8 checks, the node
+   answers zero after each of three negative messages and passes commands
+   again after each usable one; upstream is gone after the first.
+   `test_cm_ffi` checks the call on the core alone (also with
+   `source_timeout: 0` and with the source disabled, where a missing scan
+   does not stop the robot but a missing clock does).
 
-   Where the time goes. Before the extension (commit `91c21f9`) a scan was
-   converted to millimetres once, when it arrived, and a command cost 8 ns
-   per reading and zone for circles and 200 ns for four-vertex polygons:
-   0.41 ms at 1080 readings with two polygons on macOS, 18 µs with two
-   circles. Since the extension `Scan.points` applies the scan's transform
-   to every reading at every command (`Xform.pointMm`, exact arithmetic on
-   the binary64 patterns), and the node passes the identity transform. The
-   cost no longer depends much on the zones: 2.5 µs per reading with two
-   circles, 2.9 µs with two polygons on macOS. The zone tests are the same
-   code as before; the placement was read in the source and its cost is
-   inferred from these figures, it was not profiled.
+   *Side effect to know:* without rclcpp's clock thread the simulated time
+   advances only between callbacks of the node, not during one.
 
-   What follows from it, measured through the nodes
-   ([Through the nodes](#through-the-nodes)): in the Linux container the
-   Lean node's median latency is 3.2 ms at 360 readings, 5.8 ms at 1080 and
-   34 ms at 10,000, where upstream's is 0.24 to 0.38 ms; at 10,000 readings
-   it answers 678 of 1000 commands sent at 50 Hz (macOS: 532), upstream 850;
-   and at changes of the scene a few answers differ from upstream's because
-   the busy node takes in a scan later (9 commands in four runs). Before
-   the extension: 0.99, 2.4 and 7.5 ms, no command lost, no answer
-   different.
+2. **A command was slow.** Each command tests every stored reading against
+   every zone in exact integer arithmetic. When this document's runs were
+   made the model also applied an exact transform to every reading at every
+   command (T05's option B: 2.7 ms and 3.1 ms per command at 1080 readings;
+   the table that stood here is under
+   [Per-call latency](#per-call-latency)). The transform has since moved to
+   C++ (T05b), and the model no longer has `Xform.pointMm`, by which the
+   first version of this item explained the cost. What remained after T05b,
+   measured by `cmd_cost` on macOS at 1080 readings: 208 µs with two
+   circles and 640 µs with two 4-vertex polygons. Where that time went:
+   about 135 µs in the conversion of the coordinates to millimetres and
+   50 µs in the three lists the points passed through (T05b's experiment:
+   the conversion replaced by a constant); the rest, 18 µs for circles and
+   about 430 µs for polygons, in the zone tests. Why, read in the source
+   and not profiled part by part: each coordinate was a `Nat` pattern, and
+   a pattern with the sign bit set is a big number in Lean's runtime;
+   `evaluate` and `shapesAfter` each asked for the points; and the polygon
+   test built the list of a polygon's edges anew, twice, for every point.
+   That these were the causes is supported by what removing them gained
+   (below), not by a profile.
 
-   The answers to a given sequence of events are right, and they are the
-   same as before the extension in every run of this document. What is
-   wrong is when they come, and which events the node gets to see.
-   Nothing warns at start-up.
+   *The fix.* `core/ROSleanCore/CollisionMonitorFast.lean` is a second way
+   to compute the same function, and the C interface calls it. Each part is
+   proved equal to the definition it replaces
+   (`ROSlean/CollisionMonitor/Fast.lean`; THEOREMS.md, "The command path
+   that C calls"): the coordinates are converted from the two 32-bit halves
+   of their pattern, sign and magnitude apart (`coordMmAt_eq`); the points
+   are produced once, in one pass, into an array (`pointsBy_toList`); a
+   polygon's edges are computed once per zone and command, and the band
+   test of D4 is made only for points within 2 mm of the polygon's bounding
+   box (`nearBoundary_near`, `containsEdges_eq`); and the whole is `step`
+   (`stepCmdFast_eq`), so that after any sequence of calls the exported
+   functions have produced the monitor the theorems speak about
+   (`execFast_eq`). No decision changed: besides the proof, `test_cm_ffi`
+   runs the old and the new command call side by side on 9,600 commands
+   (none differs), and the random comparison with upstream was repeated on
+   300 seeds with the same counts for every seed
+   ([Cost of a command](#cost-of-a-command)).
 
-   Smallest reproduction: `build/roslean_collision_monitor/cmd_cost` (no
-   ROS; the two boxes of Nav2's example, 1080 stored readings, 400
-   commands). It asserts at most 25 ns per reading and zone back to back
-   and prints 1,430 to 1,480 ns on macOS and 1,160 to 1,180 ns in the
-   container (185 to 230 ns before the extension). Registered as
-   `roslean_cmd_cost`, marked `WILL_FAIL`. The limit is three times what
-   the circle path needed before the extension and several times upstream's
-   whole cost per reading; it is a line drawn here, not a requirement taken
-   from anywhere (a question for the user in the task report). A threshold
-   on run time is fragile in principle; here the margin is a factor of 50.
+   *Test:* `roslean_cmd_cost`, no longer `WILL_FAIL`. It asserts the budget
+   below in place of T02's line of 25 ns per reading and zone.
+
+   *Not done:* the conversion still reads its bytes through `Nat`
+   arithmetic (about 30 ns per reading, two thirds of what a command with
+   circle zones costs now); done on machine words it would be a few
+   nanoseconds. And the crossing count of R10 is still made for every
+   point: skipping it for points beside the bounding box needs a proof that
+   a closed polygon is crossed an even number of times, which is not there.
 
 ### Fixed since the first draft
 
@@ -852,6 +876,106 @@ Reading (option B, being replaced, unless it says "before"):
   a command takes 29 ms, longer than the 20 ms between two commands: the
   node cannot answer every command at 50 Hz, whatever the zones.
 
+### Cost of a command
+
+Added by task T03; everything in this section was measured on 2026-11-24 on
+the macOS machine of this document, on the branch `claude/cm-comparison-defects`
+(the fast command path of defect 2). `cmd_cost` was run before this task's
+long tests were started; `bench_cm` while six processes of the random
+comparison were running on the same 18-core machine, on which another
+session was working too. Nothing in this section was measured on Linux.
+
+**The core alone**, `build/roslean_collision_monitor/cmd_cost`: the scan is
+stored, then 400 commands are timed back to back and the median is taken;
+nothing is near, so every zone is evaluated in full. Microseconds per
+command.
+
+| Stored readings | Zones | Before T05 (`91c21f9`, T02) | After T05b (`55dcc45`) | Now | Budget |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 360 | two circles | | | 16 | 50 |
+| 360 | two 4-vertex polygons | | | 23 | 50 |
+| 1080 | two circles | 18 | 208 | 47 | 150 |
+| 1080 | two 4-vertex polygons | 410 | 640 | 65 | 150 |
+| 10,000 | two circles | | | 440 | 1500 |
+| 10,000 | two 4-vertex polygons | | | 609 | 1500 |
+
+Empty cells were not measured. With one command every 20 ms, as a node
+gets them, the same call at 1080 readings took 239 µs (circles) and 306 µs
+(polygons): on this machine a thread that wakes from sleep runs four to
+five times slower than in a hot loop, whatever the code (T05b measured the
+same factor on the code before: 864 µs and 2.5 ms).
+
+**The budget** proposed for a command, back to back, with two zones of
+either kind: 50 µs at 360 stored readings, 150 µs at 1080, 1.5 ms at
+10,000, that is about 140 ns per reading. It is met with a factor of two
+to three to spare on this machine, and `roslean_cmd_cost` asserts it. It
+is a line drawn here: 1080 readings at 150 µs are 0.75 % of the 20 ms
+between two commands at 50 Hz. It is not upstream's speed: see the next
+table. A scan with which a command is estimated to exceed 1 ms makes the
+node warn once.
+
+**The two callbacks, with upstream's beside** (`run_cm_bench.py core`,
+that is `bench_cm`: the Lean node's callback bodies and upstream's own
+library in one process, 20,000 calls per row, 5,000 at 10,000 readings,
+back to back). Microseconds, median and 99th percentile:
+
+| Readings | Zones | Call | Lean p50 | p99 | Upstream p50 | p99 |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 360 | polygons | scan | 79.5 | 101 | 0.0 | 0.2 |
+| 360 | polygons | command, clear | 22.4 | 26.3 | 2.9 | 3.8 |
+| 360 | polygons | command, slowdown | 22.5 | 26.6 | 2.9 | 3.8 |
+| 360 | polygons | command, stop | 18.7 | 21.8 | 2.0 | 2.9 |
+| 360 | circles | scan | 79.5 | 96.3 | 0.0 | 0.2 |
+| 360 | circles | command, clear | 16.0 | 19.0 | 1.8 | 2.5 |
+| 360 | circles | command, slowdown | 16.2 | 19.3 | 1.8 | 2.6 |
+| 360 | circles | command, stop | 15.3 | 18.6 | 1.5 | 2.3 |
+| 1080 | polygons | scan | 252 | 309 | 0.0 | 0.3 |
+| 1080 | polygons | command, clear | 65.3 | 74.6 | 7.4 | 9.8 |
+| 1080 | polygons | command, slowdown | 66.8 | 75.4 | 7.4 | 9.1 |
+| 1080 | polygons | command, stop | 54.9 | 61.3 | 5.3 | 6.7 |
+| 1080 | circles | scan | 240 | 281 | 0.0 | 0.3 |
+| 1080 | circles | command, clear | 47.2 | 53.7 | 4.2 | 5.5 |
+| 1080 | circles | command, slowdown | 47.1 | 52.9 | 4.2 | 5.3 |
+| 1080 | circles | command, stop | 45.8 | 51.3 | 3.7 | 4.8 |
+| 10000 | polygons | scan | 2241 | 2530 | 0.2 | 0.5 |
+| 10000 | polygons | command, clear | 594 | 621 | 60.4 | 67.7 |
+| 10000 | polygons | command, slowdown | 611 | 641 | 60.7 | 68.3 |
+| 10000 | polygons | command, stop | 509 | 537 | 44.5 | 51.0 |
+| 10000 | circles | scan | 2248 | 2541 | 0.2 | 0.5 |
+| 10000 | circles | command, clear | 440 | 466 | 32.4 | 37.2 |
+| 10000 | circles | command, slowdown | 441 | 468 | 32.3 | 37.3 |
+| 10000 | circles | command, stop | 427 | 453 | 30.2 | 35.0 |
+
+The command callback of the Lean node now takes 8 to 14 times
+upstream's (16 against 1.8 µs at 360 readings with circles; 65 against
+7.4 µs at 1080 with polygons; 0.59 ms against 60 µs at 10,000 with
+polygons). In the runs of this document it took 340 to 780 times
+upstream's.
+
+**The scan callback is unchanged and is now the larger part**: 79 µs at
+360 readings, 240 to 250 µs at 1080, 2.2 ms at 10,000, about 225 ns per
+reading, where upstream stores a pointer (0.04 µs). It was 45 to 47 ns per
+reading before the model was extended and 210 to 230 ns in the runs of this
+document. Task T03 did not make it faster. The probable cause, read in the source
+and not measured: the scan call still decodes the coordinates of every
+record into a list of pairs of `Nat` patterns when the scan arrives
+(`decodeCoords`, kept because the theorems of `FFI.lean` are stated on that
+list), although the exported command call no longer reads that list. The
+scan call of SPEC_NAV2 (task T06) carries ranges only, which removes it.
+With 1080 readings at 25 Hz and commands at 50 Hz that is 25 × 0.25 ms +
+50 × 0.065 ms = 9.5 ms of work per second, 1 % of a core, from the hot-loop
+medians (16 % in the runs of this document).
+
+**The random comparison, repeated.** `random_diff.py NODE UPSTREAM A B
+--roslean`, seeds 0 to 299 in six processes of 50, on the node with the
+fast command path and the clock fix: 0 cases outside the bounds, none
+retried. For every one of the 300 seeds the line of the log (verdict,
+number of commands, commands that depend on a boundary, commands answered
+differently from upstream, published answers that differ, farthest point)
+is the same as in the run of this document made before the change
+(`bench/results/cm_comparison/macos/random_[0-2].log` against
+`bench/results/cm_comparison/t03/`).
+
 ### Through the nodes
 
 Both node binaries side by side on the same topics (upstream activated
@@ -1067,9 +1191,9 @@ container:
 | Test | What | macOS | Linux | Label |
 | --- | --- | ---: | ---: | --- |
 | `band_bounds` | core against upstream's zone tests, 6.8 million points | 35 s | 30 s | |
-| `roslean_cmd_cost` | **expected to fail** (defect 2): a command costs at most 25 ns per stored reading and zone | 8 s | 7 s | |
+| `roslean_cmd_cost` | a command is within the budget of [Cost of a command](#cost-of-a-command) (it was expected to fail until T03) | 2 s | not run since | |
 | `t2_point_as_upstream` | macOS only: the shim's point for one reading against upstream's bits | under 1 s | not registered | |
-| `roslean_fault_clock_negative` | **expected to fail** (defect 1); passes once the node survives a negative `/clock`, then remove `WILL_FAIL` | 9 s | 9 s | |
+| `roslean_fault_clock_negative` | a negative `/clock` message: the node answers zero and goes on, upstream is gone (D15; it was expected to fail until T03) | 25 s | not run since | |
 | `upstream_probes` | the 18 probes on upstream's binary | 35 s | 33 s | |
 | `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | 274 s | 271 s | long |
 | `roslean_fault_injection` | 19 fault cases, upstream beside the node | 93 s | 92 s | long |
@@ -1081,11 +1205,8 @@ section before was running on the same machine. `band_bounds` took 2.4 s
 before the extension of the model; it is the same program on the same
 points (defect 2).
 
-Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93. A test
-marked `WILL_FAIL` passes while the defect is there; `WILL_FAIL` cannot
-tell why a test fails, so after a change to the harness run the two
-programs by hand once and look for the lines quoted under
-[Defects](#defects).
+Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93. No
+test of the package is marked `WILL_FAIL` any more.
 
 `pixi run test` as a whole was not run for this document. An estimate of
 its duration on this Mac: 34 minutes, namely the 22 minutes above plus

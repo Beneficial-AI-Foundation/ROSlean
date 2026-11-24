@@ -365,16 +365,16 @@ int main()
     check(unknown, "kinds 5 to 255, which the core cannot return: zero is published");
   }
   {
-    // T8 (D15): a /clock message is usable iff rclcpp accepts its time.
+    // T9 (D15): a /clock message is usable iff rclcpp accepts its time.
     using roslean_collision_monitor::clock_message_usable;
     check(
       clock_message_usable(0) && clock_message_usable(1) &&
       clock_message_usable(std::numeric_limits<int32_t>::max()),
-      "T8: a /clock message with sec >= 0 is usable");
+      "T9: a /clock message with sec >= 0 is usable");
     check(
       !clock_message_usable(-1) && !clock_message_usable(-5) &&
       !clock_message_usable(std::numeric_limits<int32_t>::min()),
-      "T8: a /clock message with sec < 0 is not");
+      "T9: a /clock message with sec < 0 is not");
   }
 
   std::printf("%d failure(s)\n", failures);
