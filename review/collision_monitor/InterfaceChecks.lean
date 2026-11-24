@@ -9,20 +9,28 @@ Run from the repository root, after `lake build ROSlean`:
     lake env lean review/collision_monitor/InterfaceChecks.lean
 
 1. The axioms behind the interface theorems.
-2. The interface functions evaluated on call sequences the trace theorems do
-   not cover: those that contain an unusable scan (`Monitor.dropScan`).
+2. The interface functions evaluated on call sequences the trace theorems did
+   not cover at `cb25673`: those that contain an unusable scan.
 3. Builder call orders the C++ wrapper does not produce.
+
+Adapted after the fixes (branch `claude/cm-node-fixes`): an unusable scan is
+now the event `scanUnusable` and is covered by `cm_readBack_after`;
+`dropScan_stop` became `cmOnScan_unusable_stop`; and the two evaluations of
+section 3 now show the fixed behaviour (the comments give both).
 -/
 
 open ROSleanCore.CollisionMonitor ROSleanCore.CollisionMonitorFFI
-open ROSlean.CollisionMonitor.FFI ROSlean.CollisionMonitor.Convert
+open ROSlean.CollisionMonitor ROSlean.CollisionMonitor.FFI ROSlean.CollisionMonitor.Convert
 
 #print axioms cm_readBack_after
 #print axioms cm_out_after
 #print axioms cm_not_ok_after
 #print axioms foldl_exec
 #print axioms decodeBeams_encodeBeams
-#print axioms dropScan_stop
+#print axioms cmOnScan_unusable_stop
+#print axioms run_scanUnusable_stop
+#print axioms not_ok_of_refused_call
+#print axioms not_ok_without_set_source
 #print axioms circle_safe
 #print axioms coordMm_abs_le
 #print axioms radiusMm_ge
@@ -63,10 +71,10 @@ def kinds (cs : List Call) : List UInt8 :=
 
 /-- The state after `[good, go, stop for a stale scan, good, go, bad]`: no
 scan, previous velocity not zero, stop stamp not 0. `run` from `State.init`
-cannot reach a state with `scan = none` and `stopStamp ≠ 0` and
-`prevZero = false` under this configuration (without a scan every finite
-command is a stop, so `prevZero` stays `true` once `stopStamp` is set); the
-trace theorems say nothing about what follows. -/
+could not reach a state with `scan = none` and `stopStamp ≠ 0` and
+`prevZero = false` under this configuration while its events were scans and
+commands only. With the event `scanUnusable` it does, and the trace theorems
+apply to what follows. -/
 def afterDrop : Monitor :=
   [good sec, go sec, go (4 * sec), good (4 * sec), go (4 * sec), bad (4 * sec)].foldl
     Call.exec (cmNew b0)
@@ -75,10 +83,15 @@ def afterDrop : Monitor :=
 
 /-! ## 3. Builder call orders -/
 
--- A refused vertex that follows a circle leaves no mark: the monitor is ok.
+-- At `cb25673` a refused vertex that followed a circle left no mark and this was
+-- `true` (also because the source was not set). Now `false`, with or without `set_source`.
 #eval cmOk (cmNew (builderAddVertex (builderAddCircle (builderNew ()) 0x3FD3333333333333 0 0 1 1)
   0x7FC00000 0))
+#eval cmOk (cmNew (builderAddVertex (builderAddCircle
+  (builderSetSource (builderNew ()) 1 0x4000000000000000 0 0) 0x3FD3333333333333 0 0 1 1)
+  0x7FC00000 0))
 
--- Without `set_source` the source timeout is 0: no scan, and the command passes (kind 1).
+-- At `cb25673`: without `set_source` the source timeout was 0, and with no scan the
+-- command passed (kind 1). Now the monitor is not ok and the answer is a stop (kind 4).
 #eval cmOutKind (cmOnCmd (cmNew (builderAddCircle (builderNew ()) 0x3FD3333333333333 0 0 1 1))
   (5 * sec) half 0 0 0 0 0)

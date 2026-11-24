@@ -323,7 +323,7 @@ node, which is the direction SPEC D4 predicts (the Lean node's zones are up
 to 4.4 mm larger), but with this few runs and a lidar noise of 1 cm it is
 not a measurement of that difference.
 Upstream also writes a line to the log whenever the action changes (`Robot to
-stop due to Stop polygon`); the Lean node logs these only at debug level.
+stop due to Stop polygon`); so does the Lean node, in the same words.
 
 ## 7. Nav2 as the planner
 
@@ -454,10 +454,10 @@ documented difference, not a defect of the demo.
   That is why the launch file starts a lifecycle manager for upstream's node
   only.
 - **It shows nothing of its state.** No state topic, no zone polygons for
-  RViz (`visualize` is ignored with a warning), and its decisions are logged
-  at debug level only, where upstream logs each change of action. The
-  narrator of this demo therefore has to infer the action from the
-  velocities, and the zones cannot be displayed.
+  RViz (`visualize` is ignored with a warning). Each change of its action is
+  logged, as upstream logs it (`Robot to stop due to Stop polygon`), but
+  there is no topic for it: the narrator of this demo infers the action from
+  the velocities, and the zones cannot be displayed.
 - **There is no way out of a stop zone** without `approach` or `limit`
   (step 4). That holds for upstream with this configuration too; upstream
   has the other actions to offer.

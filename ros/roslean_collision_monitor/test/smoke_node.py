@@ -9,9 +9,17 @@ every event is chosen exactly. The script sends scans and velocity commands
 and checks what comes out on `cmd_vel`: the command unchanged (pass-through),
 zero (stop), the command scaled (slowdown), or nothing. Expectations follow
 docs/collision_monitor/SPEC.md. It then checks that the node refuses to start
-with configurations outside the supported subset, and names the parameter.
+with configurations outside the supported subset, and names the parameter
+(all refused parameters in one message), and that it warns about accepted
+configurations that protect nothing.
 
 This is a smoke test of the shim, not a comparison with upstream.
+
+The node runs with its logger at debug level and the script reads its log.
+An expectation of "nothing" is met only if nothing was published AND the
+node logged that it left that command unanswered: a lost message or a node
+that stopped listening fails the step. Published values are compared bit for
+bit, so `-0.0` is not `0.0`.
 
 The only wall-clock dependence is that messages must be delivered within
 SETTLE seconds, and that a clock update or scan reaches the node before the
@@ -21,12 +29,17 @@ next message does.
 import math
 import os
 import signal
+import struct
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 
 import rclpy
 from geometry_msgs.msg import Twist, TwistStamped
+from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+from rcl_interfaces.srv import GetParameters, SetParameters, SetParametersAtomically
 from rclpy.node import Node
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import LaserScan
@@ -34,6 +47,9 @@ from sensor_msgs.msg import LaserScan
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTLE = 0.2  # s of wall time allowed for delivery
 NS = 1_000_000_000
+
+# What the node logs (at debug level) for a command it does not answer.
+NOT_ANSWERED = 'Command not answered'
 
 # The command sent in every 'cmd' step: all six components non-zero, so that
 # a copied linear.z, angular.x or angular.y would be noticed (R16).
@@ -95,6 +111,9 @@ STEPS = [
     ('cmd', CMD, PASS, 'the next scan in the base frame is used again'),
 ]
 
+# Five readings around the direction pi of the scan's frame.
+BEHIND = (math.pi - 0.02, 0.01)
+
 # With `scan.roslean_sensor_pose: [0.0, 0.0, pi]` (a sensor mounted backwards)
 # a scan in the sensor's frame is used, and what the sensor sees ahead is
 # behind the robot: outside the stop box, inside the 0.6 m circle.
@@ -103,8 +122,170 @@ POSE_STEPS = [
     ('clock', 100 * NS),
     ('scan', [0.2] * 5, 'laser_link'),
     ('cmd', CMD, slow(0.5), 'sensor pose set: 0.2 m "ahead" of a backwards sensor is behind the robot'),
+    ('scan', [0.2] * 5, 'laser_link', *BEHIND),
+    ('cmd', CMD, STOP, 'and 0.2 m behind the backwards sensor is ahead of the robot: stop'),
     ('scan', FAR, 'laser_link'),
     ('cmd', CMD, PASS, 'sensor pose set: a scan in the sensor frame is used'),
+    ('log', "'scan.roslean_sensor_pose' is set: scans are used whatever their frame_id", 1, 1,
+     'start-up warning, once, that the pose switches the frame check off'),
+    ('log', '[x, y, yaw] = [0, 0, 3.14159]', 1, 1, 'which gives the pose in use'),
+    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link'. It is used", 1, 3,
+     'throttled warning when a scan arrives in another frame while the pose is set'),
+]
+
+# Review CM3/CM4, finding 1 and 4f: a pose of zero is "the sensor is the base
+# frame". The scan is used as if it were in the base frame, whatever the
+# sensor's real mounting, and the node says so.
+ZERO_POSE_PARAMS = ['scan.roslean_sensor_pose:=[0.0, 0.0, 0.0]']
+ZERO_POSE_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', [0.2] * 5, 'laser_link'),
+    ('cmd', CMD, STOP, 'zero pose: a scan in laser_link is taken as if in the base frame: stop'),
+    ('scan', [0.2] * 5, 'laser_link', *BEHIND),
+    ('cmd', CMD, slow(0.5), 'zero pose: what the sensor sees behind itself counts as behind the robot'),
+    ('scan', [0.2] * 5),
+    ('cmd', CMD, STOP, 'zero pose: a scan in the base frame, the same'),
+    ('log', '[x, y, yaw] = [0, 0, 0]', 1, 1, 'start-up warning with the zero pose'),
+    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link'. It is used", 1, 3,
+     'warning about the scan in another frame'),
+]
+
+# The same scans without the parameter: none of those in another frame is used.
+NO_POSE_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', FAR, 'laser_link'),
+    ('cmd', CMD, STOP, 'no pose: a scan in laser_link with nothing near is not used: zero (R8)'),
+    ('log', "'scan.roslean_sensor_pose' is set", 0, 0, 'no pose: no start-up warning about a pose'),
+    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link', and", 1, 3,
+     'no pose: error that the scan is not used'),
+]
+
+# Review CM3/CM4, finding 1, the reviewer's case, on the shipped example
+# configuration (config/example.yaml: base frame base_footprint, stop box
+# x in [0, 0.3] m with 4 points, slowdown zones behind it, timeouts 5 s and
+# 2 s). The scan is in `laser_link`, and the sensor is in truth mounted
+# backwards. With the example's former `roslean_sensor_pose: [0.0, 0.0, 0.0]`
+# an obstacle 0.25 m ahead of the robot (behind the sensor) was passed with
+# the 0.3 slowdown instead of a stop. Now the scan is not used, and the robot
+# stops whatever the scan shows.
+EXAMPLE_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', [0.25] * 5, 'laser_link', *BEHIND),
+    ('cmd', CMD, STOP, 'example.yaml: obstacle ahead of the robot, seen by a backwards sensor in '
+     'laser_link: zero'),
+    ('scan', [0.25] * 5, 'laser_link'),
+    ('cmd', CMD, STOP, 'example.yaml: obstacle behind the robot, same sensor: zero as well (the scan is not used)'),
+    ('scan', FAR, 'laser_link'),
+    ('cmd', CMD, STOP, 'example.yaml: nothing near, scan in laser_link: zero'),
+    ('scan', FAR, 'base_footprint'),
+    ('cmd', CMD, PASS, 'example.yaml: a scan in base_footprint with nothing near: pass'),
+    ('scan', [0.25] * 5, 'base_footprint'),
+    ('cmd', CMD, STOP, 'example.yaml: five points in the stop box: zero'),
+    ('scan', [0.25] * 5, 'base_footprint', *BEHIND),
+    ('cmd', CMD, slow(0.3), 'example.yaml: five points behind the robot: the 0.3 slowdown'),
+    ('log', "'scan.roslean_sensor_pose' is set", 0, 0, 'example.yaml sets no sensor pose'),
+    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_footprint', and", 1, 3,
+     'example.yaml: error that the scan in laser_link is not used'),
+    ('log', 'protects nothing', 0, 0, 'example.yaml: no warning about a configuration that protects nothing'),
+]
+
+# Review CM3/CM4, finding 4f: commands with negative zeros. The comparison is
+# bit for bit. A passed command keeps its signs; a slowed-down one has the
+# signs of the IEEE products; a stop is +0.0 in all three components.
+NEG = (-0.0, 0.25, 1.0, 1.0, 1.0, -0.0)
+NEGZERO_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', FAR),
+    ('cmd', NEG, PASS, '-0.0 in linear.x and angular.z passes as -0.0'),
+    ('cmd', (-0.0, -0.0, 1.0, 1.0, 1.0, -0.0), PASS, 'a command of negative zeros is published as it is'),
+    ('scan', [0.5] * 5),
+    ('cmd', NEG, slow(0.5), '-0.0 scaled by 0.5 is -0.0'),
+    ('scan', [0.2] * 5),
+    ('cmd', (-0.5, -0.0, 1.0, 1.0, 1.0, -0.0), STOP, 'a stop is +0.0 in every component'),
+]
+
+# Review CM3/CM4, finding 4f: a scan of realistic size. 720 readings over the
+# full circle, reading 360 straight ahead, reading 0 straight behind.
+FULL = (-math.pi, 2.0 * math.pi / 720.0)
+
+
+def full_scan(near=(), value=0.2):
+    ranges = [5.0] * 720
+    for k in near:
+        ranges[k] = value
+    return ranges
+
+
+FULL_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', full_scan(), 'base_link', *FULL),
+    ('cmd', CMD, PASS, '720 readings, nothing near: pass'),
+    ('scan', full_scan(range(358, 363)), 'base_link', *FULL),
+    ('cmd', CMD, STOP, '720 readings, five of them 0.2 m ahead: stop'),
+    ('scan', full_scan(range(359, 361)), 'base_link', *FULL),
+    ('cmd', CMD, PASS, '720 readings, two ahead: below min_points 3, pass'),
+    ('scan', full_scan(range(0, 5)), 'base_link', *FULL),
+    ('cmd', CMD, slow(0.5), '720 readings, five of them 0.2 m behind: outside the stop box, slowdown 0.5'),
+    ('scan', full_scan(range(178, 183), 0.8), 'base_link', *FULL),
+    ('cmd', CMD, slow(0.75), '720 readings, five at 0.8 m to the right: slowdown 0.75'),
+    ('scan', full_scan(range(0, 720), math.inf), 'base_link', *FULL),
+    ('cmd', CMD, PASS, '720 infinite readings: pass'),
+]
+
+# Review CM3/CM4, finding 2: parameters are read once (D2). A change through
+# the parameter service is rejected, with a reason that says so, and a name
+# that was not given at start-up cannot be set. The node starts with the stop
+# zone disabled; were the change accepted and ignored (as before the fix),
+# the operator would believe the zone to be on while commands still pass.
+DYNAMIC_PARAMS = ['Stop.enabled:=false']
+READ_ONCE = 'read once'
+# Each change of the action is logged once at INFO (WARN for an invalid
+# source), in upstream's words, naming the zone. The steps are the first ones
+# of STEPS plus repetitions, which must not be logged again.
+ACTION_LOG_STEPS = [
+    ('clock', 100 * NS),
+    ('cmd', CMD, STOP, 'no scan yet: zero'),
+    ('cmd', CMD, STOP, 'again'),
+    ('log', 'Robot to stop due to invalid source', 1, 1, 'logged once: stop due to invalid source'),
+    ('scan', FAR),
+    ('cmd', CMD, PASS, 'pass'),
+    ('cmd', CMD, PASS, 'again'),
+    ('log', 'Robot to continue normal operation', 1, 1, 'logged once: normal operation'),
+    ('scan', [0.8] * 5),
+    ('cmd', CMD, slow(0.75), 'slowdown 0.75'),
+    ('log', 'Robot to slowdown for 75.000000 percents due to SlowWide polygon', 1, 1,
+     'logged once: slowdown, with ratio and zone name'),
+    ('scan', [0.5] * 5),
+    ('cmd', CMD, slow(0.5), 'slowdown 0.5 by another zone'),
+    ('log', 'Robot to slowdown for 50.000000 percents due to Slow polygon', 1, 1,
+     'logged: the change from one slowdown zone to another'),
+    ('scan', [0.2] * 5),
+    ('cmd', CMD, STOP, 'stop zone'),
+    ('cmd', CMD, STOP, 'again'),
+    ('log', 'Robot to stop due to Stop polygon', 1, 1, 'logged once: stop, with the zone name'),
+    ('scan', FAR),
+    ('cmd', CMD, PASS, 'pass again'),
+    ('log', 'Robot to continue normal operation', 2, 2, 'logged a second time after the change back'),
+]
+
+DYNAMIC_STEPS = [
+    ('clock', 100 * NS),
+    ('scan', [0.2] * 5),
+    ('cmd', CMD, slow(0.5), 'stop zone disabled at start-up: points in it only slow the robot down'),
+    ('set', 'Stop.enabled', True, READ_ONCE, 'setting Stop.enabled to true is rejected: "read once"'),
+    ('get', 'Stop.enabled', False, 'and the parameter still reads false'),
+    ('cmd', CMD, slow(0.5), 'the node behaves as it reports: still the slowdown'),
+    ('set', 'Stop.enabled', False, READ_ONCE, 'setting a parameter to the value it has is rejected too'),
+    ('set', 'source_timeout', 0.0, READ_ONCE, 'setting source_timeout to 0 is rejected'),
+    ('set', 'Slow.slowdown_ratio', 1.0, READ_ONCE, 'setting a slowdown ratio is rejected'),
+    ('set', 'use_sim_time', False, READ_ONCE, 'setting use_sim_time is rejected'),
+    ('set_atomically', 'Stop.enabled', True, READ_ONCE, 'set_parameters_atomically is rejected'),
+    ('set', 'Stopp.enabled', True, 'declared', 'a misspelt name cannot be set: it was not declared'),
+    ('set', 'Slow.enabled', False, 'declared',
+     'nor can a parameter that exists upstream but was not given at start-up'),
+    ('cmd', CMD, slow(0.5), 'after all of them: unchanged'),
+    ('clock', 103 * NS),
+    ('cmd', CMD, STOP, 'and source_timeout is still 2 s: the scan is too old at 103 s'),
 ]
 
 # Parameters of a minimal configuration the node accepts.
@@ -163,22 +344,125 @@ BAD_CONFIGS = [
      'scan.roslean_sensor_pose'),
 ]
 
-# Configurations the node must accept: (label, changes to BASE).
+# Review CM3/CM4, finding 7a: the message for a refused radius gives the true
+# bound.
+RADIUS_CASES = [
+    ('999.9995', False), ('999.999', False), ('-999.999', False), ('999.9989', True),
+    ('-999.9989', True),
+]
+
+# Review CM3/CM4, finding 7b: every refusal in one message. A parameter file
+# in Nav2's layout with seven things wrong, some refused by the shim and some
+# by the core. (The core gives one reason per zone: for B that is min_points,
+# not the three vertices; for A the radius, not the ratio.)
+MANY_WRONG = """
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    state_topic: "collision_monitor_state"
+    source_timeout: -1.0
+    stop_pub_timeout: .nan
+    polygons: ["A", "B", "C", "D"]
+    A:
+      type: "circle"
+      radius: 2000.0
+      action_type: "slowdown"
+      slowdown_ratio: -0.5
+    B:
+      type: "polygon"
+      points: "[[1, 1], [1, -1], [-1, -1]]"
+      action_type: "stop"
+      min_points: 4294967297
+    C:
+      type: "circle"
+      radius: 0.3
+      action_type: "approach"
+      max_points: 3
+    D:
+      type: "polygon"
+      points: "[[1, 1], [1, -1], [-1, -1], [-1]]"
+      action_type: "stop"
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      source_timeout: -2.0
+      roslean_sensor_pose: [0.0, 0.0]
+"""
+MANY_WRONG_NAMES = [
+    'state_topic', 'base_shift_correction', 'source_timeout', 'scan.source_timeout',
+    'stop_pub_timeout', 'A.radius', 'B.min_points', 'C.action_type', 'C.max_points', 'D.points',
+    'scan.roslean_sensor_pose',
+]
+
+# Configurations the node must accept: (label, changes to BASE, texts that a
+# warning must contain; an empty list means that no warning about a
+# configuration that protects nothing may appear).
+PROTECTS_NOTHING = 'protects nothing'
 GOOD_CONFIGS = [
-    ('the minimal configuration', {}),
+    ('the minimal configuration', {}, []),
     ('ignored parameters, zero timeouts, odd but legal values',
      {'base_frame_id': 'base_link', 'transform_tolerance': '0.5', 'Z.visualize': 'true',
       'Z.polygon_pub_topic': 'zone', 'source_timeout': '0.0', 'stop_pub_timeout': '0.0',
       'Z.min_points': '-1', 'Z.radius': '-0.5', 'Z.action_type': 'slowdown',
       'Z.slowdown_ratio': '7.0', 'Z.sources_names': '[scan]', 'state_topic': '""',
-      'scan.roslean_sensor_pose': '[0.1, 0.0, 3.14]', 'scan.enabled': 'false'}),
+      'scan.roslean_sensor_pose': '[0.1, 0.0, 3.14]', 'scan.enabled': 'false'},
+     ["'scan.enabled' is false", "'min_points' is -1", "'slowdown_ratio' is 7.0"]),
+    # Review CM3/CM4, finding 7c: accepted, with a warning for each.
+    ('source_timeout 0.0', {'source_timeout': '0.0'}, ['the source timeout is 0']),
+    ("the source's own timeout 0.0", {'scan.source_timeout': '0.0'}, ['the source timeout is 0']),
+    ('a non-zero own timeout over a zero node timeout',
+     {'source_timeout': '0.0', 'scan.source_timeout': '1.0'}, []),
+    ('a disabled source', {'scan.enabled': 'false'}, ["'scan.enabled' is false"]),
+    ('min_points 0', {'Z.min_points': '0'}, ["zone 'Z': 'min_points' is 0"]),
+    ('min_points 1', {'Z.min_points': '1'}, []),
+    ('slowdown ratio 1.5', {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': '1.5'},
+     ["zone 'Z': 'slowdown_ratio' is 1.5"]),
+    ('slowdown ratio 1.0', {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': '1.0'},
+     ["zone 'Z': 'slowdown_ratio' is 1.0"]),
+    ('slowdown ratio NaN', {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': '.nan'},
+     ["zone 'Z': 'slowdown_ratio' is nan"]),
+    ('slowdown ratio 0.99', {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': '0.99'}, []),
+    ('a ratio of 1.5 on a stop zone, where it is not used', {'Z.slowdown_ratio': '1.5'}, []),
+    ('radius 0.0', {'Z.radius': '0.0'}, ["zone 'Z': 'radius' is 0"]),
+    ('four collinear vertices', {**POLYGON, 'Z.points': '"[[0, 0], [1, 0], [2, 0], [3, 0]]"'},
+     ["zone 'Z': the polygon of 'points' has no area"]),
+    ('four vertices of a segment walked twice',
+     {**POLYGON, 'Z.points': '"[[0, 0], [1, 1], [0, 0], [1, 1]]"'},
+     ["zone 'Z': the polygon of 'points' has no area"]),
+    ('a proper square', {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1], [-1, 1]]"'}, []),
 ]
+# Not tested: `polygons: []`. A parameter file or `-p` cannot express an empty
+# list (rcl: "No parameter value set"), so the node's warning for a
+# configuration without zones cannot be reached from here.
+
+
+class Logs:
+    """Collects the lines a process writes to stderr, in a thread."""
+
+    def __init__(self, proc):
+        self.lines = []
+        self.thread = threading.Thread(target=self._read, args=(proc.stderr,), daemon=True)
+        self.thread.start()
+
+    def _read(self, stream):
+        for line in stream:
+            self.lines.append(line.rstrip('\n'))
+
+    def count(self, needle):
+        return sum(needle in line for line in list(self.lines))
+
+    def wait_for(self, needle, at_least, spin, timeout=5.0):
+        end = time.monotonic() + timeout
+        while self.count(needle) < at_least and time.monotonic() < end:
+            spin(0.02)
+        return self.count(needle)
 
 
 class Driver(Node):
 
-    def __init__(self, stamped):
+    def __init__(self, stamped, logs):
         super().__init__('smoke_driver')
+        self.logs = logs
         self.stamped = stamped
         self.msg_type = TwistStamped if stamped else Twist
         self.clock_pub = self.create_publisher(Clock, '/clock', 10)
@@ -210,13 +494,13 @@ class Driver(Node):
         sec, nanosec = divmod(self.now_ns, NS)
         return sec, nanosec
 
-    def send_scan(self, ranges, frame='base_link'):
+    def send_scan(self, ranges, frame='base_link', angle_min=-0.02, increment=0.01):
         msg = LaserScan()
         msg.header.frame_id = frame
         msg.header.stamp.sec, msg.header.stamp.nanosec = self.stamp()
-        msg.angle_min = -0.02
-        msg.angle_increment = 0.01
-        msg.angle_max = 0.02
+        msg.angle_min = angle_min
+        msg.angle_increment = increment
+        msg.angle_max = angle_min + increment * max(len(ranges) - 1, 0)
         msg.range_min = 0.05
         msg.range_max = 10.0
         msg.ranges = [float(r) for r in ranges]
@@ -234,13 +518,20 @@ class Driver(Node):
         self.cmd_pub.publish(msg)
         return msg
 
-    def judge(self, sent, values, expected):
+    def judge(self, sent, values, expected, unanswered_before):
         """Compares what came out for one command with the expectation."""
         kind, ratio = expected
+        if kind == 'nothing':
+            # Silence must be the node's answer to this command, not a lost
+            # message: the node logs each command it leaves unanswered.
+            unanswered = self.logs.wait_for(
+                NOT_ANSWERED, unanswered_before + 1, self.spin_for) - unanswered_before
+            got = self.received[:]
+            self.received.clear()
+            return (not got and unanswered == 1), (
+                f'{len(got)} message(s); the node logged {unanswered} unanswered command(s)')
         got = self.received[:]
         self.received.clear()
-        if kind == 'nothing':
-            return (not got), f'{len(got)} message(s)'
         if len(got) != 1:
             return False, f'{len(got)} message(s)'
         out = got[0].twist if self.stamped else got[0]
@@ -253,10 +544,47 @@ class Driver(Node):
         else:
             # The same IEEE double products as the node computes.
             want = (values[0] * ratio, values[1] * ratio, values[5] * ratio)
-        ok = planar == want and rest == (0.0, 0.0, 0.0)
+        # Bit for bit: -0.0 is not 0.0.
+        ok = bits(planar) == bits(want) and bits(rest) == bits((0.0, 0.0, 0.0))
         if self.stamped:
             ok = ok and got[0].header == sent.header
         return ok, f'published {planar}, other components {rest}'
+
+    def call(self, srv_type, name, request):
+        client = self.create_client(srv_type, f'/collision_monitor/{name}')
+        try:
+            if not client.wait_for_service(timeout_sec=10.0):
+                return None
+            future = client.call_async(request)
+            end = time.monotonic() + 10.0
+            while not future.done() and time.monotonic() < end:
+                rclpy.spin_once(self, timeout_sec=0.05)
+            return future.result() if future.done() else None
+        finally:
+            self.destroy_client(client)
+
+    def set_param(self, name, value, atomically):
+        """Asks the node to change a parameter; returns (successful, reason)."""
+        pv = ParameterValue()
+        if isinstance(value, bool):
+            pv.type, pv.bool_value = ParameterType.PARAMETER_BOOL, value
+        else:
+            pv.type, pv.double_value = ParameterType.PARAMETER_DOUBLE, float(value)
+        params = [Parameter(name=name, value=pv)]
+        if atomically:
+            res = self.call(SetParametersAtomically, 'set_parameters_atomically',
+                            SetParametersAtomically.Request(parameters=params))
+            return (None, 'no answer') if res is None else (res.result.successful, res.result.reason)
+        res = self.call(SetParameters, 'set_parameters', SetParameters.Request(parameters=params))
+        if res is None or len(res.results) != 1:
+            return None, 'no answer'
+        return res.results[0].successful, res.results[0].reason
+
+    def get_bool(self, name):
+        res = self.call(GetParameters, 'get_parameters', GetParameters.Request(names=[name]))
+        if res is None or len(res.values) != 1 or res.values[0].type != ParameterType.PARAMETER_BOOL:
+            return None
+        return res.values[0].bool_value
 
     def run(self, steps):
         for step in steps:
@@ -269,16 +597,35 @@ class Driver(Node):
             elif step[0] == 'scan':
                 self.send_scan(*step[1:])
                 self.spin_for(SETTLE)
+            elif step[0] == 'log':
+                _, needle, at_least, at_most, label = step
+                n = self.logs.wait_for(needle, at_least, self.spin_for, timeout=2.0)
+                self.results.append((label, at_least <= n <= at_most, f'{n} log line(s) with {needle!r}'))
+            elif step[0] in ('set', 'set_atomically'):
+                _, name, value, needle, label = step
+                successful, reason = self.set_param(name, value, step[0] == 'set_atomically')
+                self.results.append(
+                    (label, successful is False and needle in reason,
+                     f'successful={successful}, reason={reason!r}'))
+            elif step[0] == 'get':
+                _, name, want, label = step
+                got = self.get_bool(name)
+                self.results.append((label, got is want, f'{name} reads {got}'))
             else:
                 _, values, expected, label = step
                 self.received.clear()
+                unanswered_before = self.logs.count(NOT_ANSWERED)
                 sent = self.send_cmd(values)
                 self.spin_for(SETTLE)
-                ok, what = self.judge(sent, values, expected)
+                ok, what = self.judge(sent, values, expected, unanswered_before)
                 self.results.append((label, ok, what))
         self.spin_for(SETTLE)
         if self.received:
             self.results.append(('no late messages', False, f'{len(self.received)} message(s)'))
+
+
+def bits(values):
+    return struct.pack(f'<{len(values)}d', *values)
 
 
 def stop(proc):
@@ -290,13 +637,14 @@ def stop(proc):
         proc.wait()
 
 
-def run_scenario(exe, title, steps, stamped=False, params=()):
-    args = [exe, '--ros-args', '--params-file', os.path.join(HERE, 'smoke_params.yaml'),
-            '-p', 'use_sim_time:=true', '-p', f'enable_stamped_cmd_vel:={str(stamped).lower()}']
+def run_scenario(exe, title, steps, stamped=False, params=(), params_file='smoke_params.yaml'):
+    args = [exe, '--ros-args', '--params-file', os.path.join(HERE, params_file),
+            '-p', 'use_sim_time:=true', '-p', f'enable_stamped_cmd_vel:={str(stamped).lower()}',
+            '--log-level', 'collision_monitor:=debug']
     for param in params:
         args += ['-p', param]
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    d = Driver(stamped)
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    d = Driver(stamped, Logs(proc))
     try:
         d.wait_connected()
         d.run(steps)
@@ -311,6 +659,20 @@ def run_scenario(exe, title, steps, stamped=False, params=()):
     return bad
 
 
+def refusal(args):
+    """Starts the node with a configuration it must refuse; returns the exit
+    code and the fatal lines of its log."""
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        _, err = proc.communicate(timeout=20)
+        code = proc.returncode
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        _, err = proc.communicate()
+        code = None
+    return code, [line for line in err.splitlines() if '[FATAL]' in line]
+
+
 def param_args(changes):
     params = {**BASE, **changes}
     args = ['--ros-args']
@@ -320,51 +682,83 @@ def param_args(changes):
     return args
 
 
-def run_bad_configs(exe):
+def run_bad_configs(exe, tmp):
     bad = 0
     print('--- configurations the node must refuse')
     for label, changes, needle in BAD_CONFIGS:
-        proc = subprocess.Popen([exe] + param_args(changes), stdout=subprocess.DEVNULL,
-                                stderr=subprocess.PIPE, text=True)
-        try:
-            _, err = proc.communicate(timeout=20)
-            code = proc.returncode
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            _, err = proc.communicate()
-            code = None
-        fatal = [line for line in err.splitlines() if '[FATAL]' in line]
-        ok = code == 1 and any(f"'{needle}'" in line for line in fatal)
+        code, fatal = refusal([exe] + param_args(changes))
+        ok = code == 1 and len(fatal) == 1 and f"'{needle}'" in fatal[0] and \
+            '1 parameter refused' in fatal[0]
         bad += not ok
         print(f"{'ok  ' if ok else 'FAIL'}  refuses: {label} (exit code {code})"
               + ('' if ok else f'  [{fatal}]'))
+
+    # Finding 7a: the radius message gives the true bound.
+    for value, accepted in RADIUS_CASES:
+        if accepted:
+            continue
+        code, fatal = refusal([exe] + param_args({'Z.radius': value}))
+        ok = code == 1 and len(fatal) == 1 and 'at most 999.999 m in magnitude' in fatal[0] \
+            and 'below 1000 m' not in fatal[0]
+        bad += not ok
+        print(f"{'ok  ' if ok else 'FAIL'}  refuses radius {value} and gives the bound 999.999 m"
+              + ('' if ok else f'  [{fatal}]'))
+
+    # Finding 7b: all refusals in one message, from a parameter file.
+    path = os.path.join(tmp, 'many_wrong.yaml')
+    with open(path, 'w') as f:
+        f.write(MANY_WRONG)
+    code, fatal = refusal([exe, '--ros-args', '--params-file', path])
+    missing = [n for n in MANY_WRONG_NAMES if len(fatal) != 1 or f"parameter '{n}'" not in fatal[0]]
+    ok = code == 1 and len(fatal) == 1 and not missing and \
+        f'{len(MANY_WRONG_NAMES)} parameters refused' in fatal[0]
+    bad += not ok
+    print(f"{'ok  ' if ok else 'FAIL'}  a parameter file with {len(MANY_WRONG_NAMES)} refused "
+          'parameters: one fatal message names them all'
+          + ('' if ok else f'  [exit code {code}; not named: {missing}; {fatal}]'))
     return bad
+
+
+def starts(args):
+    """Starts the node with a configuration it must accept, lets it run for
+    three seconds and stops it. Returns (ok, what went wrong, its log)."""
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        _, err = proc.communicate(timeout=3)
+        return False, f'exited with code {proc.returncode}: {err.strip()}', err
+    except subprocess.TimeoutExpired:
+        proc.send_signal(signal.SIGINT)
+        try:
+            _, err = proc.communicate(timeout=10)
+            return proc.returncode == 0, f'exit code {proc.returncode} on SIGINT', err
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            _, err = proc.communicate()
+            return False, 'did not stop on SIGINT', err
 
 
 def run_good_configs(exe):
     bad = 0
-    print('--- configurations the node must accept')
-    cases = [(label, param_args(changes)) for label, changes in GOOD_CONFIGS]
+    print('--- configurations the node must accept, and what it must warn about')
+    cases = [(label, [exe] + param_args(changes), warnings)
+             for label, changes, warnings in GOOD_CONFIGS]
+    for value, accepted in RADIUS_CASES:
+        if accepted:
+            cases.append((f'radius {value}', [exe] + param_args({'Z.radius': value}), []))
     example = os.path.join(HERE, '..', 'config', 'example.yaml')
-    cases.append(('config/example.yaml', ['--ros-args', '--params-file', example]))
-    for label, args in cases:
-        proc = subprocess.Popen([exe] + args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                text=True)
-        try:
-            _, err = proc.communicate(timeout=3)
-            ok, what = False, f'exited with code {proc.returncode}: {err.strip()}'
-        except subprocess.TimeoutExpired:
-            ok, what = True, ''
-            proc.send_signal(signal.SIGINT)
-            try:
-                proc.communicate(timeout=10)
-                ok, what = proc.returncode == 0, f'exit code {proc.returncode} on SIGINT'
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                ok, what = False, 'did not stop on SIGINT'
+    cases.append(('config/example.yaml', [exe, '--ros-args', '--params-file', example], []))
+    for label, args, warnings in cases:
+        ok, what, err = starts(args)
+        warned = [line for line in err.splitlines() if '[WARN]' in line and PROTECTS_NOTHING in line]
+        if ok and warnings:
+            missing = [w for w in warnings if not any(w in line for line in warned)]
+            ok = not missing and len(warned) == len(warnings)
+            what = f'expected warnings with {warnings}; got {warned}'
+        elif ok:
+            ok, what = not warned, f'unexpected warning(s): {warned}'
         bad += not ok
-        print(f"{'ok  ' if ok else 'FAIL'}  starts and stops cleanly: {label}"
+        wants = f', warns {len(warnings)} time(s)' if warnings else ', no "protects nothing" warning'
+        print(f"{'ok  ' if ok else 'FAIL'}  starts and stops cleanly: {label}{wants}"
               + ('' if ok else f'  [{what}]'))
     return bad
 
@@ -378,11 +772,21 @@ def main():
     try:
         bad += run_scenario(exe, 'Twist', STEPS)
         bad += run_scenario(exe, 'TwistStamped', STEPS, stamped=True)
-        bad += run_scenario(exe, 'sensor pose', POSE_STEPS, params=POSE_PARAMS)
+        bad += run_scenario(exe, 'sensor pose, backwards', POSE_STEPS, params=POSE_PARAMS)
+        bad += run_scenario(exe, 'sensor pose of zero', ZERO_POSE_STEPS, params=ZERO_POSE_PARAMS)
+        bad += run_scenario(exe, 'no sensor pose', NO_POSE_STEPS)
+        bad += run_scenario(exe, 'config/example.yaml, scan in another frame', EXAMPLE_STEPS,
+                            params_file=os.path.join('..', 'config', 'example.yaml'))
+        bad += run_scenario(exe, 'negative zeros', NEGZERO_STEPS)
+        bad += run_scenario(exe, 'negative zeros, TwistStamped', NEGZERO_STEPS, stamped=True)
+        bad += run_scenario(exe, 'a scan of 720 readings', FULL_STEPS)
+        bad += run_scenario(exe, 'parameter changes at run time', DYNAMIC_STEPS, params=DYNAMIC_PARAMS)
+        bad += run_scenario(exe, 'log of action changes', ACTION_LOG_STEPS)
     finally:
         rclpy.shutdown()
-    bad += run_bad_configs(exe)
-    bad += run_good_configs(exe)
+    with tempfile.TemporaryDirectory() as tmp:
+        bad += run_bad_configs(exe, tmp)
+        bad += run_good_configs(exe)
     print(f'{bad} failure(s)')
     sys.exit(1 if bad else 0)
 

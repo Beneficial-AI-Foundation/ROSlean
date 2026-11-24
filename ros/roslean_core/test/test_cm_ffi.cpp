@@ -8,6 +8,8 @@
 // arithmetic (millimetres, nanoseconds) with reference computations in
 // hardware floating point.
 
+#include <sys/resource.h>
+
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -33,6 +35,18 @@ using CErr = CM::ConfigError;
 using roslean::bits_of;
 
 int failures = 0;
+
+// Peak resident set size of this process, in kB.
+long peak_rss_kb()
+{
+  rusage u;
+  getrusage(RUSAGE_SELF, &u);
+#ifdef __APPLE__
+  return static_cast<long>(u.ru_maxrss / 1024);  // bytes on macOS
+#else
+  return static_cast<long>(u.ru_maxrss);  // kilobytes on Linux
+#endif
+}
 
 void check(bool cond, const std::string & what)
 {
@@ -135,6 +149,7 @@ CM standard()
 CM circle_stop(double radius_m, int64_t min_points = 1)
 {
   CM::Builder b;
+  b.set_source(true, 0.0, std::nullopt);
   b.add_circle(radius_m, CM::ZoneAction::Stop, 0.0, min_points, true);
   return b.build();
 }
@@ -197,6 +212,54 @@ int main()
 {
   roslean::initialize();
   roslean::initialize();  // idempotent
+
+  {
+    // Review CM3/CM4, finding 4c: a leak, measured. One round makes every
+    // wrapper call. The peak resident set size is read after a warm-up and
+    // again after many more rounds; one Lean object leaked per round (16
+    // bytes or more) would add at least 9 MB over 600,000 rounds. The
+    // allowance is for the allocator's own noise. This comes first in the
+    // program: a peak can only show growth while nothing larger has been
+    // allocated, and later tests hold scans of 20 MB.
+    const auto near = encode(at(100, 0, 64));
+    const auto far = encode(at(2000, 0, 64));
+    const auto round_trip = [&](int n) {
+        CM::Builder b;
+        b.set_source(true, 2.0, n % 2 ? std::optional<double>(1.0) : std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(n % 7 ? 0.3 : -1.0e9, CM::ZoneAction::Stop, 0.0, 1, true);  // sometimes refused
+        if (n % 11 == 0) {b.add_vertex(0.0f, 0.0f);}  // sometimes a stray vertex
+        b.add_polygon(CM::ZoneAction::Slowdown, 0.5, 1, true);
+        for (float v : {0.5f, -0.5f}) {
+          b.add_vertex(v, v);
+          b.add_vertex(v, -v);
+        }
+        CM m = b.build();
+        (void)m.ok();
+        (void)m.error();
+        (void)m.zone_error(0);
+        for (int k = 0; k < 4; ++k) {
+          const auto & bytes = k % 2 ? near : far;
+          m.on_scan(k, k, k != 3, 0, f(100.0f), bytes.data(), bytes.size());
+          (void)m.on_cmd(k, d(0.5), 0, 0, 0, 0, 0);
+        }
+        CM m2 = std::move(m);
+        m = std::move(m2);
+        (void)CM::coord_mm(1.5);
+        (void)CM::radius_mm(1.5);
+        (void)CM::vertex_mm(1.5f);
+        (void)CM::timeout_ns(1.5);
+        (void)CM::source_timeout_ns(1.5, std::nullopt);
+      };
+    const int warm = 50000;
+    const int rounds = 600000;
+    for (int n = 0; n < warm; ++n) {round_trip(n);}
+    const long before = peak_rss_kb();
+    for (int n = 0; n < rounds; ++n) {round_trip(n);}
+    const long growth = peak_rss_kb() - before;
+    std::printf("      peak RSS %ld kB after %d rounds, %+ld kB after %d more\n", before, warm, growth, rounds);
+    check(growth < 4096, "no leak: peak memory does not grow over 600000 rounds of every wrapper call");
+  }
 
   {
     // The three decisions, and the source check (R8, R7).
@@ -388,6 +451,7 @@ int main()
   {
     // Action codes at the C level: 1 is slowdown, everything else is stop.
     lean_object * b = roslean_cm_builder_new(roslean_core_unit());
+    b = roslean_cm_builder_set_source(b, 1, d(0.0), 0, d(0.0));
     b = roslean_cm_builder_add_circle(b, d(0.5), 7, d(0.5), 0, 9 /* any non-zero flag */);
     lean_object * m = roslean_cm_new(b);
     m = roslean_cm_on_cmd(m, 5, d(0.5), 0, 0, 0, 0, 0);
@@ -399,6 +463,7 @@ int main()
     // Slowdown selection (R13): the smallest ratio below 1; the earlier of
     // two equal ones; a stop zone after them wins (R12).
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.7, 1, true);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.3, 1, true);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.3, 1, true);
@@ -415,6 +480,7 @@ int main()
   }
   {
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 1.0, 0, true);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 2.0, 0, true);
     auto m = b.build();
@@ -423,6 +489,7 @@ int main()
   {
     // A ratio of 0 yields zero: published for stop_pub_timeout only (D6).
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     b.set_stop_pub_timeout(1e-8);
     b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.0, 0, true);
     auto m = b.build();
@@ -435,6 +502,7 @@ int main()
     // Polygon: vertices in order, signed coordinates, the 4-vertex rule.
     // The box of upstream's example: x in [0, 300], y in [-300, 300] mm.
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
     b.add_vertex(0.3f, 0.3f);
     b.add_vertex(0.3f, -0.3f);
@@ -458,6 +526,7 @@ int main()
   {
     // A box entirely at negative coordinates, far out.
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     b.add_polygon(CM::ZoneAction::Slowdown, 0.5, 1, true);
     b.add_vertex(-900.0f, -900.0f);
     b.add_vertex(-900.0f, -800.0f);
@@ -471,19 +540,19 @@ int main()
     check(is(fwd(m, 1), Kind::Pass), "the mirrored point is outside");
   }
   {
-    // add_vertex applies to the zone added last, and only to a polygon.
+    // add_vertex applies to the zone added last.
     CM::Builder b;
-    b.add_vertex(1.0f, 1.0f);  // no zone yet: no effect
+    b.set_source(true, 0.0, std::nullopt);
     b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
     b.add_vertex(0.1f, 0.1f);
     b.add_vertex(0.1f, -0.1f);
     b.add_vertex(-0.1f, -0.1f);
     b.add_circle(0.05, CM::ZoneAction::Stop, 0.0, 1, true);
-    b.add_vertex(-0.1f, 0.1f);  // last zone is a circle: no effect
     auto m = b.build();
     check(!m.ok() && m.error() == CErr::Zone, "a polygon left with three vertices is refused");
     check(m.zone_error(0) == Err::Points && m.zone_error(1) == Err::None, "zone_error names the triangle");
 
+    b.set_source(true, 0.0, std::nullopt);
     b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
     b.add_vertex(0.1f, 0.1f);
     b.add_vertex(0.1f, -0.1f);
@@ -519,6 +588,7 @@ int main()
 
     auto ratio = [](double r) {
         CM::Builder b;
+        b.set_source(true, 0.0, std::nullopt);
         b.add_circle(0.1, CM::ZoneAction::Slowdown, r, 1, true);
         return b.build().zone_error(0);
       };
@@ -528,6 +598,7 @@ int main()
       "ratios with the sign bit refused (D5)");
     {
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.add_circle(0.1, CM::ZoneAction::Stop, -0.5, 1, true);
       check(b.build().ok(), "the ratio of a stop zone is ignored");
     }
@@ -542,6 +613,7 @@ int main()
 
     auto box = [](float lim) {
         CM::Builder b;
+        b.set_source(true, 0.0, std::nullopt);
         b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
         b.add_vertex(lim, 1.0f);
         b.add_vertex(1.0f, -1.0f);
@@ -557,6 +629,7 @@ int main()
     {
       // A refused vertex is not silently dropped: five vertices, one NaN.
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
       b.add_vertex(1.0f, 1.0f);
       b.add_vertex(1.0f, -1.0f);
@@ -591,6 +664,7 @@ int main()
     {
       // Which part is reported when several are wrong.
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.add_circle(0.1, CM::ZoneAction::Slowdown, -0.5, 1, true);
       b.add_circle(2000.0, CM::ZoneAction::Slowdown, -0.5, INT64_MAX, true);
       b.add_circle(0.1, CM::ZoneAction::Stop, 0.0, INT64_MAX, true);
@@ -599,6 +673,7 @@ int main()
         m.zone_error(2) == Err::MinPoints && m.error() == CErr::Zone, "one code per zone");
     }
     CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
     check(b.build().ok(), "no zones: accepted");
   }
   {
@@ -622,6 +697,7 @@ int main()
     }
     {
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.set_stop_pub_timeout(kNaN);
       never_passes(b.build(), "NaN stop_pub_timeout");
     }
@@ -629,13 +705,80 @@ int main()
     never_passes(circle_stop(0.3, 4294967297LL), "min_points 4294967297");
     {
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.add_circle(0.3, CM::ZoneAction::Slowdown, -0.5, 1, true);
       never_passes(b.build(), "negative slowdown ratio");
     }
     {
       CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
       b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
       never_passes(b.build(), "polygon without vertices");
+    }
+  }
+  {
+    // Review CM3/CM4, finding 6: the builder is fail-closed.
+    const auto stopped = [](CM m, CErr why, const std::string & what) {
+        bool all = !m.ok() && m.error() == why;
+        all = is(fwd(m, 1), Kind::StopSource) && all;
+        scan(m, 2, 2, at(5000, 0));
+        all = is(fwd(m, 3), Kind::StopSource) && all;
+        check(all, "not ok, every command is stopped: " + what);
+      };
+    {
+      // Without set_source the timeout would be 0, "check off": a command
+      // with no scan would pass.
+      CM::Builder b;
+      stopped(b.build(), CErr::SourceNotSet, "new builder");
+      b.set_stop_pub_timeout(1.0);
+      b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 1, true);
+      stopped(b.build(), CErr::SourceNotSet, "zones and stop_pub_timeout, but no set_source");
+      lean_object * raw = roslean_cm_new(
+        roslean_cm_builder_add_circle(roslean_cm_builder_new(roslean_core_unit()), d(0.3), 0, 0, 1, 1));
+      roslean_core_inc(raw);
+      const bool ok = roslean_cm_ok(raw) != 0;
+      raw = roslean_cm_on_cmd(raw, 5, d(0.5), 0, 0, 0, 0, 0);
+      roslean_core_inc(raw);
+      check(!ok && roslean_cm_out_kind(raw) == 4, "the same through the C functions: add_circle, cm_new, a command");
+      roslean_core_dec(raw);
+    }
+    {
+      // A vertex that belongs to no polygon, refused or not, is recorded.
+      const auto stray = [&](int where, float x) {
+          CM::Builder b;
+          b.set_source(true, 0.0, std::nullopt);
+          if (where == 0) {b.add_vertex(x, 0.0f);}  // before any zone
+          b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 1, true);
+          if (where == 1) {b.add_vertex(x, 0.0f);}  // after a circle
+          b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+          for (float v : {0.5f, -0.5f}) {
+            b.add_vertex(v, v);
+            b.add_vertex(v, -v);
+          }
+          return b.build();
+        };
+      check(stray(2, 0.0f).ok(), "no stray vertex: accepted");
+      stopped(stray(0, kNaNF), CErr::StrayVertex, "a NaN vertex before any zone");
+      stopped(stray(1, kNaNF), CErr::StrayVertex, "a NaN vertex after a circle");
+      stopped(stray(0, 1.0f), CErr::StrayVertex, "a finite vertex before any zone");
+      stopped(stray(1, 1.0f), CErr::StrayVertex, "a finite vertex after a circle");
+    }
+    {
+      // No later call clears a refusal.
+      CM::Builder b;
+      b.set_source(true, -1.0, std::nullopt);
+      b.set_source(true, 2.0, std::nullopt);
+      stopped(b.build(), CErr::SourceTimeout, "a refused source_timeout followed by a good one");
+      b.set_source(true, 2.0, kNaN);
+      b.set_source(true, 2.0, 1.0);
+      stopped(b.build(), CErr::OwnSourceTimeout, "a refused own timeout followed by a good one");
+      b.set_source(true, 2.0, std::nullopt);
+      b.set_stop_pub_timeout(kNaN);
+      b.set_stop_pub_timeout(1.0);
+      stopped(b.build(), CErr::StopPubTimeout, "a refused stop_pub_timeout followed by a good one");
+      b.set_source(true, 2.0, std::nullopt);
+      b.set_stop_pub_timeout(1.0);
+      check(b.build().ok(), "and a build clears the builder's refusals");
     }
   }
   {
@@ -719,10 +862,19 @@ int main()
     b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 0, true);
     auto m1 = b.build();
     check(b.add_circle(0.3, CM::ZoneAction::Slowdown, 0.5, 0, true) == 0, "builder is empty after a build");
+    {
+      // The source settings were reset too: without a new set_source the
+      // second monitor is not ok (and not "timeout 0, check off").
+      auto unset = b.build();
+      check(!unset.ok() && unset.error() == CErr::SourceNotSet && is(fwd(unset, 1), Kind::StopSource),
+        "a build resets the source: the next monitor is not ok until set_source is called again");
+    }
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_circle(0.3, CM::ZoneAction::Slowdown, 0.5, 0, true);
     auto m2 = b.build();
     check(is(fwd(m1, 1), Kind::StopSource), "first monitor has the source timeout: no scan, stop");
-    check(is(fwd(m2, 1), Kind::Slowdown, 0, d(0.5)),
-      "second monitor is independent, and the source settings were reset");
+    check(m2.ok() && is(fwd(m2, 1), Kind::Slowdown, 0, d(0.5)),
+      "second monitor is independent, with the source settings of its own set_source");
     scan(m1, 0, 0, {});
 
     CM m3(std::move(m1));
@@ -794,7 +946,9 @@ int main()
     check(all, "20000 build cycles");
   }
   {
-    // Long run: catches reference-count mistakes (leak or double free).
+    // Long run over scan and command events: decisions stay right. (A double
+    // free shows here as a crash; a leak is measured by the first test of
+    // this program.)
     auto m = standard();
     bool all = true;
     const auto near = encode(at(100, 0));
@@ -808,7 +962,6 @@ int main()
     }
     check(all, "300000 scan and command events");
   }
-
   // ---- The conversions Lean performs, against floating-point references ----
 
   std::mt19937_64 gen(1);

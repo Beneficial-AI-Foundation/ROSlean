@@ -121,6 +121,22 @@ example : outputs cfg [.scan (ms 5000) (scanAt (ms 4990) [at2]),
       .scan (ms 5005) (scanAt (ms 1000) [at2]), .cmd (ms 5010) fwd]
     = [.silent, .silent, .publish .stopSource] := by decide
 
+-- An unusable scan (D11: not in the base frame, and no sensor pose) discards
+-- the stored scan: the robot stops as if no scan had ever arrived, although
+-- the scan before it was fresh and showed nothing near. The next usable scan
+-- ends that.
+example : outputs cfg [.scan (ms 1000) (scanAt (ms 990) [at2]), .cmd (ms 1010) fwd,
+      .scanUnusable (ms 1020), .cmd (ms 1030) fwd, .cmd (ms 1040) fwd,
+      .scan (ms 1050) (scanAt (ms 1045) [at2]), .cmd (ms 1060) fwd]
+    = [.silent, .publish .pass, .silent, .publish .stopSource, .publish .stopSource,
+       .silent, .publish .pass] := by decide
+
+-- An unusable scan also discards a scan that would have stopped the robot by
+-- a zone; the stop is then by the source rule.
+example : outputs cfg [.scan (ms 1000) (scanAt (ms 990) [at0_25, left0_25]),
+      .cmd (ms 1010) fwd, .scanUnusable (ms 1020), .cmd (ms 1030) fwd]
+    = [.silent, .publish (.stopZone 0), .silent, .publish .stopSource] := by decide
+
 /-- As `cfg` with the timeout disabled. -/
 def cfgNoTimeout : Config := { cfg with sourceTimeout := 0 }
 
@@ -129,6 +145,12 @@ def cfgNoTimeout : Config := { cfg with sourceTimeout := 0 }
 example : outputs cfgNoTimeout [.cmd (ms 1000) fwd,
       .scan (ms 1001) (scanAt (ms 990) [at0_25, left0_25]), .cmd (ms 900000) fwd]
     = [.publish .pass, .silent, .publish (.stopZone 0)] := by decide
+
+-- With `source_timeout: 0` an unusable scan leaves "no obstacles" (R8): the
+-- zone that the discarded scan triggered no longer stops the robot.
+example : outputs cfgNoTimeout [.scan (ms 1000) (scanAt (ms 990) [at0_25, left0_25]),
+      .cmd (ms 1010) fwd, .scanUnusable (ms 1020), .cmd (ms 1030) fwd]
+    = [.silent, .publish (.stopZone 0), .silent, .publish .pass] := by decide
 
 /-- As `cfg` with the source disabled. -/
 def cfgSourceOff : Config := { cfg with sourceEnabled := false }

@@ -69,14 +69,19 @@ public:
     SourceTimeout = 1,      ///< the node's `source_timeout`
     OwnSourceTimeout = 2,   ///< the source's own `source_timeout`
     StopPubTimeout = 3,     ///< `stop_pub_timeout`
-    Zone = 4                ///< a zone; see zone_error
+    Zone = 4,               ///< a zone; see zone_error
+    SourceNotSet = 5,       ///< set_source was never called on the builder
+    StrayVertex = 6         ///< add_vertex when the zone added last was not a polygon
   };
 
   /// Why a zone is refused.
   enum class ZoneError : uint8_t
   {
     None = 0,       ///< the zone is accepted
-    Radius = 1,     ///< not finite, or 1000 m or more in magnitude
+    Radius = 1,     ///< not finite, or so large that the magnitude, rounded up
+                    ///< to whole millimetres, plus 1 mm exceeds 1000 m
+                    ///< (the largest accepted magnitude is 999.999 m less
+                    ///< one rounding: 999.9989 is accepted, 999.999 is not)
     Points = 2,     ///< a coordinate that is not finite or beyond 999.997 m,
                     ///< or fewer than four vertices
     Ratio = 3,      ///< a slowdown ratio with the sign bit set
@@ -92,8 +97,13 @@ public:
   };
 
   /// Collects the configuration. Zones are indexed in order of addition,
-  /// starting at 0. A new builder has no zones, an enabled source and both
-  /// timeouts 0.
+  /// starting at 0. A new builder has no zones and a stop_pub_timeout of 0.
+  ///
+  /// Fail-closed: the monitor of a builder is ok() only if set_source was
+  /// called on it (there is no default source timeout), and a value that the
+  /// core refuses makes the monitor not ok wherever in the sequence of calls
+  /// it occurs; no later call clears a refusal. A vertex added when the zone
+  /// added last is not a polygon is such a refusal.
   class Builder
   {
 public:
@@ -145,7 +155,8 @@ public:
     }
 
     /// Appends a vertex, in metres as parsed from `points`, to the zone added
-    /// last; no effect unless that zone is a polygon.
+    /// last. If that zone is not a polygon, or there is no zone, the monitor
+    /// will not be ok (ConfigError::StrayVertex).
     void add_vertex(float x_m, float y_m)
     {
       obj_ = roslean_cm_builder_add_vertex(obj_, bits_of(x_m), bits_of(y_m));
@@ -209,7 +220,9 @@ private:
   /// A scan arrived at node-clock time `now_ns`.
   /// @param stamp_ns the header stamp.
   /// @param usable false if the scan's points cannot be placed in the base
-  ///   frame; the stored scan is then discarded and this one is not stored.
+  ///   frame; the stored scan is then discarded and this one is not stored
+  ///   (the model's event `scanUnusable`; the remaining arguments are then
+  ///   not looked at).
   /// @param range_min_bits, range_max_bits binary32 patterns of the limits.
   /// @param beams `size` bytes: one 20-byte record per reading (range
   ///   pattern, 4 bytes; x and y in metres as binary64 patterns, 8 bytes

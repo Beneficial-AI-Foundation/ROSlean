@@ -119,4 +119,25 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+# ---- begin: fixes after the review CM3/CM4 (docs/REVIEWS.md) ---------------
+# Finding 5. Without a build type CMake passes no -O flag, and the node then
+# calls cos and sin separately where an optimised build (such as upstream's
+# binary) makes one call for both; on macOS arm64 the two round differently
+# for about 1 % of the coordinates. Build with optimisation unless told
+# otherwise, so that the points of a scan are upstream's bit for bit.
+# CMAKE_BUILD_TYPE is read when the build files are generated, so setting it
+# here, after the targets were declared, takes effect for them.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "roslean_collision_monitor: no build type given, using Release")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+if(BUILD_TESTING)
+  # smoke_conversions compares the shim's points, compiled with the flags of
+  # the node, with upstream's loop in a translation unit of its own that is
+  # compiled with -O2 whatever the build type (see the file).
+  target_sources(smoke_conversions PRIVATE test/upstream_points.cpp)
+  set_source_files_properties(test/upstream_points.cpp PROPERTIES COMPILE_OPTIONS "-O2")
+endif()
+# ---- end: fixes after the review CM3/CM4 ----------------------------------
+
 ament_package()
