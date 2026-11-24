@@ -824,7 +824,7 @@ reworked the model and the proofs; T06 writes the shim.
 | Trusted, beyond tf2 and R3 | The matrix and the two sums of N25 in C++, about 15 lines, **and how they are compiled**; that the points handed over are those of the stored scan | Nothing more |
 | Agreement with upstream before the millimetre | Bit for bit where upstream's build does not fuse either (baseline x86-64 cannot; inference from the instruction set, the Linux binaries were not examined). Upstream's arm64 binary fuses the two sums (N25), so there the last bits of a coordinate can differ | Not bit for bit. Lean's point is the exact image; upstream's is that image computed in `double` |
 | Model | The command event carries the coordinates; the stored scan decides which readings count and how many points there are, the command where they lie | The command event carries six numbers or `none`; points are a function of the stored scan and the transform, inside the theorems |
-| Cost per reading and command | The shim's arithmetic, a few ns (estimated), plus decoding and conversion in Lean, about 41 ns as measured before the extension, now per command instead of per scan. Not re-measured through a node (T06) | Measured below: 1.2 to 1.9 µs exact; 0.45 µs in a fixed-point form |
+| Cost per reading and command | The shim's arithmetic, a few ns (estimated), plus decoding and conversion in Lean, now per command instead of per scan: 41 ns per reading was the figure before the extension, 0.19 µs is what the model costs now (below). Not measured through a node (T06) | Measured below: 1.2 to 1.9 µs exact; 0.45 µs in a fixed-point form |
 
 **What the model receives (T05b).** With every command: one pair of
 binary64 patterns per reading of the stored scan, the reading's point in
@@ -840,6 +840,33 @@ is 16 bytes per reading and command also for readings that do not count.
 For a topic zone in another frame: the base-frame vertices of the stored
 message, as binary64 pairs, or "none", per zone.
 
+**Cost of A in the model, measured (T05b).** With the present interface
+(a scan call remembers the coordinates, every command carries them),
+`ros/roslean_collision_monitor/test/cmd_cost` (task T02's program: 1080
+readings, nothing near, median of 400 commands back to back, macOS arm64,
+machine in use by other tests):
+
+| | Two circles | Two 4-vertex polygons |
+| --- | --- | --- |
+| Before the extension (`91c21f9`, T02's COMPARISON.md) | 18 µs | 0.41 ms |
+| After T05 (option B; T02) | 2.5 µs per reading, about 2.7 ms | 2.9 µs per reading, about 3.1 ms |
+| After T05b (option A) | **0.21 ms**, 0.19 µs per reading | **0.63 ms** |
+
+So a command is 13 and 5 times cheaper than under B, and for circle zones
+still 12 times dearer than before the extension. The difference to "before"
+is the conversion to millimetres, which was made once per scan and under
+option A is made for every command, because the points arrive with the
+command. Of the 0.21 ms, about 0.14 ms is `coordMm` on 2160 coordinates
+(measured by replacing the conversion with a constant, then restored),
+0.05 ms the lists (`zip`, `filter`, `map`), 0.02 ms the zone tests. The
+conversion is slow here because a coordinate is kept as a `Nat` pattern and
+a pattern with the sign bit set is a big number for Lean's runtime; before
+the extension the decoder took sign and magnitude apart
+(`coordMmOfParts`, 41 ns per reading). T06's decoder can do that again, with
+a proof that it computes `Scan.points`; this is an open item for T06, not
+done here. `test_cm_ffi` is back to 47 s (169 s after T05, 39 to 42 s
+before).
+
 **Cost of B, measured (history).**
 `review/collision_monitor/nav2/TransformCost.lean` is a Mathlib-free
 prototype of the exact transform on unbounded integers, compiled with
@@ -849,8 +876,7 @@ another job used the machine, over eight runs: **1.2 to 1.5 µs per point**
 for a quaternion with four non-zero components, **1.6 to 1.9 µs** for a
 pure yaw. A fixed-point variant in the same file costs **0.43 to 0.50 µs
 per point**. T05's implementation in the model measured the same: the leak
-test of `test_cm_ffi` took 169 s, about 1.3 µs per reading and command;
-after T05b it takes what the report of T05b says.
+test of `test_cm_ffi` took 169 s, about 1.3 µs per reading and command.
 
 **How far the model's points are from upstream's (option A).** For one
 reading let `e` be the exact image of its scan-frame point under the

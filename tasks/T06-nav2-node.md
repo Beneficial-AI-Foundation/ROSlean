@@ -35,10 +35,18 @@ and the CM3/CM4 review in `docs/REVIEWS.md` for the kind of defect to avoid.
    (events E7 and E8 as they are in the model now). The byte layouts in 8.2
    and 8.3 are proposals; the meanings are not. Conversions and refusals in
    Lean: the shim hands over `double` bit patterns in metres and Lean makes
-   the millimetres (`coordMm`, `vertexCoordMm`). Decode without big
-   numbers: a pattern with the sign bit set does not fit a small `Nat`
-   (`coordMmOfParts` takes sign and magnitude apart for this; a decoder
-   that feeds it must be proved equal to `scanPointMm` on the pattern). The
+   the millimetres (`coordMm`, `vertexCoordMm`). **The cost of a command is
+   an open item** (SPEC_NAV2.md, section 5, "Cost of A in the model"): with
+   1080 readings and two circles it is 0.21 ms now, against 18 µs before
+   the extension, and two thirds of that is `coordMm` on `Nat` patterns,
+   because a pattern with the sign bit set is a big number in Lean's
+   runtime. Decode without big numbers: `coordMmOfParts` takes sign and
+   magnitude apart for this, as the decoder before T05 did (41 ns per
+   reading). The model's event carries the patterns, so the fast path is a
+   function from the bytes to the points, proved equal to `Scan.points` of
+   the decoded pairs, and a command call built on it, proved equal to
+   `step` on the event (`sourcePoints_eq_some_iff` says what `step` needs
+   of the points). Measure with `cmd_cost` before and after. The
    present calls (`on_scan` with coordinates and `usable`, `on_cmd` without
    arguments for points) are replaced; `Monitor.coords`, which stands in
    for them today, goes. Theorems in
