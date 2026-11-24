@@ -42,22 +42,85 @@ answers questions while a session runs. So:
 
 ## Environment
 
-A cloud session is a fresh Linux machine. Run `scripts/cloud_setup.sh` first
-if it exists (task T00 creates it). Otherwise:
+A cloud session is a fresh Linux machine. Run this first, from the checkout
+(about 4 minutes; a second run takes a few seconds and changes nothing):
 
 ```sh
-curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y
-curl -fsSL https://pixi.sh/install.sh | sh
-export PATH="$HOME/.elan/bin:$HOME/.pixi/bin:$PATH"
+scripts/cloud_setup.sh
+export PATH="$HOME/.elan/bin:$HOME/.pixi/bin:$PATH"   # in every new shell
 ```
 
-| Command | What it does |
-| --- | --- |
-| `(cd core && lake build)` | The executable Lean core. No Mathlib. |
-| `lake exe cache get && lake build` | All theorems. Downloads the Mathlib cache first. |
-| `pixi run build` | `colcon build` of the ROS packages (first use installs ROS 2 Jazzy, about 1 GB). |
-| `pixi run test` | All colcon tests, about 20 minutes. |
-| `pixi run cm-check` | Headless Gazebo check of the demo. Needs rendering; may not work in the cloud. |
+It installs elan, the Lean toolchain, pixi, the Mathlib cache and the pixi
+environment, and prints what it did. Everything below was measured by task
+T00 ([reports/T00.md](reports/T00.md)) on one cloud session: x86-64, Ubuntu
+24.04, 4 cores, 15 GB of memory, user `root`.
+
+| Command | What it does | Time in the cloud |
+| --- | --- | --- |
+| `(cd core && lake build)` | The executable Lean core. No Mathlib. | 2 s |
+| `lake exe cache get && lake build` | All theorems. The setup script has already fetched the cache (1.5 min). | 30 s |
+| `pixi run build` | `colcon build` of the ROS packages. | 1 min |
+| `pixi run test` | All colcon tests (11 tests in 4 packages). | 20 min |
+| `review/collision_monitor/run_upstream_probe.sh $PWD/.pixi/envs/default` | Runs upstream's `nav2_collision_monitor` binary. | 1 min |
+| `pixi run cm-check-cloud` | Headless Gazebo check of the demo. | 1 to 3 min; see below |
+
+### What the network allows
+
+Outbound traffic goes through a proxy with a list of allowed hosts, which the
+user sets in the cloud environment's settings. A blocked host answers
+`CONNECT tunnel failed, response 403`. Do not try to get round it; report it.
+
+Allowed when T00 finished: `github.com` and `raw.githubusercontent.com` (git
+and release downloads), `conda.anaconda.org`, `pypi.org`,
+`archive.ubuntu.com`, and, added by the user during T00,
+`releases.lean-lang.org`, `pixi.sh`, `cache.mathlib.org` and
+`fuel.gazebosim.org`.
+
+If the environment is ever set up anew without those four:
+
+- `scripts/cloud_setup.sh` takes the Lean toolchain and pixi from github.com
+  instead, and probes `cache.mathlib.org` and skips the cache if it is
+  blocked. `lake build` then compiles Mathlib from source: 35 minutes on all
+  four cores, once per session.
+- **Do not run `lake exe cache get` by hand in that case.** It does not
+  fail: it tries 9000 files one after the other, each failing after some
+  seconds, and would run for hours.
+- The Gazebo world cannot download its furniture; add `--no-furniture`
+  (below).
+
+### Gazebo
+
+There is no display and no graphics card; `Xvfb` and Mesa's software
+renderer are installed on the machine (`/usr/bin/xvfb-run`). In the cloud use
+
+```sh
+pixi run cm-check-cloud                                     # 1 to 3 minutes
+pixi run cm-check-cloud --monitor nav2_collision_monitor    # upstream's node
+```
+
+It is `cm-check` under a virtual display with software rendering
+(`LIBGL_ALWAYS_SOFTWARE=1`). Both commands pass here; the first run downloads
+the furniture (95 MB, into `~/.gz/fuel`).
+
+- `pixi run cm-check` without the virtual display: `gz sim` segfaults in
+  `Ogre2RenderEngine`, and the check gives up only after six minutes.
+- `--no-furniture` (launch argument `furniture:=false`) loads a copy of the
+  world without the fifteen models from `fuel.gazebosim.org`, for a machine
+  that cannot reach that host. The walls, the floor and the robot remain,
+  which is all the check's scenario uses. It passes here too. A stopgap.
+- If Gazebo exits early (world not loaded, no display), the check does not
+  notice and waits for minutes. Look at `--log FILE`.
+- Windows (`pixi run cm-gazebo`, RViz) were not tried.
+
+### Other
+
+- **Docker:** the client and `dockerd` are installed but no daemon runs.
+  Started by hand (`dockerd &`) it comes up. Building or running a container
+  was not tried; processes in a container do not reach the proxy without
+  extra settings (`--network host`, the CA bundle).
+- **Disk:** the Lean toolchain 3.5 GB, `.lake` 8 GB with the Mathlib cache,
+  `.pixi` 5.9 GB; 45 GB were free afterwards.
+- **Tools missing on the machine:** `zstd`.
 
 If something cannot be installed or run where you are (no network to a host,
 no Docker, no display), say so in the report. Never report a result you did

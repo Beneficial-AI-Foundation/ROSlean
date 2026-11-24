@@ -28,11 +28,17 @@ Arguments:
   gui:=false               no windows (for the automated check)
   scenario:=true           drop a box in front of the robot and take it away
                            again, by itself (obstacle.py run)
+  furniture:=false         leave the furniture out of the world: walls, floor
+                           and robot only. For machines that cannot reach
+                           Gazebo Fuel. A stopgap: see world_file() below.
 
 The first launch downloads the furniture from Gazebo Fuel (about 100 MB).
 """
 
 import os
+import re
+import sys
+import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -53,6 +59,31 @@ CAMERA = ('pose: {position: {x: -5.4, y: -4.0, z: 3.9}, '
 GATE = 'cm_gate'
 
 
+def world_file(apartment):
+    """The world to load: the apartment, or with furniture:=false a copy of it
+    in a temporary file without the models that come from Gazebo Fuel.
+
+    TODO: a stopgap for machines where fuel.gazebosim.org is blocked
+    (tasks/reports/T00.md); better would be a world that needs no download.
+    The argument is read from
+    the command line because the world's path is needed before the launch
+    arguments are resolved.
+    """
+    if not any(a in ('furniture:=false', 'furniture:=False') for a in sys.argv):
+        return apartment
+    with open(apartment) as f:
+        text = f.read()
+    bare, removed = re.subn(
+        r'[ \t]*<include>(?:(?!</include>).)*?fuel\.gazebosim\.org.*?</include>\n?',
+        '', text, flags=re.S)
+    out = tempfile.NamedTemporaryFile(
+        mode='w', prefix='apartment_bare_', suffix='.sdf', delete=False)
+    out.write(bare)
+    out.close()
+    print(f'[cm_gazebo_launch] furniture:=false: {removed} models left out, world in {out.name}')
+    return out.name
+
+
 def generate_launch_description():
     here = os.path.join(get_package_share_directory('roslean_collision_monitor'),
                         'demo', 'gazebo')
@@ -62,7 +93,7 @@ def generate_launch_description():
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     gz_launch = os.path.join(
         get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
-    world = os.path.join(mux_gz, 'apartment.sdf')
+    world = world_file(os.path.join(mux_gz, 'apartment.sdf'))
     sim_time = {'use_sim_time': True}
     nav2_launch = os.path.join(get_package_share_directory('nav2_bringup'), 'launch')
     with open(os.path.join(get_package_share_directory('turtlebot3_description'),
@@ -81,6 +112,7 @@ def generate_launch_description():
         DeclareLaunchArgument('tour', default_value='true'),
         DeclareLaunchArgument('rviz', default_value='true'),
         DeclareLaunchArgument('scenario', default_value='false'),
+        DeclareLaunchArgument('furniture', default_value='true', choices=['true', 'false']),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3, 'models')),
 
         # Simulator: server always, window unless gui:=false.
