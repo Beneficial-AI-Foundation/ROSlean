@@ -223,37 +223,40 @@ private:
       t, bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
       bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z));
     log_change(decision);
-    // `out` is a new message: linear.z, angular.x and angular.y stay 0 (R16).
-    switch (decision.kind) {
-      case CollisionMonitor::OutputKind::Pass:
-        out.linear.x = cmd.linear.x;
-        out.linear.y = cmd.linear.y;
-        out.angular.z = cmd.angular.z;
-        return true;
-      case CollisionMonitor::OutputKind::Slowdown:
-        out.linear.x = scale(cmd.linear.x, decision.ratio_bits);
-        out.linear.y = scale(cmd.linear.y, decision.ratio_bits);
-        out.angular.z = scale(cmd.angular.z, decision.ratio_bits);
-        return true;
-      case CollisionMonitor::OutputKind::StopZone:
-        return true;
-      case CollisionMonitor::OutputKind::StopSource:
-        return true;
-      case CollisionMonitor::OutputKind::Silent:
-        // R2 (a component is not finite) or R15 (zero was published for
-        // stop_pub_timeout already).
-        RCLCPP_DEBUG(get_logger(), "Command not answered");
-        return false;
+    // What to publish for the answer is apply_answer (conversions.hpp, with
+    // its own test), which takes the kind as the number the core returned.
+    static_assert(
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::Silent) == 0 &&
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::Pass) == 1 &&
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::Slowdown) == 2 &&
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::StopZone) == 3 &&
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::StopSource) == 4,
+      "OutputKind must have the codes of roslean_cm_out_kind");
+    std::array<double, 3> planar{};
+    const Answer answer = apply_answer(
+      static_cast<uint8_t>(decision.kind), decision.ratio_bits,
+      {cmd.linear.x, cmd.linear.y, cmd.angular.z}, planar);
+    if (answer == Answer::Nothing) {
+      // R2 (a component is not finite) or R15 (zero was published for
+      // stop_pub_timeout already).
+      RCLCPP_DEBUG(get_logger(), "Command not answered");
+      return false;
     }
-    // Unreachable: the kind is `kindOf` of the core's output
-    // (core/ROSleanCore/CollisionMonitorFFI.lean), a total function whose
-    // values are 0 to 4, all handled above. Were a core and a shim of
-    // different versions ever linked together, the answer the shim does not
-    // understand is treated as a stop, not as silence: `out` is all zeros.
-    RCLCPP_ERROR_THROTTLE(
-      get_logger(), *get_clock(), 5000,
-      "unknown output kind %u from the core: publishing zero velocity",
-      static_cast<unsigned>(decision.kind));
+    if (answer == Answer::PublishUnknownKind) {
+      // Unreachable: the kind is `kindOf` of the core's output
+      // (core/ROSleanCore/CollisionMonitorFFI.lean), a total function whose
+      // values are 0 to 4. Were a core and a shim of different versions ever
+      // linked together, the answer the shim does not understand is treated
+      // as a stop, not as silence: `planar` is all zeros.
+      RCLCPP_ERROR_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "unknown output kind %u from the core: publishing zero velocity",
+        static_cast<unsigned>(decision.kind));
+    }
+    // `out` is a new message: linear.z, angular.x and angular.y stay 0 (R16).
+    out.linear.x = planar[0];
+    out.linear.y = planar[1];
+    out.angular.z = planar[2];
     return true;
   }
 

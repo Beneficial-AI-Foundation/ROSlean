@@ -947,7 +947,8 @@ int main()
   }
   {
     // Long run over scan and command events: decisions stay right. (A double
-    // free shows here as a crash; a leak is measured below.)
+    // free shows here as a crash; a leak is measured by the first test of
+    // this program.)
     auto m = standard();
     bool all = true;
     const auto near = encode(at(100, 0));

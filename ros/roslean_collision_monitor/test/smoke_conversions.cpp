@@ -1,4 +1,5 @@
-// Unit tests of the trusted floating-point work of the shim (conversions.hpp),
+// Unit tests of the trusted work of the shim (conversions.hpp: the
+// floating-point code, and what is published for the core's answer),
 // together with the conversion to millimetres that the Lean core applies to
 // its results. They pin what docs/collision_monitor/SPEC.md demands of a scan
 // ("Scan event", "Safe direction"): the point of a reading is computed as
@@ -232,6 +233,31 @@ int main()
         "infinite reading with a pose: both coordinates saturated");
     }
     {
+      // The pose is applied operation by operation: each product is rounded
+      // before it is added (SPEC, "Scan event"). The reference stores every
+      // product in a volatile double, which no compiler may fuse with the
+      // addition. This fails if conversions.hpp is compiled without
+      // -ffp-contract=off on a machine with fused multiply-add (arm64).
+      std::mt19937_64 gen(17);
+      std::uniform_real_distribution<float> range(0.05f, 12.0f);
+      std::vector<float> ranges(1000);
+      for (auto & r : ranges) {r = range(gen);}
+      const SensorPose pose{0.1, -0.2, 0.7};
+      const auto plain = encode_scan(-3.0f, 0.006f, ranges, SensorPose{});
+      const auto posed = encode_scan(-3.0f, 0.006f, ranges, pose);
+      const double c = std::cos(pose.yaw), s = std::sin(pose.yaw);
+      size_t differ = 0;
+      for (size_t i = 0; i < ranges.size(); ++i) {
+        const Rec p = rec(plain, i);
+        volatile double cx = c * p.x, sy = s * p.y, sx = s * p.x, cy = c * p.y;
+        volatile double x = pose.x + cx;
+        volatile double y = pose.y + sx;
+        differ += !same_bits(rec(posed, i).x, x - sy) + !same_bits(rec(posed, i).y, y + cy);
+      }
+      std::printf("      %zu of 2000 coordinates differ from the unfused reference\n", differ);
+      check(differ == 0, "1000 readings with a pose: no multiplication is fused with an addition");
+    }
+    {
       // A pose of zero is "the sensor is the base frame": the points are
       // those of a scan in the base frame, bit for bit, also where a
       // coordinate is -0.0 (a rotation by 0 and a shift by 0 would turn it
@@ -299,6 +325,44 @@ int main()
     }
     check(bounded, "200000 random products with a ratio in [0, 1): no amplification");
     check(sign, "200000 random products: the sign does not flip");
+  }
+
+  // ---- what is published for the core's answer (T5) -----------------------
+  {
+    // The table of the SPEC, "Where the velocity is computed", bit for bit.
+    using Vec = std::array<double, 3>;
+    const Vec cmd = {-0.0, 0.25, -1.5};
+    const uint64_t half = bits_of(0.5);
+    const auto same = [](const Vec & a, const Vec & b) {
+        return bits_of(a[0]) == bits_of(b[0]) && bits_of(a[1]) == bits_of(b[1]) &&
+               bits_of(a[2]) == bits_of(b[2]);
+      };
+    const Vec zero = {0.0, 0.0, 0.0};
+    const Vec junk = {9.0, 9.0, 9.0};  // what `out` holds before each call
+    Vec out = junk;
+    check(apply_answer(0, half, cmd, out) == Answer::Nothing, "kind 0: nothing is published");
+    out = junk;
+    check(apply_answer(1, half, cmd, out) == Answer::Publish && same(out, cmd),
+      "kind 1: the command, bit for bit");
+    out = junk;
+    check(apply_answer(2, half, cmd, out) == Answer::Publish && same(out, Vec{-0.0, 0.125, -0.75}),
+      "kind 2: the three products");
+    bool stops = true;
+    for (int kind : {3, 4}) {
+      out = junk;
+      stops = apply_answer(static_cast<uint8_t>(kind), half, cmd, out) == Answer::Publish &&
+        same(out, zero) && stops;
+    }
+    check(stops, "kinds 3 and 4: zero is published");
+    // Review CM3/CM4, finding 8: a kind the shim does not know is answered
+    // with zero velocity, not with silence and not with the command.
+    bool unknown = true;
+    for (int kind = 5; kind <= 255; ++kind) {
+      out = junk;
+      unknown = apply_answer(static_cast<uint8_t>(kind), half, cmd, out) ==
+        Answer::PublishUnknownKind && same(out, zero) && unknown;
+    }
+    check(unknown, "kinds 5 to 255, which the core cannot return: zero is published");
   }
 
   std::printf("%d failure(s)\n", failures);

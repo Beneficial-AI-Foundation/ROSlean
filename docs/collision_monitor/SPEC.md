@@ -359,7 +359,10 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   the compiler's `float` and `double` are binary32 and binary64.
 - T5. *The shim* delivers every message as one event with one clock reading,
   passes the fields named under "Shim boundary" unaltered, and publishes what
-  the table above says and nothing else.
+  the table above says and nothing else. The table itself is one function,
+  `apply_answer` in `conversions.hpp`, tested on its own
+  (`smoke_conversions`), including what it does with a kind the core cannot
+  return ("Command event").
 
 T1 could be removed later by multiplying in the core on bit patterns (a
 correctly rounded binary64 product in integer arithmetic, about fifty lines)
@@ -737,7 +740,8 @@ compiler and on the C library, in two ways.
   (the default of clang on arm64) 58 % of the coordinates computed with a
   pose differ in their last bits, none in whole millimetres (reviewer's
   measurement). A second user of `conversions.hpp` must set the flag as
-  well.
+  well. `smoke_conversions` compares the pose computation with a reference
+  that cannot be fused, and fails on arm64 when the flag is missing.
 
 What is true, then:
 
@@ -774,8 +778,10 @@ always `silent`.
   is the ratio pattern for kind 2 and 0 otherwise.
 - The shim then publishes as the table in "Where the velocity is computed"
   says: nothing for kind 0; for kind 2 it copies `out_ratio` into a `double`
-  and multiplies. A kind outside 0 to 4 cannot be returned (`kindOf`); were
-  it, the shim publishes zero and logs an error, not silence.
+  and multiplies (`apply_answer` in `conversions.hpp`). A kind outside 0 to 4
+  cannot be returned (`kindOf`); were it, the shim publishes zero and logs an
+  error, not silence. `smoke_conversions` checks this for every value from 5
+  to 255.
 - Logging. Each *change* of the answer is logged once, as upstream logs each
   change of its action and in upstream's words: "Robot to continue normal
   operation", "Robot to slowdown for … percents due to <zone> polygon",
