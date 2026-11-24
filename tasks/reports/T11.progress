@@ -1,0 +1,7 @@
+2026-11-24 18:55 started; branch from 8152520; reading the documents; next: site/gaps.html
+2026-11-24 18:58 documents read; stylesheet extended; writing site/gaps.html
+2026-11-24 19:02 item 1 done: site/gaps.html (rendered with headless Chrome at 1280 and 520 px); next: README.md
+2026-11-24 19:04 item 3 done: README.md; next: site/index.html and site/details.html
+2026-11-24 19:09 item 2 done: site/index.html and site/details.html (links, anchors and theorem names checked by script; rendered with headless Chrome); next: docs/PLAN.md
+2026-11-24 19:11 item 4 done: docs/PLAN.md (milestones CM1 onward, not done, lessons 18 to 38); next: tasks/PLAN.md Decisions grouping, then the report
+2026-11-24 19:14 item 5 done: tasks/PLAN.md Decisions grouped; report tasks/reports/T11.md written; nothing further
