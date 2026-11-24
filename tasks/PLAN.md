@@ -111,6 +111,7 @@ Decided by the user on 2026-11-24:
 | Publish zero for a non-finite command? | As upstream: ignored |
 | Refuse zones that protect nothing (no zones, radius 0, `source_timeout: 0`)? | Accept and warn |
 | Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | In C++, as upstream (option A). T05, already merged, built option B; T05b reworks the model and proofs, T06 writes the shim code. T02 measured B through the node at about 20 times upstream's time per command |
+| With the transform in C++: compile the shim to match upstream's floating-point results bit for bit on each platform (upstream's arm64 binary fuses multiply-adds), or keep `-ffp-contract=off`? | Keep `-ffp-contract=off`: the same results on every platform, T01's test stands. Our points may differ from upstream's in the last bit on arm64 |
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
