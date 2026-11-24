@@ -877,10 +877,15 @@ into 0, which would mean "check disabled" (review finding 7a).
   Lean decodes `size / 20` records and ignores a remainder. A record is
   produced for every reading, valid or not; validity is decided in Lean (R4).
   Lean converts `x` and `y` to millimetres: truncated toward zero, saturated
-  at ±1,000,000, NaN to +1,000,000 (`coordMm`). The cost, measured on an
-  Apple M-series core: 41 ns per reading for decoding and conversion, i.e.
-  about 0.04 ms for a scan of 1000 readings; evaluating two circle zones for
-  a command costs a further 17 ns per reading.
+  at ±1,000,000, NaN to +1,000,000 (`coordMm`). When: since the model was
+  extended (T05b) the conversion is part of evaluating a command, not of
+  taking in a scan. Since task T03 a scan call decodes the ranges and keeps
+  the record array as it is; a command call converts the coordinates of the
+  valid readings from those bytes. The cost, measured on an Apple M5 core
+  (COMPARISON.md, "Cost of a command"): the scan callback 13 ns per reading
+  with the shim's encoding, about 0.015 ms for a scan of 1080 readings; a
+  command with two circle zones 24 ns per stored reading, with two 4-vertex
+  polygons 40 ns.
 
 The point of reading `i` in metres (T2), in this order of operations:
 
@@ -969,18 +974,22 @@ always `silent`.
 - **Two ways to compute a command (task T03).** `step` is written to be
   reasoned about and is slow when run as it stands. `roslean_cm_on_cmd` is
   `cmOnCmdFast`, which calls `stepCmdFast`
-  (`core/ROSleanCore/CollisionMonitorFast.lean`): the coordinates are
-  decoded from the scan's bytes without building 64-bit patterns, the
+  (`core/ROSleanCore/CollisionMonitorFast.lean`): a coordinate's eight
+  bytes are read into a machine word and converted there (as a `Nat`, a
+  pattern with the sign bit set is a big number in Lean's runtime), the
   points are produced once and in one pass, the edges of a polygon are
   computed once per zone and command, and the band test of D4 is made only
   for points within 2 mm of the polygon's bounding box.
   `ROSlean/CollisionMonitor/Fast.lean` proves that this is the same
   function: `stepCmdFast_eq` (the fast step is `step` on the command event,
   for every configuration, state, time, velocity and coordinates) and
-  `execFast_eq` (after any sequence of scan and command calls on a new
+  `execFast_eq` (after any sequence of scan and command calls, from any
   monitor, the exported functions have produced exactly the monitor that
   `cmOnScan` and `cmOnCmd`, on which every other theorem is stated,
-  produce). `roslean_cm_on_cmd_reference` is `cmOnCmd` itself, exported so
+  produce). A scan call keeps the scan's record array and decodes the
+  ranges only; the coordinates the model's command event carries
+  (`Monitor.coords`) are a function of that array, and no exported call
+  builds the list. `roslean_cm_on_cmd_reference` is `cmOnCmd` itself, exported so
   that `test_cm_ffi` can run the two side by side (9,600 commands, none
   differs); the node does not call it.
 - **Cost of a command, and the budget.** Per command, back to back, two

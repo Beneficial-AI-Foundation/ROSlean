@@ -853,6 +853,14 @@ machine in use by other tests):
 | Before the extension (`91c21f9`, T02's COMPARISON.md) | 18 µs | 0.41 ms |
 | After T05 (option B; T02) | 2.5 µs per reading, about 2.7 ms | 2.9 µs per reading, about 3.1 ms |
 | After T05b (option A) | **0.21 ms**, 0.19 µs per reading | **0.63 ms** |
+| After T03 (option A, the fast command path) | **0.026 ms**, 24 ns per reading | **0.044 ms** |
+
+(T03, added: the last row is task T03's, measured with the same program,
+which now takes the lowest of three medians: COMPARISON.md, "Cost of a
+command". The exported command call converts each coordinate on a machine
+word, produces the points once, and prepares each polygon once per command;
+it is proved to be `step` (`stepCmdFast_eq`). The rest of this paragraph
+describes the state after T05b, which T03 was given to repair.)
 
 So a command is 13 and 5 times cheaper than under B, and for circle zones
 still 12 times dearer than before the extension. The difference to "before"

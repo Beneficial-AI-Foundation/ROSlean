@@ -35,18 +35,27 @@ and the CM3/CM4 review in `docs/REVIEWS.md` for the kind of defect to avoid.
    (events E7 and E8 as they are in the model now). The byte layouts in 8.2
    and 8.3 are proposals; the meanings are not. Conversions and refusals in
    Lean: the shim hands over `double` bit patterns in metres and Lean makes
-   the millimetres (`coordMm`, `vertexCoordMm`). **The cost of a command is
-   an open item** (SPEC_NAV2.md, section 5, "Cost of A in the model"): with
-   1080 readings and two circles it is 0.21 ms now, against 18 µs before
-   the extension, and two thirds of that is `coordMm` on `Nat` patterns,
-   because a pattern with the sign bit set is a big number in Lean's
-   runtime. Decode without big numbers: `coordMmOfParts` takes sign and
-   magnitude apart for this, as the decoder before T05 did (41 ns per
-   reading). The model's event carries the patterns, so the fast path is a
-   function from the bytes to the points, proved equal to `Scan.points` of
-   the decoded pairs, and a command call built on it, proved equal to
-   `step` on the event (`sourcePoints_eq_some_iff` says what `step` needs
-   of the points). Measure with `cmd_cost` before and after. The
+   the millimetres (`coordMm`, `vertexCoordMm`). **The cost of a command was an
+   open item here; task T03 closed it** (`tasks/reports/T03.md`,
+   "Signatures T06 builds on"; SPEC.md, "Command event"; COMPARISON.md,
+   "Cost of a command"). Build the new command call on what T03 left:
+   `stepCmdFast cfg st now v n f zoneVerts`
+   (`core/ROSleanCore/CollisionMonitorFast.lean`) with `n` the number of
+   coordinate pairs handed over (or `none`) and `f i` the point of pair
+   `i`, read from the bytes with `coordMmAt` (a machine word per
+   coordinate; never a `Nat` pattern, which is a big number in Lean's
+   runtime when the sign bit is set). `stepCmdFast_eq`
+   (`ROSlean/CollisionMonitor/Fast.lean`) says it is `step` on the command
+   event that carries the pairs `g 0, …, g (n - 1)` whenever `f i =
+   scanPointMm (g i)`; `coordMmAt_eq` gives that for `g i` the pair of
+   `u64At` patterns of pair `i`. The zone vertices still go in as lists;
+   they are few. Do not decode coordinates into lists when a scan or a
+   command arrives: that cost 225 ns per reading in the scan call until
+   T03 took it out. Keep the budget: `roslean_cmd_cost` (50, 150 and
+   1500 µs per command at 360, 1080 and 10,000 stored readings) must still
+   pass with the new calls, and a command without a clock reading
+   (`roslean_cm_on_cmd_no_clock`, SPEC D15) must exist in the new interface
+   too. The
    present calls (`on_scan` with coordinates and `usable`, `on_cmd` without
    arguments for points) are replaced; `Monitor.coords`, which stands in
    for them today, goes. Theorems in

@@ -1,0 +1,40 @@
+a command, back to back, the lowest of three medians of 400, in microseconds:
+  readings   two circles   two 4-vertex polygons   budget
+       360          10.9                    17.2       50   ok
+      1080          32.9                    49.8      150   ok
+     10000         292.6                   458.2     1500   ok
+one command every 20 ms, 1080 readings, median of 100 (reported only):
+  two circles 159.7 us, two 4-vertex polygons 253.1 us
+ok    every command is within the budget
+a command, back to back, the lowest of three medians of 400, in microseconds:
+  readings   two circles   two 4-vertex polygons   budget
+       360          11.9                    19.1       50   ok
+      1080          30.1                    47.2      150   ok
+     10000         281.8                   449.1     1500   ok
+one command every 20 ms, 1080 readings, median of 100 (reported only):
+  two circles 172.8 us, two 4-vertex polygons 240.6 us
+ok    every command is within the budget
+a command, back to back, the lowest of three medians of 400, in microseconds:
+  readings   two circles   two 4-vertex polygons   budget
+       360          13.4                    20.2       50   ok
+      1080          29.5                    46.0      150   ok
+     10000         274.8                   436.3     1500   ok
+one command every 20 ms, 1080 readings, median of 100 (reported only):
+  two circles 157.8 us, two 4-vertex polygons 231.5 us
+ok    every command is within the budget
+a command, back to back, the lowest of three medians of 400, in microseconds:
+  readings   two circles   two 4-vertex polygons   budget
+       360          13.8                    21.1       50   ok
+      1080          29.5                    46.1      150   ok
+     10000         274.7                   437.6     1500   ok
+one command every 20 ms, 1080 readings, median of 100 (reported only):
+  two circles 158.5 us, two 4-vertex polygons 232.1 us
+ok    every command is within the budget
+a command, back to back, the lowest of three medians of 400, in microseconds:
+  readings   two circles   two 4-vertex polygons   budget
+       360          13.4                    20.2       50   ok
+      1080          29.7                    46.2      150   ok
+     10000         276.2                   439.4     1500   ok
+one command every 20 ms, 1080 readings, median of 100 (reported only):
+  two circles 167.0 us, two 4-vertex polygons 237.0 us
+ok    every command is within the budget

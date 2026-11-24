@@ -21,10 +21,11 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
   Both of the two this document reported as open: the node no longer ends
   on a `/clock` message with a negative time (SPEC D15; it answers with
   zero until the clock is usable again), and a command with 1080 stored
-  readings costs 47 µs with two circle zones and 65 µs with two polygon
-  zones in a hot loop on macOS, where it cost 208 µs and 640 µs after the
-  transform moved to C++ (T05b) and 2.7 ms and 3.1 ms when this document's
-  runs were made. See [Defects](#defects) and
+  readings costs 25.2 to 27.5 µs with two circle zones and 41.9 to 46.1 µs with two
+  polygon zones in a hot loop on macOS, where it cost 208 µs and 640 µs
+  after the transform moved to C++ (T05b) and 2.7 ms and 3.1 ms when this
+  document's runs were made; the scan callback costs 15 µs where it cost
+  240 µs. See [Defects](#defects) and
   [Cost of a command](#cost-of-a-command). The text of this item as it
   stood, for the record: *Two. A `/clock` message with a negative time
   aborts the node (as it aborts upstream). And a command is slow.* On the node before
@@ -596,8 +597,10 @@ test that was expected to fail; both tests are ordinary tests now.
    to compute the same function, and the C interface calls it. Each part is
    proved equal to the definition it replaces
    (`ROSlean/CollisionMonitor/Fast.lean`; THEOREMS.md, "The command path
-   that C calls"): the coordinates are converted from the two 32-bit halves
-   of their pattern, sign and magnitude apart (`coordMmAt_eq`); the points
+   that C calls"): a coordinate's eight bytes are read into a machine word
+   and converted there, sign and magnitude apart (`coordMm64_eq`,
+   `word64At_toNat`); a scan call keeps the scan's bytes and no longer
+   decodes the coordinates into a list when the scan arrives; the points
    are produced once, in one pass, into an array (`pointsBy_toList`); a
    polygon's edges are computed once per zone and command, and the band
    test of D4 is made only for points within 2 mm of the polygon's bounding
@@ -613,12 +616,12 @@ test that was expected to fail; both tests are ordinary tests now.
    *Test:* `roslean_cmd_cost`, no longer `WILL_FAIL`. It asserts the budget
    below in place of T02's line of 25 ns per reading and zone.
 
-   *Not done:* the conversion still reads its bytes through `Nat`
-   arithmetic (about 30 ns per reading, two thirds of what a command with
-   circle zones costs now); done on machine words it would be a few
-   nanoseconds. And the crossing count of R10 is still made for every
-   point: skipping it for points beside the bounding box needs a proof that
-   a closed polygon is crossed an even number of times, which is not there.
+   *Not done:* the crossing count of R10 is still made for every point.
+   Skipping it for points beside the bounding box needs a proof that a
+   closed polygon is crossed an even number of times, which is not there.
+   And each command still builds the points anew from the bytes (one small
+   object per valid reading); that is what a command with coordinates of
+   its own, as SPEC_NAV2 has it, needs anyway.
 
 ### Fixed since the first draft
 
@@ -879,102 +882,194 @@ Reading (option B, being replaced, unless it says "before"):
 ### Cost of a command
 
 Added by task T03; everything in this section was measured on 2026-11-24 on
-the macOS machine of this document, on the branch `claude/cm-comparison-defects`
-(the fast command path of defect 2). `cmd_cost` was run before this task's
-long tests were started; `bench_cm` while six processes of the random
-comparison were running on the same 18-core machine, on which another
-session was working too. Nothing in this section was measured on Linux.
+the two platforms of this document, on the branch
+`claude/cm-comparison-defects` (`cmd_cost`, the runs through the nodes and
+everything on Linux at commit `1c68b38`; `bench_cm` on macOS at `771c053`,
+which has the same code), with no other test of this task running; another
+session was working on the same machine. The Linux image was built from the
+branch (`roslean-cm-linux-t03`). Logs: `bench/results/cm_comparison/t03/`.
 
 **The core alone**, `build/roslean_collision_monitor/cmd_cost`: the scan is
-stored, then 400 commands are timed back to back and the median is taken;
-nothing is near, so every zone is evaluated in full. Microseconds per
-command.
+stored, then 400 commands are timed back to back and the median is taken,
+three times, and the lowest of the three counts; nothing is near, so every
+zone is evaluated in full. Microseconds per command; "now" is the lowest
+and the highest of five runs of the program. (The columns before are
+single medians of the program as it was, on macOS.)
 
-| Stored readings | Zones | Before T05 (`91c21f9`, T02) | After T05b (`55dcc45`) | Now | Budget |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 360 | two circles | | | 16 | 50 |
-| 360 | two 4-vertex polygons | | | 23 | 50 |
-| 1080 | two circles | 18 | 208 | 47 | 150 |
-| 1080 | two 4-vertex polygons | 410 | 640 | 65 | 150 |
-| 10,000 | two circles | | | 440 | 1500 |
-| 10,000 | two 4-vertex polygons | | | 609 | 1500 |
+| Stored readings | Zones | Before T05 (`91c21f9`, T02) | After T05b (`55dcc45`) | Now, macOS | Now, Linux | Budget |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 360 | two circles | | | 9.1 to 14.1 | 10.9 to 13.8 | 50 |
+| 360 | two 4-vertex polygons | | | 15.2 to 22.4 | 17.2 to 21.1 | 50 |
+| 1080 | two circles | 18 | 208 | 25.2 to 27.5 | 29.5 to 32.9 | 150 |
+| 1080 | two 4-vertex polygons | 410 | 640 | 41.9 to 46.1 | 46.0 to 49.8 | 150 |
+| 10,000 | two circles | | | 242 to 257 | 275 to 293 | 1500 |
+| 10,000 | two 4-vertex polygons | | | 396 to 424 | 436 to 458 | 1500 |
 
-Empty cells were not measured. With one command every 20 ms, as a node
-gets them, the same call at 1080 readings took 239 µs (circles) and 306 µs
-(polygons): on this machine a thread that wakes from sleep runs four to
-five times slower than in a hot loop, whatever the code (T05b measured the
-same factor on the code before: 864 µs and 2.5 ms).
+Empty cells were not measured. A single median of 400 short commands
+varies with what the machine does in those 10 to 20 ms (10 to 20 µs at 360
+readings in four single runs on macOS), which is why the program takes the
+lowest of three. With one command every 20 ms, as a node gets them, the
+same call at 1080 readings took 65 to 136 µs (circles) and 63 to 208 µs
+(polygons) on macOS and 158 to 173 µs and 232 to 253 µs in the container: a
+thread that wakes from sleep runs up to five times slower than in a hot
+loop, and how much slower differs from run to run (T05b measured 864 µs
+and 2.5 ms on the code before, four times its hot figures).
 
 **The budget** proposed for a command, back to back, with two zones of
 either kind: 50 µs at 360 stored readings, 150 µs at 1080, 1.5 ms at
 10,000, that is about 140 ns per reading. It is met with a factor of two
-to three to spare on this machine, and `roslean_cmd_cost` asserts it. It
+or more to spare on both platforms, and `roslean_cmd_cost` asserts it. It
 is a line drawn here: 1080 readings at 150 µs are 0.75 % of the 20 ms
 between two commands at 50 Hz. It is not upstream's speed: see the next
-table. A scan with which a command is estimated to exceed 1 ms makes the
+tables. A scan with which a command is estimated to exceed 1 ms makes the
 node warn once.
 
 **The two callbacks, with upstream's beside** (`run_cm_bench.py core`,
 that is `bench_cm`: the Lean node's callback bodies and upstream's own
 library in one process, 20,000 calls per row, 5,000 at 10,000 readings,
-back to back). Microseconds, median and 99th percentile:
+back to back). Microseconds, median and 99th percentile.
+
+macOS:
 
 | Readings | Zones | Call | Lean p50 | p99 | Upstream p50 | p99 |
 | ---: | --- | --- | ---: | ---: | ---: | ---: |
-| 360 | polygons | scan | 79.5 | 101 | 0.0 | 0.2 |
-| 360 | polygons | command, clear | 22.4 | 26.3 | 2.9 | 3.8 |
-| 360 | polygons | command, slowdown | 22.5 | 26.6 | 2.9 | 3.8 |
-| 360 | polygons | command, stop | 18.7 | 21.8 | 2.0 | 2.9 |
-| 360 | circles | scan | 79.5 | 96.3 | 0.0 | 0.2 |
-| 360 | circles | command, clear | 16.0 | 19.0 | 1.8 | 2.5 |
-| 360 | circles | command, slowdown | 16.2 | 19.3 | 1.8 | 2.6 |
-| 360 | circles | command, stop | 15.3 | 18.6 | 1.5 | 2.3 |
-| 1080 | polygons | scan | 252 | 309 | 0.0 | 0.3 |
-| 1080 | polygons | command, clear | 65.3 | 74.6 | 7.4 | 9.8 |
-| 1080 | polygons | command, slowdown | 66.8 | 75.4 | 7.4 | 9.1 |
-| 1080 | polygons | command, stop | 54.9 | 61.3 | 5.3 | 6.7 |
-| 1080 | circles | scan | 240 | 281 | 0.0 | 0.3 |
-| 1080 | circles | command, clear | 47.2 | 53.7 | 4.2 | 5.5 |
-| 1080 | circles | command, slowdown | 47.1 | 52.9 | 4.2 | 5.3 |
-| 1080 | circles | command, stop | 45.8 | 51.3 | 3.7 | 4.8 |
-| 10000 | polygons | scan | 2241 | 2530 | 0.2 | 0.5 |
-| 10000 | polygons | command, clear | 594 | 621 | 60.4 | 67.7 |
-| 10000 | polygons | command, slowdown | 611 | 641 | 60.7 | 68.3 |
-| 10000 | polygons | command, stop | 509 | 537 | 44.5 | 51.0 |
-| 10000 | circles | scan | 2248 | 2541 | 0.2 | 0.5 |
-| 10000 | circles | command, clear | 440 | 466 | 32.4 | 37.2 |
-| 10000 | circles | command, slowdown | 441 | 468 | 32.3 | 37.3 |
-| 10000 | circles | command, stop | 427 | 453 | 30.2 | 35.0 |
+| 360 | polygons | scan | 4.9 | 7.8 | 0.0 | 0.3 |
+| 360 | polygons | command, clear | 14.8 | 22.9 | 2.7 | 4.7 |
+| 360 | polygons | command, slowdown | 15.3 | 17.9 | 2.7 | 3.6 |
+| 360 | polygons | command, stop | 11.7 | 15.7 | 2.1 | 2.8 |
+| 360 | circles | scan | 4.9 | 6.0 | 0.0 | 0.3 |
+| 360 | circles | command, clear | 9.0 | 11.3 | 1.6 | 2.0 |
+| 360 | circles | command, slowdown | 9.0 | 9.8 | 1.7 | 1.8 |
+| 360 | circles | command, stop | 8.6 | 10.9 | 1.6 | 2.0 |
+| 1080 | polygons | scan | 14.5 | 17.5 | 0.0 | 0.5 |
+| 1080 | polygons | command, clear | 42.8 | 52.6 | 6.9 | 8.3 |
+| 1080 | polygons | command, slowdown | 45.0 | 54.5 | 7.0 | 8.2 |
+| 1080 | polygons | command, stop | 33.3 | 39.8 | 5.3 | 6.0 |
+| 1080 | circles | scan | 14.5 | 21.7 | 0.0 | 0.5 |
+| 1080 | circles | command, clear | 26.1 | 37.9 | 4.0 | 5.9 |
+| 1080 | circles | command, slowdown | 26.0 | 31.9 | 4.0 | 4.6 |
+| 1080 | circles | command, stop | 24.6 | 29.8 | 3.8 | 4.4 |
+| 10000 | polygons | scan | 132 | 157 | 0.1 | 0.5 |
+| 10000 | polygons | command, clear | 403 | 438 | 56.7 | 69.0 |
+| 10000 | polygons | command, slowdown | 404 | 441 | 56.8 | 67.5 |
+| 10000 | polygons | command, stop | 321 | 361 | 41.8 | 51.6 |
+| 10000 | circles | scan | 132 | 157 | 0.1 | 0.5 |
+| 10000 | circles | command, clear | 238 | 268 | 30.1 | 37.5 |
+| 10000 | circles | command, slowdown | 242 | 272 | 30.0 | 38.1 |
+| 10000 | circles | command, stop | 237 | 268 | 28.1 | 32.1 |
 
-The command callback of the Lean node now takes 8 to 14 times
-upstream's (16 against 1.8 µs at 360 readings with circles; 65 against
-7.4 µs at 1080 with polygons; 0.59 ms against 60 µs at 10,000 with
-polygons). In the runs of this document it took 340 to 780 times
-upstream's.
+Linux (container):
 
-**The scan callback is unchanged and is now the larger part**: 79 µs at
-360 readings, 240 to 250 µs at 1080, 2.2 ms at 10,000, about 225 ns per
-reading, where upstream stores a pointer (0.04 µs). It was 45 to 47 ns per
-reading before the model was extended and 210 to 230 ns in the runs of this
-document. Task T03 did not make it faster. The probable cause, read in the source
-and not measured: the scan call still decodes the coordinates of every
-record into a list of pairs of `Nat` patterns when the scan arrives
-(`decodeCoords`, kept because the theorems of `FFI.lean` are stated on that
-list), although the exported command call no longer reads that list. The
-scan call of SPEC_NAV2 (task T06) carries ranges only, which removes it.
-With 1080 readings at 25 Hz and commands at 50 Hz that is 25 × 0.25 ms +
-50 × 0.065 ms = 9.5 ms of work per second, 1 % of a core, from the hot-loop
-medians (16 % in the runs of this document).
+| Readings | Zones | Call | Lean p50 | p99 | Upstream p50 | p99 |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 360 | polygons | scan | 6.3 | 8.6 | 0.0 | 0.1 |
+| 360 | polygons | command, clear | 17.2 | 23.2 | 3.0 | 4.0 |
+| 360 | polygons | command, slowdown | 17.0 | 23.9 | 3.1 | 4.4 |
+| 360 | polygons | command, stop | 13.5 | 20.8 | 2.5 | 3.5 |
+| 360 | circles | scan | 6.4 | 8.6 | 0.0 | 0.1 |
+| 360 | circles | command, clear | 11.0 | 14.8 | 2.0 | 2.3 |
+| 360 | circles | command, slowdown | 11.4 | 15.3 | 2.0 | 2.8 |
+| 360 | circles | command, stop | 10.6 | 16.0 | 2.0 | 3.7 |
+| 1080 | polygons | scan | 19.1 | 24.7 | 0.1 | 0.1 |
+| 1080 | polygons | command, clear | 49.8 | 63.4 | 7.9 | 11.7 |
+| 1080 | polygons | command, slowdown | 50.4 | 68.1 | 8.0 | 12.1 |
+| 1080 | polygons | command, stop | 39.0 | 48.8 | 6.1 | 8.4 |
+| 1080 | circles | scan | 19.4 | 24.0 | 0.0 | 0.1 |
+| 1080 | circles | command, clear | 31.6 | 39.8 | 5.0 | 6.8 |
+| 1080 | circles | command, slowdown | 31.6 | 38.9 | 5.0 | 6.8 |
+| 1080 | circles | command, stop | 29.8 | 38.5 | 4.8 | 6.5 |
+| 10000 | polygons | scan | 195 | 229 | 0.1 | 0.5 |
+| 10000 | polygons | command, clear | 451 | 502 | 95.7 | 128 |
+| 10000 | polygons | command, slowdown | 464 | 507 | 97.4 | 129 |
+| 10000 | polygons | command, stop | 373 | 420 | 82.2 | 117 |
+| 10000 | circles | scan | 204 | 245 | 0.1 | 0.5 |
+| 10000 | circles | command, clear | 294 | 402 | 69.0 | 109 |
+| 10000 | circles | command, slowdown | 292 | 405 | 69.2 | 108 |
+| 10000 | circles | command, stop | 287 | 340 | 68.8 | 108 |
+
+The command callback of the Lean node now takes 5.4 to 8.4 times
+upstream's on macOS and 4.2 to 6.4 times in the container (macOS:
+9.0 against 1.6 µs at 360 readings with circles; 43 against 6.9 µs at
+1080 with polygons; 0.40 ms against 57 µs at 10,000 with polygons). In
+the runs of this document it took 340 to 780 times upstream's on macOS.
+
+**The scan callback** takes 4.9 µs at 360 readings, 14.5 µs at 1080 and
+132 µs at 10,000 on macOS (6.4, 19.4 and 204 µs in the container), about
+13 ns per reading on macOS: the shim computes the points (`encode_scan`)
+and the core decodes the ranges and keeps the bytes. Upstream stores a
+pointer (0.04 µs) and does all its work in the command. In the runs of
+this document the scan callback took 210 to 230 ns per reading, and still
+225 ns after the first step of task T03 (240 to 250 µs at 1080 readings,
+`bench/results/cm_comparison/t03/at_759d895/`): the scan call decoded the
+coordinates of every record into a list of pairs of `Nat` patterns, which
+nothing but the theorems read any more. Now the monitor keeps the bytes,
+and that list is a function of them that no exported call evaluates
+(`Monitor.coords`).
+
+With 1080 readings at 25 Hz, commands at 50 Hz and two polygon zones that
+is 25 × 14.5 µs + 50 × 42.8 µs = 2.5 ms of work per second, 0.25 % of
+a core, from the hot-loop medians on macOS (16 % in the runs of this
+document; upstream 0.04 %).
+
+**Through the nodes** (`run_cm_bench.py node`, as in
+[Through the nodes](#through-the-nodes) below: both nodes side by side,
+scans at 25 Hz, commands at 50 Hz for 20 s, polygon zones; one run per
+platform; latency in microseconds).
+
+macOS:
+
+| Readings | Node | Answers | p50 | p90 | p99 | max | Answers that differ |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 360 | lean | 849 | 6 302 | 9 485 | 11 317 | 15 165 | 0 of 849 |
+| 360 | upstream | 850 | 5 802 | 9 474 | 11 340 | 28 145 | 0 of 849 |
+| 1080 | lean | 850 | 6 880 | 10 246 | 11 358 | 11 457 | 0 of 850 |
+| 1080 | upstream | 850 | 6 292 | 9 770 | 11 335 | 11 418 | 0 of 850 |
+| 10000 | lean | 852 | 7 681 | 10 967 | 12 430 | 13 097 | 0 of 852 |
+| 10000 | upstream | 852 | 5 776 | 9 588 | 11 335 | 11 693 | 0 of 852 |
+
+Linux (container):
+
+| Readings | Node | Answers | p50 | p90 | p99 | max | Answers that differ |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 360 | lean | 851 | 372 | 495 | 745 | 2 005 | 0 of 851 |
+| 360 | upstream | 852 | 346 | 478 | 737 | 1 999 | 0 of 851 |
+| 1080 | lean | 851 | 451 | 592 | 707 | 800 | 0 of 851 |
+| 1080 | upstream | 851 | 328 | 428 | 533 | 765 | 0 of 851 |
+| 10000 | lean | 852 | 2 239 | 2 519 | 2 713 | 2 992 | 0 of 852 |
+| 10000 | upstream | 852 | 767 | 928 | 1 104 | 1 592 | 0 of 852 |
+
+On macOS both nodes sit on the middleware's tick of several milliseconds,
+as in the runs of this document. With 10,000 readings the Lean node now
+answers every command that upstream answers (in the runs of this document
+532 on macOS and 678 in the container, against upstream's 850). The tables
+of [Per-call latency](#per-call-latency) above and of
+[Through the nodes](#through-the-nodes) below are those of the node as it
+was when this document's runs were made (option B); they are kept as the
+record of the defect.
 
 **The random comparison, repeated.** `random_diff.py NODE UPSTREAM A B
---roslean`, seeds 0 to 299 in six processes of 50, on the node with the
-fast command path and the clock fix: 0 cases outside the bounds, none
-retried. For every one of the 300 seeds the line of the log (verdict,
-number of commands, commands that depend on a boundary, commands answered
-differently from upstream, published answers that differ, farthest point)
-is the same as in the run of this document made before the change
+--roslean`, seeds 0 to 299 in six processes of 50. On the final code (commit `771c053`): 0 cases outside the bounds, none retried, 26,951 commands, of
+which 745 depend on a point in a growth band; the two nodes demand
+different velocities for 586 and publish differently for 761. **For every
+one of the 300 seeds the line of the log (verdict, number of commands,
+commands that depend on a boundary, commands answered differently from
+upstream, published answers that differ, farthest deciding point) is the
+same as in the run of this document made before the change**
 (`bench/results/cm_comparison/macos/random_[0-2].log` against
-`bench/results/cm_comparison/t03/`).
+`bench/results/cm_comparison/t03/random_?.log`), and so are the totals. A
+first run, on the first version of the fast path (`759d895`), gave the same
+300 lines except that seed 223 passed only on the harness's slow retry: on
+the first attempt *upstream's* answer to one command was not what the
+test's own model of upstream says (an `oracle` problem, command 82); a
+benchmark of this task was running on the machine then, and in the final
+run the seed passed at once.
+
+**The point test, repeated.** `band_bounds 100000 7` (34 million points
+against upstream's zone tests): the log is the same as this document's,
+line for line, on macOS and in the Linux container: the same 5,291,086
+points of 16.2 million on which the two circle tests disagree, the same
+6,487,576 of 17.8 million for polygons, the same count in every band of
+distance. Both bounds hold.
 
 ### Through the nodes
 
