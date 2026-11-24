@@ -31,8 +31,8 @@ build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G
 noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
 # The same without the tests labelled `long` in the CMakeLists (the random
-# differential tests and the scenario suites against upstream): a minute or
-# two instead of twenty. For iterating; run `pixi run test` before a merge.
+# differential tests and the scenario suites against upstream): about seven
+# minutes instead of forty. For iterating; run `pixi run test` before a merge.
 test-quick = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ --ctest-args -LE long && colcon test-result --verbose", depends-on = ["build"] }
 prove = "lake exe cache get && lake build ROSlean"
 # Run-time comparison with upstream twist_mux (docs/BENCHMARK.md). Fetches upstream's sources.

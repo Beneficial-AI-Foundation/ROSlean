@@ -85,7 +85,7 @@
             <tr><td>Parameters are set at start-up.</td><td>You use the <code>~/toggle</code> service or change <code>enabled</code> while the node runs.</td></tr>
             <tr><td>Your base stops by itself when commands cease, or holds its last command and takes commands from nowhere else (assumption A3).</td><td>Your base needs fresh zero commands to stay stopped. Upstream has the same limit: see <a href="#decisions">the stop that is not published</a>.</td></tr>
             <tr><td>You can run the stand-alone executable.</td><td>You must load the monitor as a component and need it to survive a <code>/clock</code> message with a negative time. The component works but lacks that protection (D15).</td></tr>
-            <tr><td>4 to 9 times upstream's processor time per command is acceptable: 49 µs against 7 µs for 1080 readings and two polygon zones, in process, on the Mac.</td><td>You run on x86-64 or a robot computer and need a tested result: there is none yet.</td></tr>
+            <tr><td>6 to 9 times upstream's processor time per command is acceptable: 49 µs against 7 µs for 1080 readings and two polygon zones, in process, on the Mac.</td><td>You run on x86-64 or a robot computer and need a tested result: there is none yet.</td></tr>
           </tbody>
         </table>
       </div>
