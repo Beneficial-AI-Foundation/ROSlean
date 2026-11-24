@@ -1,1 +1,2 @@
 17:32 finding 1: model, proofs, FFI, node done; next: scenario from the probe, then finding 2
+17:42 finding 2 done (tf2's give-up rule in the wait, buffer cleared at the jump; three scenarios, fail without the fix); finding 6: test of the angle accumulation over 1080 readings catches the missed mutation; next: finding 4

@@ -426,6 +426,65 @@ TF_CLOCK_JUMP_BACK = [
             'until the transform is published again', state=SC),
 ]
 
+# The clock jumps back while a command waits for a transform (N26, N28;
+# review CM5, finding 2). tf2's wait ends when the clock is more than 3 s
+# before the start of the wait ("bag loop"); a smaller jump leaves the wait
+# running until the clock is at start + tolerance again. In both cases the
+# buffer is cleared at the jump, during the wait: a transform that arrives
+# after the jump is used by the waiting command and is still there for the
+# next one.
+TF_WAIT_CLOCK_RESET = [
+    clock(T), scan(ray(0.25, **LASER)),
+    cmd(V, None, 'scan in a frame without transform: the command waits'),
+    late(s(1), ZERO, 'the clock jumps back to 1 s during the wait: the wait ends AT ONCE, with the '
+         'stop', state=INVALID),
+    cmd(V, None, 'the next command waits again, from 1 s'),
+    clock(s(1.5) - 1), quiet('its tolerance - 1 ns: none'),
+    late(s(1.5), ZERO, 'after its tolerance: the stop'),
+    scan(ray(0.25, **LASER_DYN)),
+    cmd(V, None, 'scan in another unknown frame: waits'),
+    arrives(tf(xf(BASE, 'laser_dyn', stamp=s(1.5))), ZERO,
+            'the transform arrives: answered, the point is in the circle', state=SC),
+    cmd(V, ZERO, 'and the node goes on: answered at once'),
+]
+
+TF_WAIT_CLOCK_BACK = [
+    clock(T), scan(ray(0.25, **LASER_DYN)),
+    cmd(V, None, 'scan in a frame without transform: the command waits'),
+    clock(T - s(1)), quiet('the clock jumps back by 1 s, less than 3 s: the wait goes on'),
+    clock(T - s(2.5)), quiet('2.5 s before the start: still waiting'),
+    clock(T + s(0.5) - 1), quiet('start + tolerance - 1 ns, start being the clock before the '
+                                 'jump: none'),
+    late(T + s(0.5), ZERO, 'start + tolerance: the stop', state=INVALID),
+    cmd(V, None, 'the next command waits'),
+    clock(T - s(2)), quiet('the clock jumps back by 2.5 s: the wait goes on'),
+    arrives(tf(xf(BASE, 'laser_dyn', stamp=T - s(2))), ZERO,
+            'the transform arrives after the jump: answered', state=SC),
+    cmd(V, ZERO, 'the transform that arrived after the jump is STILL THERE for the next command: '
+        'the buffer was cleared at the jump, not after the waiting command'),
+    clock(T - s(3)),
+    cmd(V, None, 'another jump back, outside any wait: the transform is forgotten, the command '
+        'waits'),
+    late(T - s(2.5), ZERO, 'after the tolerance: invalid source', state=INVALID),
+]
+
+# The same in the ordinary situation with base shift correction: a command
+# newer than the newest odometry sample waits for the next one, and the
+# simulation is reset meanwhile.
+SHIFT_WAIT_RESET = [
+    clock(T), tf(odom(T - s(1)), odom(T)), scan(NEAR),
+    cmd(V, ZERO, 'odometry up to the clock, point in the circle: stop', state=SC),
+    clock(T + s(0.05)),
+    cmd(V, None, 'the clock is 50 ms past the newest odometry sample: the command waits'),
+    late(s(0.01), ZERO, 'the simulation is reset during the wait (clock 0.01 s): the wait ends at '
+         'once, invalid source', state=INVALID),
+    clock(s(1)), tf(odom(s(0.5)), odom(s(1))), scan(NEAR),
+    cmd(V, ZERO, 'clock 1 s, fresh odometry and scan: the node answers, stop by the circle',
+        state=SC),
+    clock(s(2)), tf(odom(s(2))), scan(FAR),
+    cmd(V, V, 'clock 2 s, fresh odometry, a far scan: passes', state=NORMAL),
+]
+
 # Transforms tf2 does not take (N25): a zero quaternion and a NaN. The frame
 # stays unknown. (If one got through, the ROSlean node would count it as a
 # failed lookup, ND7: the same answers.)
@@ -871,6 +930,13 @@ SCENARIOS = {
 
     'tf-clock-jump-back': dict(family='transforms', params=[P('StopCircle')],
                                steps=TF_CLOCK_JUMP_BACK, tf=[xf(BASE, 'laser')]),
+
+    'tf-wait-clock-reset': dict(family='transforms', params=[P('StopCircle')],
+                                steps=TF_WAIT_CLOCK_RESET),
+    'tf-wait-clock-back': dict(family='transforms', params=[P('StopCircle')],
+                               steps=TF_WAIT_CLOCK_BACK),
+    'shift-wait-reset': dict(family='shift', params=[P('StopCircle'), 'base_shift_correction:=true'],
+                             steps=SHIFT_WAIT_RESET),
 
     'tf-bad-quaternion': dict(family='transforms', params=[P('StopCircle')],
                               steps=TF_BAD_QUATERNION),

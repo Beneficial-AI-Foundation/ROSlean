@@ -243,6 +243,17 @@ inline std::optional<tf2::Transform> try_lookup(
   }
 }
 
+/// N26: whether a wait for a transform that began at node-clock time
+/// `start_ns` goes on at node-clock time `clock_ns` (the transform not being
+/// there yet). tf2's rule (tf2_ros/src/buffer.cpp, Buffer::canTransform with
+/// a timeout): the clock is before `start + tolerance`, and it has not
+/// jumped back to more than `bag_loop_ns` (3 s in tf2) before `start`.
+inline bool wait_goes_on(
+  int64_t clock_ns, int64_t start_ns, int64_t tolerance_ns, int64_t bag_loop_ns)
+{
+  return clock_ns < start_ns + tolerance_ns && clock_ns + bag_loop_ns >= start_ns;
+}
+
 }  // namespace roslean_collision_monitor
 
 #endif  // ROSLEAN_COLLISION_MONITOR__TRANSFORMS_HPP_

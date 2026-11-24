@@ -235,7 +235,18 @@ protected:
     // The TF buffer and its listener, as upstream creates them (N1, N3): the
     // listener has a thread of its own, so transforms arrive while a
     // callback waits for one.
-    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+    //
+    // The buffer gets a clock of its own, not the node's. tf2 uses the clock
+    // it is given for two things: for its own waiting loop, which this node
+    // does not call (wait_for), and to clear itself when that clock jumps
+    // back. With the node's clock the clearing would run when rclcpp handles
+    // the /clock message, which in this node is after the current callback,
+    // not during it (there is no clock thread, D15); a transform that
+    // arrived between the jump and the end of a waiting callback would be
+    // forgotten where upstream keeps it. The node clears the buffer itself,
+    // on the /clock message that shows the jump (on_clock; N28). Without
+    // simulated time neither clock ever jumps.
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(std::make_shared<rclcpp::Clock>(RCL_ROS_TIME));
     tf_buffer_->setCreateTimerInterface(
       std::make_shared<tf2_ros::CreateTimerROS>(
         get_node_base_interface(), get_node_timers_interface()));
@@ -303,7 +314,7 @@ protected:
     if (sim_time_) {
       clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
         "/clock", rclcpp::ClockQoS(),
-        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {on_clock(*msg);});
+        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {(void)on_clock(*msg);});
     }
 
     monitor_->on_lifecycle(CollisionMonitor::Transition::Configure);
@@ -408,13 +419,31 @@ private:
     }
   }
 
-  void on_clock(const rosgraph_msgs::msg::Clock & msg)
+  /// A /clock message, taken by the executor or, while a callback waits for
+  /// a transform, by hand (clock_while_waiting). Returns whether it is one
+  /// rclcpp can use (D15).
+  ///
+  /// N28: a message with an earlier time than the one before it is a
+  /// backward jump of the clock, and the TF buffer is cleared, as tf2 does
+  /// (tf2_ros::Buffer::onTimeJump: every backward jump). Upstream's buffer
+  /// is cleared by rclcpp's clock thread the moment the message arrives,
+  /// also while a callback waits. This node has no clock thread (D15), and
+  /// rclcpp's own handling of the message runs only after the callback has
+  /// returned, so the buffer is not attached to the node clock (see where it
+  /// is created) and is cleared here.
+  bool on_clock(const rosgraph_msgs::msg::Clock & msg)
   {
     const bool usable = clock_message_usable(msg.clock.sec);
     set_clock_valid(usable);
     if (usable) {
-      sim_clock_ns_ = static_cast<int64_t>(msg.clock.sec) * 1000000000 + msg.clock.nanosec;
+      const int64_t t = static_cast<int64_t>(msg.clock.sec) * 1000000000 + msg.clock.nanosec;
+      if (t < sim_clock_ns_ && tf_buffer_) {
+        RCLCPP_WARN(get_logger(), "Detected jump back in time. Clearing TF buffer.");
+        tf_buffer_->clear();
+      }
+      sim_clock_ns_ = t;
     }
+    return usable;
   }
 
   // One clock reading per event (D7, ND2). The core takes unsigned
@@ -427,8 +456,12 @@ private:
   /// The node clock as far as it can be known inside a callback. Under
   /// simulated time rclcpp's clock stands still while a callback runs
   /// (there is no clock thread, D15), so the node takes the /clock messages
-  /// of its own subscription by hand while it waits.
-  int64_t clock_while_waiting(int64_t at_least)
+  /// of its own subscription by hand while it waits. The reading is the time
+  /// of the newest usable message taken by hand in this callback, and
+  /// `callback_start` (rclcpp's reading when the callback began) as long as
+  /// there is none. It can go backwards: that is how a reset of the
+  /// simulation shows (wait_for).
+  int64_t clock_while_waiting(int64_t callback_start)
   {
     if (!sim_time_) {
       return now().nanoseconds();
@@ -437,29 +470,44 @@ private:
       rosgraph_msgs::msg::Clock msg;
       rclcpp::MessageInfo info;
       while (clock_sub_->take(msg, info)) {
-        on_clock(msg);
+        if (on_clock(msg)) {
+          callback_clock_ns_ = sim_clock_ns_;
+        }
       }
     }
-    return std::max(sim_clock_ns_, at_least);
+    return callback_clock_ns_.value_or(callback_start);
   }
 
   // ---- transforms (T6) ----------------------------------------------------
 
-  /// N26: the lookup, with upstream's wait. If the transform cannot be had
-  /// at once, the callback sleeps 10 ms of wall time at a time while the
-  /// node clock is before `start + transform_tolerance`, trying again each
-  /// time, and tries once more at the end (tf2_ros::Buffer::lookupTransform
-  /// with a timeout does the same; it is not called, because it reads a
-  /// clock that cannot advance here under simulated time). Nothing else is
-  /// handled meanwhile, as upstream. The wait ends early if the clock stops
-  /// being valid (D15).
+  /// N26: the lookup, with upstream's wait, which is tf2's
+  /// (tf2_ros::Buffer::canTransform with a timeout; it is not called,
+  /// because it reads a clock that cannot advance here under simulated
+  /// time). If the transform cannot be had at once, the callback sleeps
+  /// 10 ms of wall time at a time, trying again each time, while
+  ///   - the node clock is before `start + transform_tolerance`, and
+  ///   - the node clock is not more than 3 s before `start` (tf2: "don't
+  ///     wait, bag loop detected"): after a backward jump of the clock by
+  ///     more than 3 s the wait ends at once (review CM5, finding 2; without
+  ///     this the node waited until the clock was back at `start +
+  ///     transform_tolerance`, handling nothing meanwhile),
+  /// and tries once more at the end. Nothing else is handled meanwhile, as
+  /// upstream. The wait also ends if the clock stops being valid (D15).
+  static constexpr int64_t kBagLoopNs = 3000000000;  // tf2's rclcpp::Duration(3, 0)
+
+  /// tf2's two conditions on the clock for going on waiting.
+  bool keep_waiting(int64_t clock_ns, int64_t start_ns) const
+  {
+    return wait_goes_on(clock_ns, start_ns, tolerance_ns_, kBagLoopNs);
+  }
+
   std::optional<tf2::Transform> wait_for(const Request & request, int64_t start_ns)
   {
     std::string why;
     auto tf = try_lookup(*tf_buffer_, request, &why);
     bool slept = false;
     while (!tf && rclcpp::ok() && clock_valid_ &&
-      clock_while_waiting(start_ns) < start_ns + tolerance_ns_)
+      keep_waiting(clock_while_waiting(start_ns), start_ns))
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       slept = true;
@@ -518,6 +566,7 @@ private:
     const auto & points = msg->polygon.points;
     const Request request = shape_request(base_frame_id_, msg->header.frame_id);
     std::optional<tf2::Transform> tf = identity_transform();
+    callback_clock_ns_.reset();
     if (points.size() >= 3) {
       tf = wait_for(request, static_cast<int64_t>(now_ns()));
     }
@@ -569,6 +618,7 @@ private:
       az = bits_of(cmd.angular.z);
     const uint64_t t = now_ns();
     waited_until_ns_.reset();
+    callback_clock_ns_.reset();
     std::optional<std::vector<uint8_t>> points;
     std::vector<uint8_t> zone_verts;
     if (clock_valid_) {
@@ -724,7 +774,9 @@ private:
   void publish_polygons()
   {
     rclcpp::Time stamp = now();
-    if (sim_time_ && waited_until_ns_ && *waited_until_ns_ > stamp.nanoseconds()) {
+    if (sim_time_ && waited_until_ns_) {
+      // Later than rclcpp's reading after an ordinary wait; earlier after a
+      // wait in which the clock jumped back.
       stamp = rclcpp::Time(*waited_until_ns_, stamp.get_clock_type());
     }
     waited_until_ns_.reset();
@@ -1229,6 +1281,9 @@ private:
   // The clock reading at which the last wait of the current callback ended,
   // if it waited: for the stamp of the polygons only.
   std::optional<int64_t> waited_until_ns_;
+  // The newest usable /clock message taken by hand in the current callback
+  // (clock_while_waiting), if any: the clock of its waits.
+  std::optional<int64_t> callback_clock_ns_;
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
   // Transforms (T6).

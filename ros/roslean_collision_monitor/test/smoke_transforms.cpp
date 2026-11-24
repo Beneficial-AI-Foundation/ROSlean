@@ -345,6 +345,64 @@ int main()
       "polygon_vertices under the identity: the widened floats");
   }
 
+  // ---- the angle over a scan of realistic size (R3; review CM5, finding 6) ----
+  // Upstream adds angle_increment to a `float` once per reading. Over a
+  // thousand readings that sum drifts from the one a `double` would hold, so
+  // a shim that accumulated in double precision would put the later readings
+  // somewhere else. On the seven readings above the two sums agree; here they
+  // must not, or the test could not tell.
+  {
+    const size_t n = 1080;
+    const float angle_min = -3.14159274f;
+    const float increment = 0.00581776444f;  // 2 pi / 1080
+    std::vector<float> ranges(n);
+    for (size_t i = 0; i < n; ++i) {
+      ranges[i] = 0.5f + 0.01f * static_cast<float>(i % 400);
+    }
+    const auto t = tfm(0.25, -0.5, 0.0, 0.0, 0.0, 0.38268343236508978, 0.92387953251128674);
+    const auto tf = *to_tf2(t);
+    const auto b = scan_points(tf, angle_min, increment, ranges);
+    size_t differ = 0, double_differs = 0, last_differs = 0;
+    float angle = angle_min;
+    double angle_d = angle_min;
+    for (size_t i = 0; i < n; ++i) {
+      const auto s = scan_frame_point(ranges[i], angle);
+      const auto want = reference(t, s[0], s[1]);
+      differ += !same_bits(le_double(b, 16 * i), want[0]) +
+        !same_bits(le_double(b, 16 * i + 8), want[1]);
+      const auto sd = scan_frame_point(ranges[i], static_cast<float>(angle_d));
+      const auto other = reference(t, sd[0], sd[1]);
+      const size_t d = !same_bits(other[0], want[0]) + !same_bits(other[1], want[1]);
+      double_differs += d;
+      if (i + 1 == n) {last_differs = d;}
+      angle += increment;
+      angle_d += increment;
+    }
+    std::printf(
+      "      1080 readings: %zu coordinates differ from single-precision accumulation; "
+      "double-precision accumulation would differ in %zu of %zu\n", differ, double_differs, 2 * n);
+    check(b.size() == 16 * n && differ == 0,
+      "scan_points over 1080 readings: every point is that of the angle accumulated in single "
+      "precision (R3)");
+    check(double_differs > n / 2 && last_differs > 0,
+      "and the test can tell: accumulated in double precision, most coordinates differ, the "
+      "last reading's among them");
+  }
+  // ---- the wait for a transform (N26; review CM5, finding 2) -------------------
+  {
+    const int64_t tol = kS / 2, loop = 3 * kS, start = 100 * kS;
+    check(wait_goes_on(start, start, tol, loop) && wait_goes_on(start + tol - 1, start, tol, loop) &&
+      !wait_goes_on(start + tol, start, tol, loop) && !wait_goes_on(start + 5 * kS, start, tol, loop),
+      "wait_goes_on: while the clock is before start + tolerance, to the nanosecond");
+    check(wait_goes_on(start - 1, start, tol, loop) && wait_goes_on(start - 3 * kS, start, tol, loop) &&
+      !wait_goes_on(start - 3 * kS - 1, start, tol, loop) && !wait_goes_on(kS, start, tol, loop) &&
+      !wait_goes_on(0, start, tol, loop),
+      "wait_goes_on: not after a backward jump of the clock by more than 3 s (tf2's rule); a "
+      "jump of 3 s or less leaves the wait running");
+    check(!wait_goes_on(start, start, 0, loop) && !wait_goes_on(start - kS, start, -kS, loop),
+      "wait_goes_on: a tolerance of 0, or a negative one, never waits");
+  }
+
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
 }
