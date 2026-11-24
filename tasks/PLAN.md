@@ -54,8 +54,8 @@ same row group can run at the same time.
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | merged 56ac73b |
 | [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | merged 173b52a |
-| [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | running |
-| [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
+| [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | merged 363ce85 |
+| [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | running |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | open |
 | [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | open |
 | [T12](T12-fresh-machine-audit.md) | Someone with nothing but the README builds and runs it | T11 | yes | open |
@@ -128,6 +128,13 @@ Decided by the user on 2026-11-24:
 | (T06) The old scenario profile does not compare state messages for the Lean node (`STATE_TOPIC = False`). | T08 decides in its review whether the 32 differing checks are stated differences or defects, and turns the comparison on where it can |
 | (T06) The component's plugin name is `roslean_collision_monitor::CollisionMonitorNode`; SPEC_NAV2.md proposed `…::CollisionMonitor`. | Keep the name that is built; T09 corrects the document |
 | (T06) `test-quick` takes 6 minutes with `smoke_component` (9 s) and `roslean_nav2_bond` (21 s) in it. | Leave them in |
+| (T08, finding 1) A polygon message with a non-finite or out-of-range vertex: upstream accepts it and its zone can still stop; our node refuses the message (ND6) and can pass where upstream stops. Stop until a usable message arrives, or reproduce upstream's NaN arithmetic? | Stop: after such a message the zone demands its action (a stop zone stops) until a usable message arrives. Never less restrictive than upstream; a numbered difference. **Default chosen by the orchestrator; the user has not confirmed it** |
+| (T08, finding 2) Under simulated time a backward clock jump during the wait for a transform hangs the node until the clock is back. Add tf2's rule to the node's loop, or give rclcpp its clock thread back and call tf2? | Add tf2's rule (give up when the clock jumps back) to the loop, and clear the TF buffer as upstream's clock thread does |
+| (T08, finding 3) Unrecorded differences: disabled visualised zones are published; unusable `points` with `polygon_sub_topic`, an empty `polygon_sub_topic` and a wrongly typed `slowdown_ratio` on a stop zone are refused where upstream configures. | Follow upstream in each (publish only enabled zones; fall back to the topic; ignore the unused parameter). 3d, 3e, 3f: correct the document or the code as the finding says |
+| (T08, finding 4) After a processed no-clock command no theorem stated from start-up applies. Take the review's `mixed_from_init` into `NoClock.lean`, or make the no-clock command an `Event`? | Take `mixed_from_init` in and correct THEOREMS.md |
+| (T08, finding 5) `lean_initialize_thread` is never called. | Call it where the runtime requires it (the component's executor threads); say in the SPEC what was checked |
+| (T08) The component dies with its container on a negative `/clock`, as upstream's does. | "As upstream" for the component; D15 is promised for the executable only, and the documentation says so |
+| (T08) State messages in the old scenario suite are not compared for the Lean node. | Leave it to `scenario_nav2.py` and `random_nav2.py`; T09 adds boundary cases for state messages there if cheap |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
 | (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
