@@ -5,3 +5,4 @@
 2026-11-24T09:52:21Z whole root package builds without sorry (6653 jobs): Trace, FFI proofs, Examples adapted; next: print axioms, pixi build + C-level tests, then THEOREMS.md/SPEC.md/SPEC_NAV2.md and report
 2026-11-24T09:56:04Z THEOREMS.md rewritten; pixi run build failed at link (module list in ros/roslean_core/CMakeLists.txt lacks the new module): one line added; next: pixi run build again (up to 10 min), then C-level tests
 2026-11-24T10:05:30Z pixi run build passes (4 packages) after the CMake line; roslean_core tests 2/2, smoke_conversions and smoke_timeouts pass; SPEC.md, SPEC_NAV2.md updated; origin/collision-monitor merged (no new commits); next: final re-run of builds and network-free tests (about 5 min), report, push
+2026-11-24T10:08:29Z final re-run: core 19 jobs, root 6653 jobs, pixi run build 4 packages, roslean_core tests 2/2 (0 failures), smoke_conversions and smoke_timeouts 2/2; report written; done. Node tests left to the orchestrator.
