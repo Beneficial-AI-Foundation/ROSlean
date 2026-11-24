@@ -2,7 +2,7 @@
 // publishes for the core's answer to a command. Nothing else.
 //
 // Everything here is *trusted*: it is not covered by a theorem about the Lean
-// core (docs/collision_monitor/SPEC.md, T1 to T3 and T5). It is kept in this one
+// core (docs/collision_monitor/SPEC.md, T1 to T3, T5 and T9). It is kept in this one
 // header, free of ROS and of Lean, so that it can be read in one sitting and
 // tested on its own (test/smoke_conversions.cpp).
 //
@@ -11,6 +11,7 @@
 //                      the angle, cos, sin, the product and the sensor pose
 //   T3  parse_points   the text of the `points` parameter to floats
 //   T5  apply_answer   what is published for the core's answer to a command
+//   T9  clock_message_usable   whether a /clock message is one rclcpp accepts
 //
 // What is *not* here, because Lean does it in integer arithmetic
 // (core/ROSleanCore/CollisionMonitorConvert.lean): metres to millimetres with
@@ -105,6 +106,18 @@ inline Answer apply_answer(
     default:
       return Answer::PublishUnknownKind;
   }
+}
+
+/// T9 (D15). A message on /clock is usable iff its `sec` field is not
+/// negative: rclcpp refuses to build a time from any other ("cannot store a
+/// negative time point in rclcpp::Time"), throws, and keeps the time it had.
+/// While the message received last is not usable the node hands commands to
+/// the core as "without a clock reading", and the core answers with a stop.
+/// The condition is rclcpp's (rclcpp/src/rclcpp/time.cpp, Jazzy); it is
+/// repeated here because the node cannot ask rclcpp.
+inline bool clock_message_usable(int32_t sec)
+{
+  return sec >= 0;
 }
 
 /// The fixed pose of the sensor in the base frame: metres and radians (D11).

@@ -16,6 +16,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(rosgraph_msgs REQUIRED)
 find_package(roslean_core REQUIRED)
 
 add_executable(collision_monitor src/collision_monitor_node.cpp)
@@ -24,6 +25,7 @@ target_link_libraries(collision_monitor
   rclcpp::rclcpp
   ${geometry_msgs_TARGETS}
   ${sensor_msgs_TARGETS}
+  ${rosgraph_msgs_TARGETS}
   roslean_core::roslean_core)
 # Find libroslean_core relative to the executable, so that the install tree
 # works wherever it is copied (isolated and merged colcon layouts).
@@ -72,15 +74,16 @@ if(BUILD_TESTING)
   target_link_libraries(band_bounds roslean_core::roslean_core)
   add_test(NAME band_bounds COMMAND band_bounds 20000)
 
-  # EXPECTED TO FAIL (COMPARISON.md, defect 2): what a command costs per
-  # stored reading and zone. Polygon zones cost about 200 ns, the limit
-  # asserted is 25 ns. The answers are right; the time is the defect. When
-  # the test "unexpectedly passes", remove WILL_FAIL.
+  # What a command costs in the core, against the budget of COMPARISON.md,
+  # "Cost of a command" (defect 2, fixed by T03): 50, 150 and 1500 us at
+  # 360, 1080 and 10,000 stored readings, two zones of either kind. A
+  # threshold on run time: the budget is twice what was measured, and
+  # RUN_SERIAL keeps other tests of this package off the processor.
   add_executable(cmd_cost test/cmd_cost.cpp)
   target_include_directories(cmd_cost PRIVATE include)
   target_link_libraries(cmd_cost roslean_core::roslean_core)
   add_test(NAME roslean_cmd_cost COMMAND cmd_cost)
-  set_tests_properties(roslean_cmd_cost PROPERTIES WILL_FAIL TRUE)
+  set_tests_properties(roslean_cmd_cost PROPERTIES RUN_SERIAL TRUE)
 
   if(APPLE)
     # T2 on macOS: for one angle at which Apple's cosf and __sincosf_stret
@@ -171,17 +174,16 @@ if(BUILD_TESTING)
       --skip clock-negative)
   set_tests_properties(roslean_fault_injection PROPERTIES
     ENVIRONMENT "ROS_DOMAIN_ID=120" TIMEOUT 1800 LABELS long)
-  # EXPECTED TO FAIL (COMPARISON.md, defect 1): a /clock message with a
-  # negative time aborts the node; the exception is thrown in rclcpp's clock
-  # thread. The test asserts that the node survives. When the node is fixed
-  # this test "unexpectedly passes": remove WILL_FAIL then. (WILL_FAIL
-  # cannot tell why a test fails. Run by hand, the script prints
-  # "FAIL  the node has exited with code -6" and "2 failure(s) in 3 checks".)
+  # A /clock message with a negative time (COMPARISON.md, defect 1, fixed by
+  # T03; SPEC D15): the node goes on, answers every command with zero while
+  # the clock is not valid, and evaluates commands again when it is.
+  # Upstream's process ends; when upstream is installed it is run beside the
+  # node and must be gone.
   add_test(NAME roslean_fault_clock_negative
-    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}"
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}" ${_beside}
       --only clock-negative)
   set_tests_properties(roslean_fault_clock_negative PROPERTIES
-    ENVIRONMENT "ROS_DOMAIN_ID=121" TIMEOUT 600 WILL_FAIL TRUE)
+    ENVIRONMENT "ROS_DOMAIN_ID=121" TIMEOUT 600)
 
   if(nav2_collision_monitor_FOUND)
     # Statements that only the SPEC makes, put to upstream's binary.

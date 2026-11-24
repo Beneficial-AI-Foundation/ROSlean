@@ -40,6 +40,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "roslean_collision_monitor/conversions.hpp"
 #include "roslean_core/collision_monitor.hpp"
+#include "rosgraph_msgs/msg/clock.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace roslean_collision_monitor
@@ -89,7 +90,13 @@ public:
       // Every parameter given at start-up is declared; no other name can be
       // set later (finding 2 of the review CM3/CM4).
       rclcpp::NodeOptions().allow_undeclared_parameters(false)
-      .automatically_declare_parameters_from_overrides(true))
+      .automatically_declare_parameters_from_overrides(true)
+      // D15: rclcpp takes /clock messages in a thread of its own by default,
+      // and a message with a negative time makes it throw there, where
+      // nothing can catch it: the process ends. Without that thread the
+      // message is taken in by the executor that spins this node, and the
+      // exception arrives in main(), which goes on (see there).
+      .use_clock_thread(false))
   {
     // Everything is read, checked and handed to the core before any
     // subscription exists. A refusal does not end the reading: all of them
@@ -146,6 +153,18 @@ public:
     scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
       scan_topic, rclcpp::SensorDataQoS(),
       [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(*msg);});
+    // D15: under simulated time the node looks at /clock itself, beside
+    // rclcpp's own subscription, to know whether the message received last
+    // is one that rclcpp can use. It reads nothing else from the message;
+    // the time still comes from now().
+    sim_time_ = get_or<bool>("use_sim_time", false);
+    if (sim_time_) {
+      clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
+        "/clock", rclcpp::ClockQoS(),
+        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {
+          set_clock_valid(clock_message_usable(msg->clock.sec));
+        });
+    }
 
     // D2: parameters were read once, above. From here on every change is
     // rejected, with the reason, instead of being accepted and ignored.
@@ -168,8 +187,39 @@ public:
       stamped ? "TwistStamped" : "Twist", scan_topic.c_str(), zones_.size());
   }
 
+  /// An exception left a callback and was caught in main(). Under simulated
+  /// time the one known cause is a /clock message that rclcpp refuses (D15),
+  /// so the clock counts as not valid until a usable message arrives; the
+  /// node's own look at the message says the same, and whichever of the two
+  /// comes first counts.
+  void on_callback_exception(const char * what)
+  {
+    RCLCPP_ERROR_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "An exception left a callback and was caught; the node goes on: %s", what);
+    if (sim_time_) {
+      set_clock_valid(false);
+    }
+  }
+
 private:
   // ---- events ------------------------------------------------------------
+
+  void set_clock_valid(bool valid)
+  {
+    if (valid == clock_valid_) {
+      return;
+    }
+    clock_valid_ = valid;
+    if (valid) {
+      RCLCPP_INFO(get_logger(), "The clock is valid again: commands are evaluated as usual.");
+    } else {
+      RCLCPP_ERROR(
+        get_logger(), "The node has no valid clock reading: a message on /clock carries a "
+        "negative time, or an exception left a callback. Until a usable /clock message arrives "
+        "every command is answered with zero velocity (D15).");
+    }
+  }
 
   // One clock reading per event (D7). The core takes unsigned nanoseconds.
   uint64_t now_ns()
@@ -208,6 +258,7 @@ private:
         "set: the scan is not used, and the source counts as having no data.",
         msg.header.frame_id.c_str(), base_frame_id_.c_str(), source_name_.c_str());
     }
+    warn_about_cost(msg.ranges.size());
     const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges, sensor_pose_);
     monitor_->on_scan(
       t, stamp_ns, usable, bits_of(msg.range_min), bits_of(msg.range_max), beams.data(),
@@ -218,9 +269,14 @@ private:
   /// publish. Returns false if nothing is to be published.
   bool on_cmd(const geometry_msgs::msg::Twist & cmd, geometry_msgs::msg::Twist & out)
   {
-    const uint64_t t = now_ns();
-    const auto decision = monitor_->on_cmd(
-      t, bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
+    // D15: without a valid clock reading there is no time to hand over, and
+    // the core is told so; it answers with a stop.
+    const auto decision = clock_valid_ ?
+      monitor_->on_cmd(
+      now_ns(), bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
+      bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z)) :
+      monitor_->on_cmd_no_clock(
+      bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
       bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z));
     log_change(decision);
     // What to publish for the answer is apply_answer (conversions.hpp, with
@@ -300,6 +356,47 @@ private:
         break;
       case CollisionMonitor::OutputKind::Silent:
         break;
+    }
+  }
+
+  /// COMPARISON.md, defect 2: a command tests every stored reading against
+  /// every zone, in exact integer arithmetic, and takes time in proportion.
+  /// The budget is 150 us per command at 1080 readings; what a command is
+  /// estimated to cost with the configured zones and a scan of this size is
+  /// said once (and again if a larger scan arrives) when it exceeds
+  /// `kCostWarnNs`. The estimate is the measured cost on one machine, back
+  /// to back (Apple M5: 25 ns per reading, plus 1.5 ns per reading and circle
+  /// and 2 ns per reading and polygon vertex), doubled; an idle or slower
+  /// processor takes several times as long. It changes nothing the node
+  /// does.
+  static constexpr double kCostWarnNs = 1.0e6;  // 1 ms: 5 % of a 20 ms command period
+
+  double estimated_cmd_cost_ns(size_t readings) const
+  {
+    double per_reading = 25.0;
+    for (const auto & zone : zones_) {
+      if (zone.enabled) {
+        per_reading += zone.circle ? 1.5 : 2.0 * static_cast<double>(zone.vertices.size());
+      }
+    }
+    return 2.0 * per_reading * static_cast<double>(readings);
+  }
+
+  void warn_about_cost(size_t readings)
+  {
+    if (readings <= cost_warned_readings_) {
+      return;
+    }
+    const double ns = estimated_cmd_cost_ns(readings);
+    if (ns > kCostWarnNs) {
+      cost_warned_readings_ = readings;
+      RCLCPP_WARN(
+        get_logger(), "A scan of %zu readings with the %zu configured zone(s): each command is "
+        "estimated to take about %.1f ms in the core, more than %.1f ms. Commands are answered "
+        "late, and scans and commands can queue behind them. The answers are not affected. "
+        "Fewer readings or zones make it faster (docs/collision_monitor/COMPARISON.md, "
+        "\"Cost of a command\").",
+        readings, zones_.size(), ns / 1.0e6, kCostWarnNs / 1.0e6);
     }
   }
 
@@ -668,6 +765,14 @@ private:
   CollisionMonitor::OutputKind logged_kind_{CollisionMonitor::OutputKind::Silent};
   uint32_t logged_zone_{0};
   uint64_t logged_ratio_bits_{0};
+  size_t cost_warned_readings_{0};  // the largest scan the cost warning was given for
+  // D15. `clock_valid_` selects which of the core's two command calls is
+  // made; it is false only while the /clock message received last carried a
+  // negative time, or after an exception was caught in main() and until the
+  // next usable /clock message. Always true without simulated time.
+  bool sim_time_{false};
+  bool clock_valid_{true};
+  rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
   std::string base_frame_id_;
   SensorPose sensor_pose_;
@@ -688,7 +793,21 @@ int main(int argc, char * argv[])
     roslean::initialize();
     // Single-threaded: the core processes one event at a time (A1), and the
     // Lean runtime is initialised for this thread only.
-    rclcpp::spin(std::make_shared<roslean_collision_monitor::CollisionMonitorNode>());
+    auto node = std::make_shared<roslean_collision_monitor::CollisionMonitorNode>();
+    rclcpp::executors::SingleThreadedExecutor executor;
+    executor.add_node(node);
+    // D15: no topic content may end the node. An exception that leaves a
+    // callback (rclcpp's own /clock callback throws on a negative time) ends
+    // spin(); the message that caused it has been taken, so spinning again
+    // goes on with the next one. A refused configuration is thrown by the
+    // constructor above, outside this loop, and still ends the process.
+    while (rclcpp::ok()) {
+      try {
+        executor.spin();
+      } catch (const std::exception & e) {
+        node->on_callback_exception(e.what());
+      }
+    }
   } catch (const std::exception & e) {
     RCLCPP_FATAL(rclcpp::get_logger("collision_monitor"), "%s", e.what());
     result = EXIT_FAILURE;

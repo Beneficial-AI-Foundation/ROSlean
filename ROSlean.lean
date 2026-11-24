@@ -4,6 +4,7 @@ import ROSleanCore.FFI
 import ROSleanCore.CollisionMonitor
 import ROSleanCore.CollisionMonitorConvert
 import ROSleanCore.CollisionMonitorFFI
+import ROSleanCore.CollisionMonitorFast
 import ROSlean.Mux.Examples
 import ROSlean.Mux.Basic
 import ROSlean.Mux.Properties
@@ -19,3 +20,5 @@ import ROSlean.CollisionMonitor.Trace
 import ROSlean.CollisionMonitor.Convert
 import ROSlean.CollisionMonitor.Margin
 import ROSlean.CollisionMonitor.FFI
+import ROSlean.CollisionMonitor.NoClock
+import ROSlean.CollisionMonitor.Fast

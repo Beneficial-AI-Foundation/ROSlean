@@ -334,18 +334,27 @@ CASES = {
         clock(1),
         cmd(V, 'the clock at 1 ns', ZERO),
     ],
-    # A /clock message with a negative time. The expectation for the node is
-    # that it survives. At present it does NOT: rclcpp's time source throws
-    # "cannot store a negative time point in rclcpp::Time" in its clock
-    # thread, nothing catches it, and the process aborts, as upstream's does
-    # (docs/collision_monitor/COMPARISON.md, defect 1). The case is therefore
-    # registered as a test that is expected to fail.
+    # A /clock message with a negative time. rclcpp's time source throws
+    # "cannot store a negative time point in rclcpp::Time"; upstream's
+    # process ends. The node goes on (SPEC D15): while the message received
+    # last is such a one, every command is answered with zero, with a scan
+    # that is clear and fresh; with a usable clock message commands are
+    # evaluated again. (docs/collision_monitor/COMPARISON.md, defect 1.)
     'clock-negative': [
         clock(T), scan(CLEAR),
         cmd(V, 'passes', V),
         raw_clock(-5, 0),
-        cmd(V, 'after a /clock message of -5 s the node must still be there '
-               '(any answer); upstream aborts', ANY, DEAD),
+        cmd(V, 'after a /clock message of -5 s: zero (no valid clock, D15); upstream aborts',
+            ZERO, DEAD),
+        cmd(V, 'a second command: zero again, not withheld', ZERO, DEAD),
+        raw_clock(-1, 999999999),
+        cmd(V, 'another negative /clock message: still zero', ZERO, DEAD),
+        clock(T + s(0.1)), scan(CLEAR),
+        cmd(V, 'a usable /clock message and a clear scan: passes again', V, DEAD),
+        raw_clock(-2147483648, 0),
+        cmd(V, 'the most negative time: zero', ZERO, DEAD),
+        clock(T + s(0.2)),
+        cmd(V, 'usable again: passes', V, DEAD),
     ],
 }
 

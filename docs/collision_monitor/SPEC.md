@@ -34,6 +34,12 @@ coordinates of the scan call made last, which the present shim hands over
 in the base frame already; and after a scan reported unusable commands
 carry none.
 
+**Added by task T03.** D15 (a `/clock` message with a negative time), with
+the model's transition `stepNoClock`, the call `roslean_cm_on_cmd_no_clock`
+and the trusted part T9; and under "Command event" that the exported command
+call is a second, fast way to compute `step`, proved equal to it, with the
+budget for the cost of a command.
+
 ## Rules as implemented upstream
 
 **Triggers**
@@ -382,6 +388,18 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   `apply_answer` in `conversions.hpp`, tested on its own
   (`smoke_conversions`), including what it does with a kind the core cannot
   return ("Command event").
+
+- T9. *The clock's validity* (D15). Under simulated time the node decides
+  in C++ whether it has a valid clock reading: it has none while the
+  `/clock` message received last has `sec < 0`
+  (`clock_message_usable` in `conversions.hpp`, tested in
+  `smoke_conversions`), or after an exception has left a callback and until
+  the next usable `/clock` message. The condition repeats rclcpp's own
+  (`rclcpp::Time` refuses a negative `sec`); that rclcpp refuses nothing
+  else is read from its source (Jazzy, `rclcpp/src/rclcpp/time.cpp`) and
+  seen on the binary for `sec` of −5, −1 and −2³¹ (`fault_injection.py`,
+  case `clock-negative`). What the node answers without a clock reading is
+  the model's (`stepNoClock`); when it has none is the shim's.
 
 T1 could be removed later by multiplying in the core on bit patterns (a
 correctly rounded binary64 product in integer arithmetic, about fifty lines)
@@ -859,10 +877,15 @@ into 0, which would mean "check disabled" (review finding 7a).
   Lean decodes `size / 20` records and ignores a remainder. A record is
   produced for every reading, valid or not; validity is decided in Lean (R4).
   Lean converts `x` and `y` to millimetres: truncated toward zero, saturated
-  at ±1,000,000, NaN to +1,000,000 (`coordMm`). The cost, measured on an
-  Apple M-series core: 41 ns per reading for decoding and conversion, i.e.
-  about 0.04 ms for a scan of 1000 readings; evaluating two circle zones for
-  a command costs a further 17 ns per reading.
+  at ±1,000,000, NaN to +1,000,000 (`coordMm`). When: since the model was
+  extended (T05b) the conversion is part of evaluating a command, not of
+  taking in a scan. Since task T03 a scan call decodes the ranges and keeps
+  the record array as it is; a command call converts the coordinates of the
+  valid readings from those bytes. The cost, measured on an Apple M5 core
+  (COMPARISON.md, "Cost of a command"): the scan callback 13 ns per reading
+  with the shim's encoding, about 0.015 ms for a scan of 1080 readings; a
+  command with two circle zones 24 ns per stored reading, with two 4-vertex
+  polygons 40 ns.
 
 The point of reading `i` in metres (T2), in this order of operations:
 
@@ -931,11 +954,52 @@ always `silent`.
 | Call | Arguments |
 | --- | --- |
 | `roslean_cm_on_cmd` | monitor, `now_ns : uint64`, `lin_x`, `lin_y`, `lin_z`, `ang_x`, `ang_y`, `ang_z : uint64` → monitor |
+| `roslean_cm_on_cmd_no_clock` | monitor, `lin_x`, `lin_y`, `lin_z`, `ang_x`, `ang_y`, `ang_z : uint64` → monitor |
+| `roslean_cm_on_cmd_reference` | as `roslean_cm_on_cmd`; for tests only |
 | `roslean_cm_out_kind` | monitor → `uint8` |
 | `roslean_cm_out_zone` | monitor → `uint32` |
 | `roslean_cm_out_ratio` | monitor → `uint64` |
 
 - `now_ns`: the node clock, read once at the start of the callback (D7).
+- `on_cmd_no_clock` (task T03, D15) is called instead of `on_cmd` while the
+  node has no valid clock reading (T9). It has no time argument. It
+  delivers the model's transition `stepNoClock`: in the active phase a
+  finite command is answered with kind 4, "publish zero, invalid source",
+  whatever the configuration, the stored scan and the zones, and the zero
+  is never withheld (`noClock_velocity`, `cmOnCmdNoClock_kind`); a command
+  that is not finite is ignored as always (R2). The record of published
+  zeros of R15 is reset, so the first command with a clock reading again has
+  its velocity published (`velocity_after_noClock`); nothing else in the
+  state changes, and no later decision does (`evaluate_after_noClock`).
+- **Two ways to compute a command (task T03).** `step` is written to be
+  reasoned about and is slow when run as it stands. `roslean_cm_on_cmd` is
+  `cmOnCmdFast`, which calls `stepCmdFast`
+  (`core/ROSleanCore/CollisionMonitorFast.lean`): a coordinate's eight
+  bytes are read into a machine word and converted there (as a `Nat`, a
+  pattern with the sign bit set is a big number in Lean's runtime), the
+  points are produced once and in one pass, the edges of a polygon are
+  computed once per zone and command, and the band test of D4 is made only
+  for points within 2 mm of the polygon's bounding box.
+  `ROSlean/CollisionMonitor/Fast.lean` proves that this is the same
+  function: `stepCmdFast_eq` (the fast step is `step` on the command event,
+  for every configuration, state, time, velocity and coordinates) and
+  `execFast_eq` (after any sequence of scan and command calls, from any
+  monitor, the exported functions have produced exactly the monitor that
+  `cmOnScan` and `cmOnCmd`, on which every other theorem is stated,
+  produce). A scan call keeps the scan's record array and decodes the
+  ranges only; the coordinates the model's command event carries
+  (`Monitor.coords`) are a function of that array, and no exported call
+  builds the list. `roslean_cm_on_cmd_reference` is `cmOnCmd` itself, exported so
+  that `test_cm_ffi` can run the two side by side (9,600 commands, none
+  differs); the node does not call it.
+- **Cost of a command, and the budget.** Per command, back to back, two
+  zones of either kind: at most 50 µs with 360 stored readings, 150 µs with
+  1080 and 1.5 ms with 10,000 (about 140 ns per reading). The test
+  `roslean_cmd_cost` asserts it; the measurements are in
+  [COMPARISON.md](COMPARISON.md), "Cost of a command". When a scan arrives
+  whose size, with the configured zones, makes the estimated cost of a
+  command exceed 1 ms, the node warns once (again for a larger scan). The
+  warning changes nothing the node does.
 - The six `uint64` are the bytes of the six `double` components of the twist
   (`memcpy`). The shim does not test them.
 - `out_kind`: 0 `silent`, 1 `publish pass`, 2 `publish (slowdown zone
@@ -1023,6 +1087,7 @@ exit code 1, before any subscription is created.
 | D12 | Coordinates unbounded | Coordinates saturate at ±1000 m; zones must lie inside | Bounded integers at the boundary; see "Safe direction". |
 | D13 | Publishes zone shapes, collision point markers and, if `state_topic` is set, the current action | None of these | Scope. They carry no decision. |
 | D14 | A configuration error fails the lifecycle transition; the process stays up, unconfigured | Fatal log, exit code 1 | As twist_mux D7. |
+| D15 | Under `use_sim_time`, a `/clock` message with a negative time (`sec < 0`) ends the process: rclcpp's time source throws "cannot store a negative time point in rclcpp::Time" in its clock thread, where nothing catches it (seen on the binary, 1.3.12, signal 6) | The node goes on. It runs without rclcpp's clock thread (`use_clock_thread(false)`), so the message is taken in by the executor that spins the node and the exception arrives in `main`, which spins again. While the `/clock` message received last is such a one the node has no valid clock reading (T9), and every command goes to the core as "without a clock reading" (`roslean_cm_on_cmd_no_clock`, the model's `stepNoClock`): a finite command is answered with **zero velocity** (the stop for an invalid source), whatever the configuration, the scan and the zones, also with `source_timeout: 0` and with the source disabled, and the zero is not withheld after `stop_pub_timeout`. A command that is not finite is ignored (R2). With the next usable `/clock` message commands are evaluated as before; the period of R15 starts anew. Scans keep being stored meanwhile | No topic content may end the node (as D8). Without a clock neither the age of a scan nor the period of R15 can be judged, so the answer is the stop, for every configuration. Not a lifecycle matter and not an `Event` of the model: `stepNoClock` is a transition beside `step` (THEOREMS.md, "A command without a clock reading"). The difference is observable only after a message that kills upstream. Test: `roslean_fault_clock_negative`. |
 
 Everything else is reproduced, including R1 (no output without commands),
 R4 (an invalid scan is free space), R7 (age by header stamp), R8 with
@@ -1034,7 +1099,8 @@ timeout 0, R11 with `min_points <= 0`, R15 and R16.
   (R19, D7).
 - A2. Nothing is assumed about the clock being monotonic, nor about stamps
   being ordered. If the clock jumps backwards, a stored scan is not too old
-  and zero keeps being published, as upstream.
+  and zero keeps being published, as upstream. A `/clock` message with a
+  negative time is not a clock reading at all: D15.
 - A3. Stopping the robot when the node publishes nothing is the base driver's
   job. The node is silent when no command arrives (R1), when a command is not
   finite (R2), and once zero has been published for `stop_pub_timeout` (R15).

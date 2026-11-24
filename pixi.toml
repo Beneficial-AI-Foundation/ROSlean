@@ -47,7 +47,7 @@ cm-diff = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_col
 cm-nav2 = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/scenario_nav2.py \"$@\"' --", depends-on = ["build"] }
 # cm-nav2-random: random cases of the extension against the Python model (default: upstream alone, seeds 0 to 20).
 cm-nav2-random = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/random_nav2.py \"$@\"' --", depends-on = ["build"] }
-# cm-faults: every fault-injection case, both nodes, the very large scans included. The case clock-negative fails at present (COMPARISON.md, defect 1).
+# cm-faults: every fault-injection case, both nodes, the very large scans included. Upstream's process ends in the case clock-negative; the node goes on (SPEC D15).
 cm-faults = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/fault_injection.py roslean_collision_monitor/collision_monitor nav2_collision_monitor/collision_monitor --big'", depends-on = ["build"] }
 # bench-cm: per-call latency in process, latency through the nodes, and a 30-minute soak (about 40 minutes).
 bench-cm = { cmd = "bash -c 'source install/setup.bash && python3 bench/roslean_bench/scripts/run_cm_bench.py all --out bench/results'", depends-on = ["bench-build"] }

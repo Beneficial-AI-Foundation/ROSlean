@@ -1,0 +1,27 @@
+cases                               300
+cases outside the bounds            0 []
+cases passed only on the slow retry 0 []
+commands                            26951
+scans                               16092
+point tests, circle                 56293, in the growth band 3108
+point tests, polygon                53891, in the growth band 2650
+commands that depend on a band point 747 (2.77 %)
+commands with different demands     588 (2.18 % of all, 78.71 % of the dependent ones)
+commands published differently      763
+
+| Deciding point outside upstream's zone by | Circle | Polygon |
+| --- | ---: | ---: |
+| below 1 µm | 134 | 28 |
+| 0.001 mm to 0.25 mm | 64 | 89 |
+| 0.25 mm to 0.5 mm | 61 | 42 |
+| 0.5 mm to 1 mm | 23 | 23 |
+| 1 mm to 1.5 mm | 31 | 44 |
+| 1.5 mm to 2 mm | 3 | 8 |
+| 2 mm to 2.5 mm | 9 | 16 |
+| 2.5 mm to 3 mm | 0 | 11 |
+| 3 mm to 3.5 mm | 0 | 2 |
+| 3.5 mm to 4 mm | 0 | 0 |
+| 4 mm to 4.4 mm | 0 | 0 |
+| beyond 4.4 mm | 0 | 0 |
+| all | 325 | 263 |
+| farthest | 2.056 mm | 3.044 mm |

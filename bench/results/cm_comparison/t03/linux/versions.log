@@ -1,0 +1,14 @@
+Linux 7.0.14-linuxkit aarch64
+Ubuntu 24.04.5 LTS
+18
+MemTotal:        8122268 kB
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+ros-jazzy-fastrtps	2.14.7-1noble.20260911.035410
+ros-jazzy-nav2-collision-monitor	1.3.14-1noble.20261106.012040
+ros-jazzy-rclcpp	28.1.23-1noble.20261105.191319
+ros-jazzy-rmw-fastrtps-cpp	8.4.5-1noble.20261105.132324
+Lean (version 4.37.0-rc1, aarch64-unknown-linux-gnu, commit 0b77e12952ad39077d80d8bd6b66d601f225c321, Release)
+RMW=default
+CMAKE_BUILD_TYPE:STRING=Release
+                 U sincosf@GLIBC_2.17
+                 U sincosf@GLIBC_2.17
