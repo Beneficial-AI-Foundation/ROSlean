@@ -40,9 +40,9 @@ same row group can run at the same time.
 
 | Task | What | Needs | Runs in cloud | Status |
 | --- | --- | --- | --- | --- |
-| [T00](T00-cloud-setup.md) | Cloud environment: set-up script, what runs there | — | yes | open |
-| [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | open |
-| [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | open |
+| [T00](T00-cloud-setup.md) | Cloud environment: set-up script, what runs there | — | yes | merged 586f733 |
+| [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | running |
+| [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | running |
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | open |
 | [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02 | yes | open |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | open |
