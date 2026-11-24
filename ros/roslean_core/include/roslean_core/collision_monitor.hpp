@@ -143,7 +143,7 @@ public:
       initialize();
       obj_ = roslean_cm_builder_new(roslean_core_unit());
     }
-    ~Builder() {if (obj_) {roslean_core_dec(obj_);}}
+    ~Builder() {release(obj_);}
     Builder(const Builder &) = delete;
     Builder & operator=(const Builder &) = delete;
 
@@ -151,6 +151,7 @@ public:
     /// @param own_timeout_s the source's own `source_timeout`, if it is set.
     void set_source(bool enabled, double node_timeout_s, std::optional<double> own_timeout_s)
     {
+      initialize();
       obj_ = roslean_cm_builder_set_source(
         obj_, enabled ? 1 : 0, bits_of(node_timeout_s), own_timeout_s.has_value() ? 1 : 0,
         bits_of(own_timeout_s.value_or(0.0)));
@@ -159,6 +160,7 @@ public:
     /// @param timeout_s the `stop_pub_timeout` parameter, seconds.
     void set_stop_pub_timeout(double timeout_s)
     {
+      initialize();
       obj_ = roslean_cm_builder_set_stop_pub_timeout(obj_, bits_of(timeout_s));
     }
 
@@ -169,6 +171,7 @@ public:
     uint32_t add_circle(
       double radius_m, ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_circle(
         obj_, bits_of(radius_m), static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -179,6 +182,7 @@ public:
     /// @return the index of the new zone.
     uint32_t add_polygon(ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_polygon(
         obj_, static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -191,6 +195,7 @@ public:
     uint32_t add_topic_polygon(
       ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_topic_polygon(
         obj_, static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -202,6 +207,7 @@ public:
     /// will not be ok (ConfigError::StrayVertex).
     void add_vertex(float x_m, float y_m)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_vertex(obj_, bits_of(x_m), bits_of(y_m));
     }
 
@@ -211,6 +217,7 @@ public:
     /// every command once it is active.
     CollisionMonitor build()
     {
+      initialize();
       lean_object * monitor = roslean_cm_new(obj_);
       obj_ = roslean_cm_builder_new(roslean_core_unit());
       num_zones_ = 0;
@@ -222,13 +229,13 @@ private:
     uint32_t num_zones_{0};
   };
 
-  ~CollisionMonitor() {if (obj_) {roslean_core_dec(obj_);}}
+  ~CollisionMonitor() {release(obj_);}
   CollisionMonitor(CollisionMonitor && other) noexcept
   : obj_(std::exchange(other.obj_, nullptr)) {}
   CollisionMonitor & operator=(CollisionMonitor && other) noexcept
   {
     if (this != &other) {
-      if (obj_) {roslean_core_dec(obj_);}
+      release(obj_);
       obj_ = std::exchange(other.obj_, nullptr);
     }
     return *this;
@@ -475,10 +482,24 @@ private:
     return out;
   }
 
+  /// Every member that calls into Lean begins with this: the object is
+  /// there, and the calling thread is prepared for Lean code (initialize).
   void require_valid() const
   {
     if (!obj_) {
       throw std::logic_error("use of a moved-from roslean::CollisionMonitor");
+    }
+    initialize();
+  }
+
+  /// Gives up a reference, which may run Lean's deallocation in this thread.
+  /// An object exists only after a successful initialize(), which therefore
+  /// does not throw here.
+  static void release(lean_object * obj) noexcept
+  {
+    if (obj) {
+      initialize();
+      roslean_core_dec(obj);
     }
   }
 

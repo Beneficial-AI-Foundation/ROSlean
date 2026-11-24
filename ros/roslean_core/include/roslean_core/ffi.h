@@ -32,6 +32,15 @@ extern "C" {
 /* Initialises the Lean runtime and the ROSleanCore library; call once, before
  * anything else. Returns non-zero on success. */
 int roslean_core_initialize(void);
+/* Lean's `lean_initialize_thread` and `lean_finalize_thread`. The Lean
+ * runtime requires the first, before any Lean code runs, in every thread
+ * that Lean did not create itself, other than the one that called
+ * roslean_core_initialize; and the second before such a thread ends.
+ * roslean::initialize() (runtime.hpp) does both. */
+void roslean_core_initialize_thread(void);
+void roslean_core_finalize_thread(void);
+/* The number of calls of roslean_core_initialize_thread so far (for tests). */
+int roslean_core_thread_inits(void);
 /* Lean's `()`: the argument of functions that take `Unit`. */
 lean_object * roslean_core_unit(void);
 /* Take or release one reference to an object. */

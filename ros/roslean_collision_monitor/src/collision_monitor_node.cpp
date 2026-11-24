@@ -185,10 +185,18 @@ protected:
   /// stays unconfigured and the process stays up, as upstream.
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override
   {
-    configuring_ = true;
-    const auto result = configure();
-    configuring_ = false;
-    return result;
+    // The flag is taken back also when an exception leaves configure() (an
+    // invalid topic name makes rclcpp throw, for one): otherwise every later
+    // change of a parameter would be accepted without effect (review CM5,
+    // finding 3f).
+    struct Configuring
+    {
+      explicit Configuring(bool & flag)
+      : flag_(flag) {flag_ = true;}
+      ~Configuring() {flag_ = false;}
+      bool & flag_;
+    } configuring(configuring_);
+    return configure();
   }
 
   CallbackReturn configure()
@@ -291,7 +299,7 @@ protected:
       [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(msg);});
     for (uint32_t k = 0; k < zones_.size(); ++k) {
       auto & zone = zones_[k];
-      if (zone.topic) {
+      if (zone.topic && !zone.sub_topic.empty()) {
         // N31: upstream's QoS.
         rclcpp::QoS polygon_qos = rclcpp::SystemDefaultsQoS();
         if (zone.transient_local) {
@@ -325,8 +333,8 @@ protected:
     return CallbackReturn::SUCCESS;
   }
 
-  /// N5. The publishers are activated, every visualised zone is published
-  /// once, and the bond is created. The transition itself publishes no
+  /// N5. The publishers are activated, every visualised zone that is enabled
+  /// is published once, and the bond is created. The transition itself publishes no
   /// velocity and no state message.
   CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
   {
@@ -766,7 +774,8 @@ private:
     state_pub_->publish(state);
   }
 
-  /// N16 (T8): every visualised zone, with the node clock as the stamp.
+  /// N16 (T8): every visualised zone that is enabled (upstream's
+  /// publishPolygons skips a disabled one), with the node clock as the stamp.
   /// Under simulated time, after a callback that waited for a transform,
   /// rclcpp's clock still shows the time before the wait; the stamp is then
   /// the clock reading the wait ended with, which is what upstream's clock
@@ -781,7 +790,7 @@ private:
     }
     waited_until_ns_.reset();
     for (auto & zone : zones_) {
-      if (zone.pub) {
+      if (zone.pub && zone.enabled) {
         zone.display.header.stamp = stamp;
         zone.pub->publish(zone.display);
       }
@@ -1053,9 +1062,11 @@ private:
     ZoneParams zone;
     zone.name = z;
     zone.min_points = get_or<int64_t>(z + ".min_points", 4);
-    zone.ratio = get_or<double>(z + ".slowdown_ratio", 0.5);
     zone.enabled = get_or<bool>(z + ".enabled", true);
     zone.slowdown = action_type.has_value() && *action_type == "slowdown";
+    // Read for a slowdown zone only, as upstream: on a stop zone the
+    // parameter may hold anything (review CM5, finding 3c).
+    zone.ratio = zone.slowdown ? get_or<double>(z + ".slowdown_ratio", 0.5) : 0.5;
     zone.visualize = get_or<bool>(z + ".visualize", false);
     zone.pub_topic = get_or<std::string>(z + ".polygon_pub_topic", z);
     zone.display.header.frame_id = base_frame_id_;
@@ -1083,15 +1094,38 @@ private:
       }
       builder.add_circle(*radius, action, zone.ratio, zone.min_points, zone.enabled);
     } else if (type.has_value() && *type == "polygon") {
+      // N29. With usable `points` the shape is fixed; `polygon_sub_topic` and
+      // `footprint_topic` are not read. `points` that upstream cannot use (it
+      // does not parse, a point is not a pair, or there are fewer than four
+      // points: fixed_points_usable) leave upstream with the topic, and this
+      // node too, if `polygon_sub_topic` is set; if it is not, upstream fails
+      // and so does this node, naming `points`.
       const auto points = get_opt<std::string>(z + ".points");
-      if (points.has_value()) {
-        // N29: with `points` the shape is fixed; `polygon_sub_topic` and
-        // `footprint_topic` are not read.
-        std::string error;
-        if (!parse_points(*points, zone.vertices, error)) {
+      std::string error;
+      bool fixed = points.has_value() && parse_points(*points, zone.vertices, error) &&
+        fixed_points_usable(zone.vertices);
+      // Read only when the shape does not come from `points`, as upstream.
+      std::optional<std::string> sub_topic;
+      if (!fixed) {
+        sub_topic = get_opt<std::string>(z + ".polygon_sub_topic");
+      }
+      if (points.has_value() && !fixed) {
+        if (sub_topic.has_value()) {
+          RCLCPP_ERROR(
+            get_logger(), "[%s]: 'points' cannot be used (%s); the zone takes its shape from "
+            "'polygon_sub_topic' instead, as nav2_collision_monitor does (N29)", z.c_str(),
+            error.empty() ? "a polygon needs at least four points" : error.c_str());
+          zone.vertices.clear();
+        } else if (!error.empty()) {
           refuse(z + ".points", error);
           return;
+        } else if (!refused(z + ".polygon_sub_topic")) {
+          // Too few points and no topic: the core is given the polygon and
+          // refuses it (R10), with its own message.
+          fixed = true;
         }
+      }
+      if (fixed) {
         if (!complete) {
           return;
         }
@@ -1104,8 +1138,10 @@ private:
           zone.display.polygon.points.push_back(p);
         }
       } else {
-        const auto sub_topic = get_opt<std::string>(z + ".polygon_sub_topic");
-        if (!sub_topic.has_value() || sub_topic->empty()) {
+        if (refused(z + ".polygon_sub_topic")) {
+          return;  // of the wrong type
+        }
+        if (!sub_topic.has_value()) {
           // N29, ND11: upstream fails here too.
           std::string why =
             "is not initialized, and the zone has no 'points': static points and sub topic both "
@@ -1121,6 +1157,9 @@ private:
         if (!complete) {
           return;
         }
+        // An empty `polygon_sub_topic` configures, as upstream: a topic zone
+        // without a subscription. It never has a shape and never acts (N32);
+        // warn_about_what_protects_nothing says so.
         zone.topic = true;
         zone.sub_topic = *sub_topic;
         zone.transient_local = get_or<bool>(z + ".polygon_subscribe_transient_local", false);
@@ -1227,7 +1266,11 @@ private:
       if (zone.circle && zone.radius == 0.0) {
         warn(z + "'radius' is 0: the zone is a disc of 1 mm around the origin of the base frame.");
       }
-      if (zone.topic) {
+      if (zone.topic && zone.sub_topic.empty()) {
+        warn(
+          z + "it has no usable 'points' and its 'polygon_sub_topic' is empty: the zone has no "
+          "shape, can never receive one, and never takes any action (N29, N32).");
+      } else if (zone.topic) {
         warn(
           z + "its shape comes from the topic '" + zone.sub_topic + "': until the first message "
           "with at least three points is accepted the zone takes no action, and a shape given in "

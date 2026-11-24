@@ -20,6 +20,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1750,6 +1751,67 @@ int main()
     check(CM::source_timeout_ns(2.094, 2.094) == 2093999999, "set on the source itself: 2,093,999,999 ns");
     check(CM::source_timeout_ns(5.0, 0.25) == 250000000 && !CM::source_timeout_ns(-1.0, 0.25) &&
       !CM::source_timeout_ns(5.0, kNaN), "own value used; either value can be refused");
+  }
+
+  {
+    // Review CM5, finding 5: the wrapper prepares every thread that calls into
+    // Lean (`lean_initialize_thread`), once, and not the thread that
+    // initialised the runtime. A monitor built in one thread is used in two
+    // others, one after the other, and destroyed in a third: what a node
+    // loaded as a component does in its container's executor threads.
+    const auto build = []() {
+        RawCM::Builder b;
+        b.set_source(true, 2.0, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(0.5, RawCM::ZoneAction::Stop, 0.0, 1, true);
+        auto m = b.build();
+        m.on_lifecycle(RawCM::Transition::Configure);
+        m.on_lifecycle(RawCM::Transition::Activate);
+        return m;
+      };
+    const auto use = [](RawCM & m, uint64_t now, double x) {
+        const float r = 1.0f;
+        uint8_t ranges[4];
+        std::memcpy(ranges, &r, 4);
+        m.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), ranges, 4);
+        std::vector<uint8_t> p;
+        put(p, d(x), 8);
+        put(p, d(0.0), 8);
+        return m.on_cmd(
+          now, d(0.5), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), true, p.data(), p.size(), nullptr,
+          0).kind;
+      };
+    const int before = roslean_core_thread_inits();
+    auto m = std::make_optional(build());
+    const Kind here = use(*m, 1000, 0.25);
+    check(roslean_core_thread_inits() == before && here == Kind::StopZone,
+      "the thread that initialised the runtime is not initialised a second time");
+    Kind first = Kind::Silent, second = Kind::Silent, third = Kind::Silent;
+    int inits_first = 0;
+    std::thread t1([&]() {
+        first = use(*m, 2000, 2.0);
+        second = use(*m, 3000, 0.25);
+        inits_first = roslean_core_thread_inits();
+      });
+    t1.join();
+    check(first == Kind::Pass && second == Kind::StopZone,
+      "a monitor built in one thread answers in another");
+    check(inits_first == before + 1,
+      "the other thread was prepared for Lean code, once for all its calls");
+    std::thread t2([&]() {
+        third = use(*m, 4000, 2.0);
+        m.reset();  // the last reference is given up here
+      });
+    t2.join();
+    check(third == Kind::Pass && roslean_core_thread_inits() == before + 2,
+      "and in a third, which also destroys it: prepared too");
+    std::thread t3([&]() {
+        auto local = build();
+        third = use(local, 1000, 0.25);
+      });
+    t3.join();
+    check(third == Kind::StopZone && roslean_core_thread_inits() == before + 3,
+      "a monitor built, used and destroyed in a thread of its own");
   }
 
   std::printf("%d failure(s)\n", failures);

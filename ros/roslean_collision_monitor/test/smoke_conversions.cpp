@@ -330,6 +330,17 @@ int main()
       "T9: a /clock message with sec < 0 is not");
   }
 
+  // N29: which parsed `points` are a fixed polygon (upstream: more than three).
+  {
+    std::vector<std::array<float, 2>> v;
+    std::string e;
+    check(!fixed_points_usable(v), "fixed_points_usable: no points are not a fixed polygon");
+    check(parse_points("[[1, 1], [1, -1], [-1, -1]]", v, e) && !fixed_points_usable(v),
+      "fixed_points_usable: three points parse, and are not a fixed polygon (N29)");
+    check(parse_points("[[1, 1], [1, -1], [-1, -1], [-1, 1]]", v, e) && fixed_points_usable(v),
+      "fixed_points_usable: four points are");
+  }
+
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
 }

@@ -716,6 +716,41 @@ POLYGON_TOPIC_NAN = [
     cmd(V, ZERO, 'the reading 0.5 m ahead is inside the square: stop', state=DYN),
 ]
 
+# N29 (review CM5, finding 3b): `points` that upstream cannot use (fewer than
+# four points, or a point that is not a pair) leaves the zone with its
+# `polygon_sub_topic`; an empty `polygon_sub_topic` configures a zone without
+# subscription, which never has a shape.
+POINTS_UNUSABLE_TOPIC = [
+    graph('unusable points beside polygon_sub_topic: the topic is subscribed', 'sub', 'zone_shape',
+          1),
+    clock(T), scan(NEAR),
+    cmd(V, V, 'no shape received yet: passes'),
+    shape(BOX),
+    cmd(V, ZERO, 'the box received on the topic is the zone: stop', state=DYN),
+]
+SUB_TOPIC_EMPTY = [
+    graph('an empty polygon_sub_topic: no subscription', 'sub', 'zone_shape', 0),
+    clock(T), scan(NEAR),
+    cmd(V, V, 'the zone has no shape and can get none: PASSES'),
+]
+# Finding 3c: slowdown_ratio is read for a slowdown zone only.
+STOP_ZONE_RATIO_TYPE = [
+    clock(T), scan(NEAR),
+    cmd(V, ZERO, 'a stop zone with a slowdown_ratio that is not a number configures and stops',
+        state=SC),
+]
+# N16 (finding 3a): the polygon of a zone is published only while the zone is
+# enabled, on activation and after a processed command.
+POLYGON_PUB_DISABLED = [
+    clock(T),
+    transition('configure'),
+    polys(transition('activate', 'only the enabled zone is published on activation'),
+          ('front_box', BASE, BOX)),
+    scan(FAR),
+    polys(cmd(V, V, 'and after a processed command: the disabled circle is not published'),
+          ('front_box', BASE, BOX)),
+]
+
 DYN_SLOW = ('Dyn', SLOWDOWN)
 POLYGON_TOPIC_MOVING = [
     clock(T),
@@ -962,6 +997,22 @@ SCENARIOS = {
         start='unconfigured', watch=['Dyn'], shapes=['zone_shape']),
     'polygon-topic-nan': dict(
         family='topic-zones', params=[P('Dyn')], steps=POLYGON_TOPIC_NAN, shapes=['zone_shape']),
+    'points-short-topic': dict(
+        family='topic-zones', params=[P('Dyn'), 'Dyn.points:="[[1, 1], [1, -1], [-1, -1]]"'],
+        steps=POINTS_UNUSABLE_TOPIC, shapes=['zone_shape']),
+    'points-malformed-topic': dict(
+        family='topic-zones',
+        params=[P('Dyn'), 'Dyn.points:="[[1, 1], [1, -1], [-1, -1], [-1]]"'],
+        steps=POINTS_UNUSABLE_TOPIC, shapes=['zone_shape']),
+    'sub-topic-empty': dict(
+        family='topic-zones', params=[P('Dyn'), 'Dyn.polygon_sub_topic:=""'],
+        steps=SUB_TOPIC_EMPTY),
+    'stop-zone-ratio-type': dict(
+        family='state', params=[P('StopCircle'), 'StopCircle.slowdown_ratio:=half'],
+        steps=STOP_ZONE_RATIO_TYPE),
+    'polygon-pub-disabled': dict(
+        family='state', params=[P('StopCircle', 'FrontBox'), 'StopCircle.enabled:=false'] + VIS,
+        steps=POLYGON_PUB_DISABLED, start='unconfigured', watch=['front_box', 'StopCircle']),
     'polygon-topic-moving': dict(
         family='topic-zones', params=[P('Dyn'), 'Dyn.action_type:=slowdown'],
         steps=POLYGON_TOPIC_MOVING, shapes=['zone_shape']),

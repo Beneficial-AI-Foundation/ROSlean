@@ -10,6 +10,8 @@
 
 /* Part of the Lean runtime, but not declared in lean.h. */
 void lean_initialize_runtime_module(void);
+void lean_initialize_thread(void);
+void lean_finalize_thread(void);
 
 int roslean_core_initialize(void)
 {
@@ -25,6 +27,20 @@ int roslean_core_initialize(void)
   }
   return ok;
 }
+
+/* How often roslean_core_initialize_thread has run: for the test that the
+ * wrappers call it in every thread that needs it. */
+static int thread_inits = 0;
+
+void roslean_core_initialize_thread(void)
+{
+  __atomic_add_fetch(&thread_inits, 1, __ATOMIC_SEQ_CST);
+  lean_initialize_thread();
+}
+
+int roslean_core_thread_inits(void) {return __atomic_load_n(&thread_inits, __ATOMIC_SEQ_CST);}
+
+void roslean_core_finalize_thread(void) {lean_finalize_thread();}
 
 lean_object * roslean_core_unit(void) {return lean_box(0);}
 
