@@ -127,7 +127,7 @@ an arm64 container in Docker on the same machine unless said otherwise.
 | T06 | Extension: C interface and node | done | A lifecycle node with the bond, the state topic, the zone polygons, TF, zones fed by a topic; as an executable and as a component. Nav2's own launch file brings it up. A command costs 6 to 9 times upstream's and is within the budget. |
 | CM5 | Independent review of the extension (T08) | done | The node answers every scenario and 600 random cases as upstream up to the stated differences. Six findings, two of them defects: a pass where upstream stops after a polygon message with a NaN vertex, and a hang when the clock jumps back during a wait for a transform. |
 | T09 | Fixes after CM5 | done | ND6, the wait and the TF buffer at a clock jump, unrecorded differences removed or recorded (ND13), `mixed_from_init`, `lean_initialize_thread`. SPEC.md is one document again. Final counts: COMPARISON.md, "After the fixes of the review CM5". |
-| T10 | Demo: Nav2 launches the Lean node | running when this was written | See TUTORIAL_COLLISION_MONITOR.md. |
+| T10 | Demo: Nav2 launches the Lean node | done | [TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md), section 7; `tasks/reports/T10.md`. Nav2's whole bring-up starts the Lean executable as its monitor, with a stop and a slowdown zone in place of `FootprintApproach`. `pixi run cm-check --nav2`: 10 runs of 10 passed with the Lean node, 4 of 4 with upstream's on the same parameters; the first start in a fresh environment failed (Nav2 did not come up). With Nav2 driving a tour through the stop zone the robot ended standing for good in three runs of six (two of three with the Lean node, one of three with upstream's); stock Nav2 with `approach` reached 11 places in its one run and did not stand: `stop` is not a substitute for `approach`. Nobody looked at a window (locked screen). |
 | T11 | Project page, README, this plan | done | `site/gaps.html`, the collision monitor on the other pages. |
 | T12 | Fresh-machine audit | open | Someone with nothing but the README builds and runs it, and checks every number on the project page. |
 
@@ -173,14 +173,28 @@ point markers. What follows is the rest.
   format cannot state the 32 checks that follow from stated velocity
   differences. `scenario_nav2.py` and `random_nav2.py` compare them, without
   boundary cases.
-- **The demo.** When this was written nobody had seen the Gazebo demo on a
-  screen, and the tutorial still described the node before the extension;
-  both are task T10's. `check_demo.py` does not notice when Gazebo exits
-  early and waits for minutes (T00). The demo's narrator
-  (`demo/gazebo/monitor_narrator.py`) and the tutorial name four theorems
-  that the Lean sources do not contain (`output_eq_publish_pass_iff`,
-  `output_eq_publish_slowdown_iff`, `run_silent_last_published_zero`,
-  `run_scan_output`; found by T11 with `grep`, at commit `8152520`).
+- **The demo on a screen.** Nobody has seen the Gazebo demo, in either
+  variant, in a window: the screen of the machine was locked during T10 and
+  during the audit (T12). The two pictures in the tutorial are Gazebo's own
+  captures of the 3D scene. RViz was started and not looked at; the
+  keyboard was not used. (T10 rewrote the tutorial for the node as it is
+  and replaced the four theorem names that the Lean sources do not
+  contain, in the tutorial and in `demo/gazebo/monitor_narrator.py`.)
+  `check_demo.py` does not notice when Gazebo exits early and waits for
+  minutes (T00).
+- **A stop zone under Nav2's planner.** With the documented edit (a stop
+  zone in place of `FootprintApproach`) Nav2's tour of the apartment ended
+  with the robot standing for good in three runs of six, with both nodes:
+  the monitor zeroes Nav2's spin and back-up recoveries as well. Stock Nav2
+  with `approach` did not stand in its one run. This is the behaviour of a
+  `stop` zone, not a defect of the node; what would remove it is `approach`
+  (above). Whether the documented edit should stay a stop polygon, and the
+  demo's margins, are T10's questions for the user (`tasks/reports/T10.md`).
+  Not investigated: the flicker between stop and slowdown at the zone's
+  edge, seen in 7 of 10 runs of the Nav2 variant (3 of 4 with upstream's
+  node); the one failed start of Nav2 in 28.
+- **The component in the simulator**, and how close `approach` lets the
+  robot come: not run, not measured (T10).
 - **Open for the user** (tasks/PLAN.md, "Open or not confirmed"): the
   default for a polygon message with an unusable vertex (ND6); whether a
   marked slowdown zone should stop; ND13; the cost target.

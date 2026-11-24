@@ -213,11 +213,23 @@ pixi run cm-check --monitor nav2_collision_monitor   # the same with upstream's 
 
 See [docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md),
 which also covers Nav2 as the planner and Nav2 launching the Lean node in
-place of its own monitor. The check passed in nine runs of nine on macOS
+place of its own monitor (section 7; `pixi run cm-gazebo-bringup`,
+`pixi run cm-check --nav2`). The check passed in nine runs of nine on macOS
 with an earlier version of the node (the robot at rest 0.255 to 0.268 m from
-the box, 0 to 14 mm after the first zero command) and in one run with the
-node as a lifecycle node. It shows the rule at work in one head-on approach
-in simulation; it is not evidence that a robot does not collide.
+the box, 0 to 14 mm after the first zero command) and in three runs of three
+with the node as a lifecycle node that reads TF (at rest 0.254 to 0.260 m,
+0 to 2 mm). It shows the rule at work in one head-on approach in simulation;
+it is not evidence that a robot does not collide.
+
+In the variant in which Nav2's own bring-up starts the monitor
+(`cm-check --nav2`, a stop and a slowdown zone), the same check passed in
+ten runs of ten with the Lean node and in four of four with upstream's node
+on the same parameters (at rest 0.269 to 0.275 m and 0.267 to 0.270 m from
+the box). One start before these, the first in a freshly installed
+environment, failed: Nav2's lifecycle manager did not get past
+`behavior_server` and the monitor was never activated. With Nav2 itself
+driving a tour through these zones the outcome was different: in three runs
+of six the robot ended standing for good. See [Under Nav2](#under-nav2).
 
 ## twist_mux: what is proved
 
@@ -379,7 +391,7 @@ where it was. One difference is a delay, not a decision: ND3.
 `FootprintApproach`, with `action_type: approach`. The Lean node refuses it:
 
 ```
-1 parameter refused: parameter 'FootprintApproach.action_type': only 'stop' and 'slowdown' are supported; got 'approach'. (…)
+2 parameters refused: parameter 'FootprintApproach.action_type': only 'stop' and 'slowdown' are supported; got 'approach'. (…); parameter 'FootprintApproach.polygon_sub_topic': is not initialized, and the zone has no 'points': (…)
 ```
 
 Changing only `action_type` to `stop` does not configure either, on
@@ -411,14 +423,33 @@ executable's `main`.
 
 With this edit Nav2's lifecycle manager configured, activated and bonded
 the node, and it stopped and released a command (review CM5; macOS,
-scripted scan, no simulator). For the run with a simulated robot see
-[docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md).
-The robot then stops where stock Nav2 would slow down in proportion to the
-time before a predicted collision.
+scripted scan, no simulator).
+
+With a simulated robot (Gazebo, TurtleBot3, macOS;
+[docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md),
+section 7): Nav2's bring-up started the Lean node as its collision monitor,
+with a stop and a slowdown zone in place of `FootprintApproach`. The
+automated check of the box scenario (`pixi run cm-check --nav2`) passed in
+ten runs of ten, and in four of four with upstream's node on the same
+parameters. The first start of all, in a freshly installed environment,
+failed before the monitor was activated: Nav2's lifecycle manager stopped at
+`Configuring behavior_server`. That did not recur in 27 further starts.
+
+**A stop zone is not a substitute for `approach`.** The robot stops where
+stock Nav2 slows down in proportion to the time before a predicted
+collision, and in a stop zone every command becomes zero, including the turn
+or the retreat that would clear the zone, and including Nav2's recovery
+behaviours. With Nav2 driving a tour of the apartment for 300 simulated
+seconds through these zones, **the robot ended standing for good in three
+runs of six**: in two of three runs with the Lean node (1, 1 and 8 places
+reached) and in one of three with upstream's node on the same zones (8, 2
+and 5 places). Stock Nav2 with `approach` reached 11 places in its one run
+and did not stand. Three runs each do not compare the two nodes; the
+standing is what a `stop` zone does under a planner, with either node.
 
 ### Cost and platforms
 
-In process, on one Apple M5 (macOS arm64), a command costs 6 to 9 times
+In process, on one Apple M5 Pro (macOS arm64), a command costs 6 to 9 times
 upstream's: 48.9 µs against 7.2 µs with 1080 stored readings and two polygon
 zones. In the Linux arm64 container an earlier version of the command path
 measured 4.2 to 6.4 times upstream's. Both are inside the budget set in
