@@ -45,11 +45,16 @@ model:
   active phase, since the old node has no lifecycle;
 * a scan call always stores the scan (event `scan`). The coordinates in its
   records are in the base frame already, as the old shim hands them over;
-  they are remembered in `Monitor.coords` and every command carries them, as
-  the model's "coordinates of the stored scan for this command". If the call
-  says the scan is not `usable`, `none` is remembered instead, which is the
-  model's "the lookup failed" (the stop of R8 follows, as it did for the
-  removed event `scanUnusable`);
+  the record array is kept (`Monitor.raw`), and every command carries the
+  coordinates in it (`Monitor.coords`), as the model's "coordinates of the
+  stored scan for this command". If the call says the scan is not `usable`,
+  nothing is kept, which is the model's "the lookup failed" (the stop of R8
+  follows, as it did for the removed event `scanUnusable`);
+* the command call that C sees is `cmOnCmdFast` (task T03): the same
+  function as `cmOnCmd`, computed by `stepCmdFast`
+  (`ROSleanCore.CollisionMonitorFast`), proved equal in
+  `ROSlean/CollisionMonitor/Fast.lean`; a command without a clock reading
+  is `cmOnCmdNoClock` (SPEC, D15);
 * no zone is a topic zone, and no command carries zone vertices;
 * `roslean_cm_out_kind` returns 0 both for `silent` and for a processed
   command whose velocity is withheld; the report is not exposed.
