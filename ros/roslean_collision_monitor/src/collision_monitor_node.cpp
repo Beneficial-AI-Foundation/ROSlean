@@ -215,8 +215,9 @@ private:
       RCLCPP_INFO(get_logger(), "The clock is valid again: commands are evaluated as usual.");
     } else {
       RCLCPP_ERROR(
-        get_logger(), "A message on /clock carries a negative time, which cannot be used. Until "
-        "a usable one arrives every command is answered with zero velocity (D15).");
+        get_logger(), "The node has no valid clock reading: a message on /clock carries a "
+        "negative time, or an exception left a callback. Until a usable /clock message arrives "
+        "every command is answered with zero velocity (D15).");
     }
   }
 
@@ -364,18 +365,18 @@ private:
   /// estimated to cost with the configured zones and a scan of this size is
   /// said once (and again if a larger scan arrives) when it exceeds
   /// `kCostWarnNs`. The estimate is the measured cost on one machine, back
-  /// to back (Apple M5: 45 ns per reading, plus 3 ns per reading and circle
-  /// and 2.5 ns per reading and polygon vertex), doubled; an idle or slower
+  /// to back (Apple M5: 25 ns per reading, plus 1.5 ns per reading and circle
+  /// and 2 ns per reading and polygon vertex), doubled; an idle or slower
   /// processor takes several times as long. It changes nothing the node
   /// does.
   static constexpr double kCostWarnNs = 1.0e6;  // 1 ms: 5 % of a 20 ms command period
 
   double estimated_cmd_cost_ns(size_t readings) const
   {
-    double per_reading = 45.0;
+    double per_reading = 25.0;
     for (const auto & zone : zones_) {
       if (zone.enabled) {
-        per_reading += zone.circle ? 3.0 : 2.5 * static_cast<double>(zone.vertices.size());
+        per_reading += zone.circle ? 1.5 : 2.0 * static_cast<double>(zone.vertices.size());
       }
     }
     return 2.0 * per_reading * static_cast<double>(readings);
@@ -764,10 +765,11 @@ private:
   CollisionMonitor::OutputKind logged_kind_{CollisionMonitor::OutputKind::Silent};
   uint32_t logged_zone_{0};
   uint64_t logged_ratio_bits_{0};
+  size_t cost_warned_readings_{0};  // the largest scan the cost warning was given for
   // D15. `clock_valid_` selects which of the core's two command calls is
   // made; it is false only while the /clock message received last carried a
-  // negative time. Always true without simulated time.
-  size_t cost_warned_readings_{0};  // the largest scan the cost warning was given for
+  // negative time, or after an exception was caught in main() and until the
+  // next usable /clock message. Always true without simulated time.
   bool sim_time_{false};
   bool clock_valid_{true};
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;

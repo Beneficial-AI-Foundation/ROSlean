@@ -18,10 +18,12 @@ by function, that nothing changed:
   `zonesActionFast_eq`: the zone tests;
 * `stepCmdFast_eq`: **the fast command step is `step`** on the command
   event, for every configuration, state, time, velocity and coordinates;
-* `coordMmAt_eq`, `pointAt_eq`: decoding a coordinate from its two 32-bit
-  halves is `coordMm` of the 64-bit pattern;
-* `cmOnCmdFast_eq`, `synced_after`, `execFast_eq`: the exported command call
-  returns the monitor that `cmOnCmd` returns, after any sequence of calls.
+* `word64At_toNat`, `coordMagMm64_toNat`, `coordMm64_eq`, `coordMmAt_eq`,
+  `pointAt_eq`: reading a coordinate's eight bytes into a machine word and
+  converting it there is `coordMm` of the 64-bit pattern;
+* `cmOnCmdFast_eq`, `execFast_eq`: the exported command call returns the
+  monitor that `cmOnCmd` returns, on every monitor and so after any sequence
+  of calls.
 
 Every theorem of the other files is stated on `step` and `cmOnCmd`; by the
 last item they are statements about what C calls.
@@ -323,27 +325,147 @@ namespace ROSlean.CollisionMonitor.FFI
 
 open ROSleanCore.CollisionMonitor ROSleanCore.CollisionMonitorFFI
 
-/-! ## Decoding a coordinate from its halves -/
+/-! ## Decoding a coordinate on machine words -/
 
-/-- The conversion from the two halves of a pattern is `coordMm` of the
-pattern. -/
-theorem partsMm_eq (hi lo : Nat) (hhi : hi < 2 ^ 32) (hlo : lo < 2 ^ 32) :
-    partsMm hi lo = coordMm (hi * 0x100000000 + lo) := by
-  unfold partsMm coordMm
-  have h1 : (hi * 0x100000000 + lo) % 0x8000000000000000 = hi % 0x80000000 * 0x100000000 + lo := by
+/-- The machine word read from eight bytes is the pattern `u64At` reads. -/
+theorem word64At_toNat (a : ByteArray) (o : Nat) : (word64At a o).toNat = u64At a o := by
+  unfold word64At
+  split
+  · rename_i h
+    have hb : ∀ k (hk : k < 8), byteAt a (o + k) = (a[o + k]'(by omega)).toNat := by
+      intro k hk
+      simp [byteAt, show o + k < a.size by omega]
+    have h0 := hb 0 (by omega)
+    have h1 := hb 1 (by omega)
+    have h2 := hb 2 (by omega)
+    have h3 := hb 3 (by omega)
+    have h4 := hb 4 (by omega)
+    have h5 := hb 5 (by omega)
+    have h6 := hb 6 (by omega)
+    have h7 := hb 7 (by omega)
+    simp only [Nat.add_zero] at h0
+    have l0 := (a[o]'(by omega)).toNat_lt
+    have l1 := (a[o + 1]'(by omega)).toNat_lt
+    have l2 := (a[o + 2]'(by omega)).toNat_lt
+    have l3 := (a[o + 3]'(by omega)).toNat_lt
+    have l4 := (a[o + 4]'(by omega)).toNat_lt
+    have l5 := (a[o + 5]'(by omega)).toNat_lt
+    have l6 := (a[o + 6]'(by omega)).toNat_lt
+    have l7 := (a[o + 7]'(by omega)).toNat_lt
+    simp only [u64At, u32At, Nat.add_assoc, Nat.reduceAdd, h0, h1, h2, h3, h4, h5, h6, h7,
+      UInt64.toNat_add, UInt64.toNat_mul, UInt8.toNat_toUInt64, UInt64.toNat_ofNat]
     omega
-  have h2 : F64.neg (hi * 0x100000000 + lo) = decide (0x80000000 ≤ hi) := by
+  · rw [UInt64.toNat_ofNat']
+    exact Nat.mod_eq_of_lt (u64At_lt a o)
+
+/-- The magnitude computed on a machine word is `coordMagMm` of the
+pattern. -/
+theorem coordMagMm64_toNat (mag : UInt64) : (coordMagMm64 mag).toNat = coordMagMm mag.toNat := by
+  have hn := mag.toNat_lt
+  have he : (mag / 0x10000000000000 % 0x800).toNat = mag.toNat / 0x10000000000000 % 0x800 := by
+    simp [UInt64.toNat_div, UInt64.toNat_mod]
+  have hf : (mag % 0x10000000000000).toNat = mag.toNat % 0x10000000000000 := by
+    simp [UInt64.toNat_mod]
+  unfold coordMagMm64 coordMagMm
+  simp only [F64.expField, F64.mant, F64.frac, F64.shift, F64.bias, coordLimit, ← he, ← hf]
+  have hfl : (mag % 0x10000000000000).toNat < 0x10000000000000 := by rw [hf]; omega
+  have hel : (mag / 0x10000000000000 % 0x800).toNat < 0x800 := by rw [he]; omega
+  generalize mag / 0x10000000000000 % 0x800 = e at hel ⊢
+  generalize mag % 0x10000000000000 = f at hfl ⊢
+  by_cases h1 : 1033 ≤ e.toNat
+  · have h1' : (1033 : UInt64) ≤ e := UInt64.le_iff_toNat_le.mpr h1
+    simp [h1, h1']
+  · have h1' : ¬ (1033 : UInt64) ≤ e := fun h => h1 (UInt64.le_iff_toNat_le.mp h)
+    simp only [h1, h1', if_false]
+    by_cases h0 : e.toNat = 0
+    · have h0' : e < 1 := UInt64.lt_iff_toNat_lt.mpr (by simp [h0])
+      simp only [h0, h0', if_true]
+      have hz : (f.toNat * 1000) >>> (1075 - 1) = 0 := by
+        rw [Nat.shiftRight_eq_div_pow]
+        apply Nat.div_eq_of_lt
+        calc f.toNat * 1000 < 2 ^ 63 := by omega
+          _ ≤ 2 ^ (1075 - 1) := Nat.pow_le_pow_right (by norm_num) (by norm_num)
+      rw [hz]
+      simp
+    · have h0' : ¬ e < 1 := fun h => h0 (by have := UInt64.lt_iff_toNat_lt.mp h; simpa using this)
+      simp only [h0, h0', if_false]
+      have hk : (1075 - e).toNat = 1075 - e.toNat := by
+        rw [UInt64.toNat_sub_of_le _ _ (UInt64.le_iff_toNat_le.mpr (by simp; omega))]
+        rfl
+      have hm : ((f + 4503599627370496) * 1000).toNat = (f.toNat + 4503599627370496) * 1000 := by
+        simp only [UInt64.toNat_mul, UInt64.toNat_add, UInt64.toNat_ofNat]
+        omega
+      rw [← hk, ← hm]
+      have hml : ((f + 4503599627370496) * 1000).toNat < 2 ^ 63 := by rw [hm]; omega
+      generalize 1075 - e = sh at hk ⊢
+      generalize (f + 4503599627370496) * 1000 = m at hm hml ⊢
+      by_cases hs : 64 ≤ sh.toNat
+      · have hs' : (64 : UInt64) ≤ sh := UInt64.le_iff_toNat_le.mpr hs
+        have hz : m.toNat >>> sh.toNat = 0 := by
+          rw [Nat.shiftRight_eq_div_pow]
+          apply Nat.div_eq_of_lt
+          calc m.toNat < 2 ^ 63 := hml
+            _ ≤ 2 ^ sh.toNat := Nat.pow_le_pow_right (by norm_num) (by omega)
+        rw [hz]
+        simp [hs']
+      · have hs' : ¬ (64 : UInt64) ≤ sh := fun h => hs (UInt64.le_iff_toNat_le.mp h)
+        simp only [hs', if_false]
+        have hq : (m >>> sh).toNat = m.toNat >>> sh.toNat := by
+          rw [UInt64.toNat_shiftRight]
+          congr 1
+          exact Nat.mod_eq_of_lt (by omega)
+        rw [← hq]
+        generalize m >>> sh = q
+        by_cases hq1 : 1000000 ≤ q.toNat
+        · have hq1' : (1000000 : UInt64) ≤ q := UInt64.le_iff_toNat_le.mpr hq1
+          simp only [hq1', if_true]
+          rw [Nat.min_def]
+          split <;> simp <;> omega
+        · have hq1' : ¬ (1000000 : UInt64) ≤ q := fun h => hq1 (UInt64.le_iff_toNat_le.mp h)
+          simp only [hq1', if_false]
+          rw [Nat.min_def]
+          split <;> omega
+
+/-- **The conversion on a machine word is `coordMm`** of the pattern. -/
+theorem coordMm64_eq (b : UInt64) : coordMm64 b = coordMm b.toNat := by
+  have hn := b.toNat_lt
+  have hmag : (b % 0x8000000000000000).toNat = b.toNat % 0x8000000000000000 := by
+    simp [UInt64.toNat_mod]
+  have hneg : decide ((0x8000000000000000 : UInt64) ≤ b) = F64.neg b.toNat := by
     unfold F64.neg
-    by_cases h : 0x80000000 ≤ hi
-    · have : (hi * 0x100000000 + lo) / 0x8000000000000000 % 2 = 1 := by omega
-      simp [this, h]
-    · have : (hi * 0x100000000 + lo) / 0x8000000000000000 % 2 = 0 := by omega
-      simp [this, h]
-  rw [h1, h2]
+    by_cases h : 0x8000000000000000 ≤ b.toNat
+    · have h' : (0x8000000000000000 : UInt64) ≤ b := UInt64.le_iff_toNat_le.mpr h
+      have : b.toNat / 0x8000000000000000 % 2 = 1 := by omega
+      simp [h', this]
+    · have h' : ¬ (0x8000000000000000 : UInt64) ≤ b := fun h' => h (UInt64.le_iff_toNat_le.mp h')
+      have : b.toNat / 0x8000000000000000 % 2 = 0 := by omega
+      simp [h', this]
+  have hnan : (b % 0x8000000000000000 / 0x10000000000000 % 0x800 == 0x7FF &&
+      b % 0x8000000000000000 % 0x10000000000000 != 0) =
+      F64.isNaN (b.toNat % 0x8000000000000000) := by
+    have he : (b % 0x8000000000000000 / 0x10000000000000 % 0x800).toNat =
+        b.toNat % 0x8000000000000000 / 0x10000000000000 % 0x800 := by
+      simp [UInt64.toNat_div, UInt64.toNat_mod]
+    have hf : (b % 0x8000000000000000 % 0x10000000000000).toNat =
+        b.toNat % 0x8000000000000000 % 0x10000000000000 := by
+      simp [UInt64.toNat_mod]
+    unfold F64.isNaN F64.expField F64.frac
+    rw [← he, ← hf]
+    generalize b % 0x8000000000000000 / 0x10000000000000 % 0x800 = e
+    generalize b % 0x8000000000000000 % 0x10000000000000 = f
+    have h1 : (e == 0x7FF) = (e.toNat == 0x7FF) := by
+      rw [Bool.eq_iff_iff]
+      simp [← UInt64.toNat_inj]
+    have h2 : (f != 0) = (f.toNat != 0) := by
+      rw [Bool.eq_iff_iff]
+      simp [← UInt64.toNat_inj]
+    rw [h1, h2]
+  unfold coordMm64 coordMm coordMmOfParts
+  simp only [coordMagMm64_toNat, hmag, hnan]
+  rw [← hneg]
 
 theorem coordMmAt_eq (a : ByteArray) (o : Nat) : coordMmAt a o = coordMm (u64At a o) := by
-  unfold coordMmAt u64At
-  exact partsMm_eq _ _ (u32At_lt a (o + 4)) (u32At_lt a o)
+  rw [coordMmAt, coordMm64_eq, word64At_toNat]
 
 /-- **The point read from the bytes is the model's point** of the record's
 coordinates. -/
@@ -352,15 +474,11 @@ theorem pointAt_eq (a : ByteArray) (i : Nat) : pointAt a i = scanPointMm (coords
 
 /-! ## The exported command call -/
 
-/-- The record array a monitor keeps holds the coordinates it remembers. -/
-def Synced (m : Monitor) : Prop := m.coords = m.raw.map decodeCoords
-
-/-- **On a synced monitor the fast command is `Monitor.apply`** on the
-command event that carries the remembered coordinates. -/
-theorem applyCmdFast_eq (m : Monitor) (now : Nat) (v : Twist) (h : Synced m) :
+/-- **The fast command is `Monitor.apply`** on the command event that
+carries the remembered coordinates. -/
+theorem applyCmdFast_eq (m : Monitor) (now : Nat) (v : Twist) :
     m.applyCmdFast now v = m.apply (.cmd now v m.coords []) := by
-  unfold Monitor.applyCmdFast Monitor.apply
-  rw [h]
+  unfold Monitor.applyCmdFast Monitor.apply Monitor.coords
   cases m.raw with
   | none =>
     simp only [Option.map_none]
@@ -373,57 +491,29 @@ theorem applyCmdFast_eq (m : Monitor) (now : Nat) (v : Twist) (h : Synced m) :
       (pointAt_eq a)]
     rfl
 
-/-- **The exported command call is `cmOnCmd`** on a synced monitor. -/
-theorem cmOnCmdFast_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) (h : Synced m) :
+/-- **The exported command call is `cmOnCmd`**, on every monitor: the same
+state, the same output, every field. -/
+theorem cmOnCmdFast_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) :
     cmOnCmdFast m now lx ly lz ax ay az = cmOnCmd m now lx ly lz ax ay az :=
-  applyCmdFast_eq m _ _ h
-
-theorem synced_cmNew (b : Builder) : Synced (cmNew b) := rfl
-
-theorem synced_cmOnScan (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
-    (rmin rmax : UInt32) (a : ByteArray) : Synced (cmOnScan m now stamp usable rmin rmax a) := by
-  unfold Synced cmOnScan
-  simp only
-  split <;> rfl
-
-theorem synced_exec (m : Monitor) (c : Call) (h : Synced m) : Synced (c.exec m) := by
-  cases c with
-  | scan now stamp usable rmin rmax a => exact synced_cmOnScan m now stamp usable rmin rmax a
-  | cmd now lx ly lz ax ay az =>
-    show (m.apply _).coords = (m.apply _).raw.map decodeCoords
-    rw [(apply_cfg m _).2.2, apply_raw]
-    exact h
-
-/-- **Every monitor the calls can produce is synced.** -/
-theorem synced_after (b : Builder) (cs : List Call) : Synced (cs.foldl Call.exec (cmNew b)) := by
-  suffices h : ∀ m, Synced m → Synced (cs.foldl Call.exec m) from h _ (synced_cmNew b)
-  induction cs with
-  | nil => exact fun m h => h
-  | cons c cs ih => exact fun m h => ih _ (synced_exec m c h)
+  applyCmdFast_eq m _ _
 
 /-- A call as C makes it: the command call is the exported one. -/
 def Call.execFast (m : Monitor) : Call → Monitor
   | .scan now stamp usable rmin rmax a => cmOnScan m now stamp usable rmin rmax a
   | .cmd now lx ly lz ax ay az => cmOnCmdFast m now lx ly lz ax ay az
 
-/-- **What C calls is what the theorems are about.** After any sequence of
-scan and command calls on a new monitor, the exported functions have
-produced exactly the monitor that the definitions the theorems are stated on
-(`Call.exec`: `cmOnScan`, `cmOnCmd`) produce: the same state, the same
-output, every field. -/
-theorem execFast_eq (b : Builder) (cs : List Call) :
-    cs.foldl Call.execFast (cmNew b) = cs.foldl Call.exec (cmNew b) := by
-  suffices h : ∀ m, Synced m → cs.foldl Call.execFast m = cs.foldl Call.exec m from
-    h _ (synced_cmNew b)
-  induction cs with
-  | nil => exact fun m _ => rfl
-  | cons c cs ih =>
-    intro m h
-    have hc : Call.execFast m c = Call.exec m c := by
-      cases c with
-      | scan now stamp usable rmin rmax a => rfl
-      | cmd now lx ly lz ax ay az => exact cmOnCmdFast_eq m now lx ly lz ax ay az h
-    rw [List.foldl_cons, List.foldl_cons, hc]
-    exact ih _ (synced_exec m c h)
+/-- **What C calls is what the theorems are about.** Each exported call
+returns the monitor that the definition the theorems are stated on returns
+(`Call.exec`: `cmOnScan`, `cmOnCmd`), on every monitor; so does any sequence
+of calls. -/
+theorem execFast_eq_exec : Call.execFast = Call.exec := by
+  funext m c
+  cases c with
+  | scan now stamp usable rmin rmax a => rfl
+  | cmd now lx ly lz ax ay az => exact cmOnCmdFast_eq m now lx ly lz ax ay az
+
+theorem execFast_eq (m : Monitor) (cs : List Call) :
+    cs.foldl Call.execFast m = cs.foldl Call.exec m := by
+  rw [execFast_eq_exec]
 
 end ROSlean.CollisionMonitor.FFI

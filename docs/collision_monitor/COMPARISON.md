@@ -1205,8 +1205,10 @@ section before was running on the same machine. `band_bounds` took 2.4 s
 before the extension of the model; it is the same program on the same
 points (defect 2).
 
-Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93. No
-test of the package is marked `WILL_FAIL` any more.
+Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93.
+Neither of the two tests that were expected to fail is marked `WILL_FAIL`
+any more. (The three `roslean_nav2_*` tests that task T07 added are, until
+the node has the lifecycle interface of T06.)
 
 `pixi run test` as a whole was not run for this document. An estimate of
 its duration on this Mac: 34 minutes, namely the 22 minutes above plus

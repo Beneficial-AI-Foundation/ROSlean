@@ -123,15 +123,11 @@ structure Monitor where
   zoneErrs : List UInt8
   st : State
   out : Output
-  /-- The base-frame coordinates of the readings of the scan stored last, as
-  that scan call handed them over; `none` if it was reported as not usable
-  (see the head of this file). Every command carries them. -/
-  coords : Option (List Coords)
-  /-- The record array of the scan stored last, as it was handed over; `none`
-  if that scan was reported as not usable. It holds what `coords` holds
-  (`coords = raw.map decodeCoords` for every monitor the exported calls can
-  produce: `ROSlean.CollisionMonitor.FFI.synced_after`); the exported command
-  call reads the coordinates from here, without building the patterns
+  /-- The record array of the scan stored last, as that scan call handed it
+  over; `none` if the scan was reported as not usable (see the head of this
+  file). It holds the base-frame coordinates of the readings, which every
+  command carries (`Monitor.coords`). They are not decoded when the scan
+  arrives: the exported command call reads them from the bytes
   (`cmOnCmdFast`). -/
   raw : Option ByteArray
 
@@ -249,7 +245,7 @@ set, no raw value was refused, no vertex was added to no polygon, and
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
-    st := startState b.cfg, out := .silent, coords := none, raw := none }
+    st := startState b.cfg, out := .silent, raw := none }
 
 /-- The configuration was accepted. The node must refuse to start if this is
 `false`. -/
@@ -302,6 +298,13 @@ def decodeBeams (a : ByteArray) : List Beam :=
 def decodeCoords (a : ByteArray) : List Coords :=
   (List.range (a.size / recordSize)).map (coordsAt a)
 
+/-- The base-frame coordinates of the readings of the scan stored last, one
+pair of binary64 patterns per record of the kept array; `none` if that scan
+was reported as not usable. This is what every command carries in the
+model. It is a function of the kept array, used in the theorems; the
+exported calls never build this list. -/
+def Monitor.coords (m : Monitor) : Option (List Coords) := m.raw.map decodeCoords
+
 /-- The scan the model sees for the arguments of `cmOnScan`. A negative stamp
 becomes 0 (D8). -/
 def scanOfRaw (stampNs : Int64) (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Scan :=
@@ -327,16 +330,15 @@ def Monitor.apply (m : Monitor) (e : Event) : Monitor :=
       { m with st := (step m.cfg m.st e).1, out := .silent }
 
 /-- A scan arrived at node-clock time `nowNs`: one `step` of the model on a
-`scan` event, which stores the scan, and the coordinates of its records are
-remembered for the following commands (`cmdEvent`). `usable` is 0 if the
-scan's frame is not the base frame and no sensor pose was configured (D11):
-then no coordinates are remembered, so that the source has no data until a
-usable scan arrives (R8). -/
+`scan` event, which stores the scan, and its record array is kept, so that
+the coordinates of its records are remembered for the following commands
+(`Monitor.coords`, `cmdEvent`). `usable` is 0 if the scan's frame is not the
+base frame and no sensor pose was configured (D11): then nothing is kept, so
+that the source has no data until a usable scan arrives (R8). -/
 @[export roslean_cm_on_scan]
 def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
     (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
   { m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)) with
-    coords := if usable != 0 then some (decodeCoords beams) else none
     raw := if usable != 0 then some beams else none }
 
 /-- The event of the model that a command call delivers: it carries the
@@ -359,16 +361,47 @@ def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt
 
 /-! ## The command call as exported -/
 
-/-- `coordMmOfParts` of the binary64 pattern whose upper half is `hi` and
-whose lower half is `lo` (both below 2³²): the sign is the top bit of `hi`.
-The pattern itself, which is a big number in Lean's runtime when the sign
-bit is set, is never built. -/
-def partsMm (hi lo : Nat) : Int :=
-  coordMmOfParts (decide (0x80000000 ≤ hi)) (hi % 0x80000000 * 0x100000000 + lo)
+/-- The binary64 pattern stored little-endian at offset `o`, as a machine
+word: `u64At a o` (`word64At_toNat`). Eight bytes are read after one bounds
+check; an offset that leaves fewer than eight bytes takes the slow way, so
+that the two agree for every offset. -/
+def word64At (a : ByteArray) (o : Nat) : UInt64 :=
+  if h : o + 8 ≤ a.size then
+    (a[o]'(by omega)).toUInt64 + (a[o + 1]'(by omega)).toUInt64 * 0x100 +
+      (a[o + 2]'(by omega)).toUInt64 * 0x10000 + (a[o + 3]'(by omega)).toUInt64 * 0x1000000 +
+      (a[o + 4]'(by omega)).toUInt64 * 0x100000000 +
+      (a[o + 5]'(by omega)).toUInt64 * 0x10000000000 +
+      (a[o + 6]'(by omega)).toUInt64 * 0x1000000000000 +
+      (a[o + 7]'(by omega)).toUInt64 * 0x100000000000000
+  else UInt64.ofNat (u64At a o)
+
+/-- `coordMagMm` on a machine word: the magnitude in whole millimetres of the
+pattern `mag` (`coordMagMm64_toNat`). Every intermediate value fits 64 bits:
+the significand is below 2⁵³ and 1000 below 2¹⁰. A shift by 64 bits or more,
+which a machine shift does not do, is the case "less than a millimetre". -/
+def coordMagMm64 (mag : UInt64) : UInt64 :=
+  let e := mag / 0x10000000000000 % 0x800
+  if 1033 ≤ e then 1000000
+  else
+    let frac := mag % 0x10000000000000
+    let mant := if e < 1 then frac else frac + 0x10000000000000
+    let sh := if e < 1 then 1074 else 1075 - e
+    let q := if 64 ≤ sh then 0 else (mant * 1000) >>> sh
+    if 1000000 ≤ q then 1000000 else q
+
+/-- `coordMm` on a machine word (`coordMm64_eq`): sign and magnitude are
+taken apart with machine operations, and the pattern, which is a big number
+in Lean's runtime when the sign bit is set, never becomes a `Nat`. The
+result is at most 1,000,000 in magnitude. -/
+def coordMm64 (b : UInt64) : Int :=
+  let mag := b % 0x8000000000000000
+  let m : Int := ((coordMagMm64 mag).toNat : Int)
+  let nan := mag / 0x10000000000000 % 0x800 == 0x7FF && mag % 0x10000000000000 != 0
+  if 0x8000000000000000 ≤ b && !nan then -m else m
 
 /-- `coordMm` of the binary64 pattern stored little-endian at offset `o`
 (`coordMmAt_eq`). -/
-def coordMmAt (a : ByteArray) (o : Nat) : Int := partsMm (u32At a (o + 4)) (u32At a o)
+def coordMmAt (a : ByteArray) (o : Nat) : Int := coordMm64 (word64At a o)
 
 /-- The point of record `i` of a scan array: `scanPointMm (coordsAt a i)`
 (`pointAt_eq`). -/
