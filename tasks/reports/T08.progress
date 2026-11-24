@@ -1,3 +1,6 @@
 2026-11-24 16:45:18 started; reading done; next: builds (lake core, lake root, pixi build), then scenario suites
 2026-11-24 16:48:30 builds done (lake core 21 jobs, lake 6659 jobs, pixi build 4 packages); starting random_diff 300 seeds in 6 processes (domains 180-185), limit 50 min; next: scenario suites, node reading
 2026-11-24 16:55:41 item 1 partly: scenario.py 318 checks 0 failures, scenario_nav2.py 246 checks 0 failures on the Lean node; random_diff 300 seeds running; first finding (wait loop hangs on a backward clock jump, observed); mutations running; next: state-topic classification, bring-up, cm-check
+2026-11-24 16:56:40 starting the Nav2 bring-up attempt (item 5), time box 30 min
+2026-11-24 17:00:17 random_diff 300 seeds done (0 outside D4 bounds, 26951 commands); bring-up done (node and component active under Nav2's manager); NaN-vertex finding observed; starting random_nav2 300 seeds (6 processes, domains 180-185, limit 50 min) and cm-check
+2026-11-24 17:13:25 items 1-6 and points a-i done; random_nav2 300 seeds: 0 disagreements, 16797 commands; cm-check passed; REVIEWS CM5 and COMPARISON written; next: report, commit, push

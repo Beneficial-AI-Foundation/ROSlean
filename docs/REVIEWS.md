@@ -364,3 +364,101 @@ unreachable through the core) and the test that the pose computation is not
 fused (the flag was set but no test noticed its removal). Not covered by a
 test: the warning for a configuration without zones, which a parameter file
 cannot express.
+
+## CM5 — Nav2 extension
+
+The Lean node answers every scenario and 600 random cases as upstream does up to the stated differences, and Nav2's own launch file and lifecycle manager run it; but it lets a command pass where upstream stops when a zone's polygon message has a NaN vertex, and under simulated time it hangs when the clock jumps back while a command waits for a transform.
+
+Review of 2026-11-24 (task T08), macOS arm64, upstream 1.3.12 from the pixi
+environment, source read at `c704655` (1.3.14). Findings are ordered by
+severity. "Observed" means seen on the running binaries, both nodes on the
+same messages (`review/collision_monitor/nav2/review_probe.py CASE`);
+"from source" means read in upstream's and the node's code and not run;
+"Lean" means checked by `lake env lean` on a file in
+`review/collision_monitor/nav2/`. Nothing in the node, the model or the SPEC
+was changed.
+
+| # | Finding | Outcome |
+| --- | --- | --- |
+| 1 | **A polygon message with a NaN vertex: upstream stops, the Lean node passes.** ND6 refuses such a message and says a NaN "blinds" upstream's zone, so that keeping the previous shape protects more. That is true of one arrangement only (the one `polygon-topic` tests). Upstream stores the vertices unchecked and its crossing test skips only the two edges at the NaN vertex; the others still count. Observed (`nan-vertex`): topic stop zone `Dyn`, `min_points: 1`, first message `(1,1), (1,-1), (-1,-1), (NaN,1)` in the base frame, one reading at (0.5, 0), command (0.5, 0, 0.25): upstream publishes zero and state `('Dyn', STOP)`; the Lean node, whose zone has no shape, publishes (0.5, 0.25). With the NaN in the first vertex the same happens for a reading at (-5, 0). With an earlier shape the Lean node keeps that one, and passes whatever only the NaN shape would catch (from source). Smallest fix that is never less restrictive than upstream: a zone whose last message was refused for a non-finite or out-of-range vertex demands a stop until a usable message arrives (a decision for the user: upstream's own behaviour here is an accident of its arithmetic) | open |
+| 2 | **Under simulated time the node hangs when the clock jumps back by more than 3 s while a callback waits for a transform (N26).** tf2's waiting loop also ends when `now + 3 s < start` (`tf2_ros/src/buffer.cpp:125`, `:155`); SPEC_NAV2 N26 and 8.3 omit that condition and the node's own loop (`wait_for`) does not have it: `clock_while_waiting` returns `max(clock, start)`, so the loop runs until the clock is back at `start + transform_tolerance`. Meanwhile the one thread handles nothing: no command, scan, lifecycle service or bond heartbeat. Observed (`wait-clock-reset`): clock 100 s, scan in a frame without transform, one command, clock to 1 s: upstream publishes zero and `invalid source` at once and answers the following commands; the Lean node publishes nothing and does not answer `get_state` until the clock reaches 100.5 s again. Observed in the ordinary configuration too (`shift-wait-reset`, `base_shift_correction: true`, a command 50 ms ahead of the newest odometry sample, then a reset of the simulation): upstream stops and goes on, the Lean node is silent for as long as the test ran. With base shift correction every command newer than the last odometry sample waits, so a reset of the simulator or a looping bag is likely to land in a wait. Not reachable on the wall clock. From source, not run: upstream's clock thread also clears the `/tf` buffer during the wait; the Lean node clears it only after the callback returns, and not at all if the clock has passed its old value again by then | open |
+| 3 | **Unrecorded differences, each in the restrictive or the display direction (from source, not run, except a and e).** (a) N16: upstream publishes the polygon of a zone only while the zone is enabled (`collision_monitor_node.cpp:663`); the Lean node publishes every visualised zone (observed, `disabled-visualize`: three commands, three polygon messages from the Lean node, none from upstream), and the SPEC lists the polygon publishers under "not differences". (b) N29: `points` that does not parse to four pairs leaves upstream with the topic (`polygon.cpp:477-491`); the Lean node refuses the configuration; likewise `polygon_sub_topic: ""`. (c) `slowdown_ratio` of the wrong type on a stop zone fails `configure` here; upstream does not read it for a stop zone. (d) ND3 does not say that a stop is delayed: with a triggered stop zone ahead of a topic zone in another frame whose lookup fails, the Lean node waits `transform_tolerance` before it publishes the zero. (e) Lean (`ModelProbes.lean`): a refresh of a topic zone's vertices that the core refuses (a vertex 999.997 m or more from an axis, a NaN) leaves the zone where it was; upstream moves it. E8 says so, the ND table does not. (f) If an exception leaves `configure()`, `configuring_` stays true and later parameter changes are accepted without effect (ND8) | open |
+| 4 | **After a command without a clock reading, no theorem stated from start-up applies to that monitor any more.** `stepNoClock` in the active phase leaves `prevReport = source` with `prevZero = false`, and no run of `step` from `State.init` reaches such a state (Lean: `noClock_unreachable` in `NoClockUnreachable.lean`, for every configuration and event list). So `cm_readBack_after`, `cm_out_after`, `run_stop`, `run_stale`, `run_pass_through`, `run_after_activation`, `run_withheld_last_published_zero`, `reachable_inv` and the others quantified over `run cfg (State.init cfg) es` say nothing about the node from its first no-clock command until the next cleanup, also about the segments without such commands. THEOREMS.md says only that these theorems "do not mention such commands", and its "End to end" row ("there is no prefix to add") holds only for a monitor that never had one. Not a safety defect: every one-step theorem and every "from any state" theorem still applies, and what holds in general is proved in `NoClockMixedRuns.lean` (`mixed_from_init`): replace every processed no-clock command by `deactivate, activate` and drop the others; the mixed run then agrees with `run` on the substituted list in phase, scan, shapes, `prevZero`, `stopStamp` and every velocity, and differs at most in the report of the first processed command after a no-clock command. Smallest fix: take that statement into `NoClock.lean` and correct the two passages. Also: the docstring of `run_withheld_last_published_zero` says "nor has the node been deactivated since", which `ZeroPublishedLast` does not state (THEOREMS.md words it correctly) | open |
+| 5 | **`lean_initialize_thread` is never called.** Lean's documentation requires it in every thread that runs Lean code and was not created by Lean. The stand-alone node runs Lean in the main thread only; as a component its callbacks run in the container's executor threads. In this toolchain (4.37.0-rc1, built with mimalloc) the function only reads an environment variable (disassembly of `libleanrt.a`), and the component ran in Nav2's container without fault (below), so no effect was observed; an object is created in one thread and used in another, never at once (one mutually exclusive callback group), which non-atomic reference counts allow. The requirement is still unmet, and a toolchain built with Lean's own small-object allocator would need the call | open |
+| 6 | **Tests that would not fail.** Of 19 mutations in a scratch copy (`mutations.py`) the process-level tests caught 17. Missed: the scan's angle accumulated in double precision (`scan_points`; `smoke_transforms` has seven readings, on which the two sums agree, and `smoke_conversions` tests `scan_frame_point`, not the accumulation). One mutation was equivalent (N23 at time `target_ns`, which is 0). No test moves the clock back during a wait (finding 2), puts the NaN anywhere but where upstream's zone goes blind (finding 1), has a disabled visualised zone (3a), or loads the component into `component_container` or `component_container_mt`. `STATE_TOPIC = False` in `profile_roslean.py`: with it on, 32 of 318 checks fail, all of them state messages that follow a stated velocity difference (below); the profile's format cannot state them | open |
+
+**What was run.** `scenario.py` with `profile_roslean`: 0 failures in 318
+checks (D1 1, D4 20, D5 3, D6 1, D8 1, D9 2, D10 2). `scenario_nav2.py` with
+`profile_roslean_nav2`: 0 failures in 246 checks, 35 scenarios (ND4 2, ND5 1,
+ND6 2, ND11 3). `random_diff.py … 0 300 --roslean` in six processes: 300
+cases, 26,951 commands, none outside the bounds of D4; the nodes demand
+different velocities for 586 commands, each decided by a point in a growth
+band (at most 2.056 mm outside a circle, 3.044 mm outside a polygon), the
+Lean node the more restrictive one. `random_nav2.py … 0 300` in six
+processes: 300 cases, 16,797 commands, both nodes give the model's answer (velocity and state message) to every one, none retried. No unrecorded difference, defect of the node or
+defect of the harness appeared in these runs; findings 1 and 2 are outside
+what they generate. Counts and commands: COMPARISON.md, "The Nav2 extension".
+
+**The 32 state checks** (old profile with `STATE_TOPIC = True`): 18 are
+checks whose velocity the profile already states as different (D4 16, D6 1,
+D8 1): the state message comes with the changed velocity. The other 14 are
+the checks that follow them (D4 13, D6 1): upstream announces the stop there,
+the Lean node announced it one check earlier. No velocity differs. None is a
+defect; the comparison stays off until the profile can state a state message.
+
+**Mutations** (`mutations.py`; tests: `test_cm_ffi`, `smoke_transforms`,
+`smoke_conversions`, `band_bounds`, `t2_point_as_upstream`). The trusted
+transform, 11: frames swapped, times swapped, no lookup for a scan in the
+base frame, the angle not advanced over a non-finite reading, the cosine in
+double precision, x and y exchanged, the point at height 1, a zero quaternion
+used, the base frame as the fixed frame: caught; the angle accumulated in
+double precision: missed; N23 at `target_ns`: equivalent. The fast path, 8:
+the band tested only inside the bounding box, `min_points` off by one, the
+index not advanced over invalid readings, the slowdown tie, the stop stamp
+moved by every zero, the circle's `<` as `≤`, the timeout's `<` as `≤`, more
+coordinates than readings accepted: all caught by `test_cm_ffi` (and the
+first two by `band_bounds`). A mutation of the fast path also breaks
+`lake build` of `stepCmdFast_eq`.
+
+**Points examined without a finding.**
+- *Exceptions caught in `main`.* The only exception found that leaves a
+  callback is rclcpp's on a negative `/clock`; tf2's are caught in
+  `try_lookup`. Under simulated time a caught exception makes the clock
+  invalid and every command a stop until a usable `/clock` message; on the
+  wall clock it is logged only. A command whose callback threw gets no
+  answer. No path was found that throws after the core's call and before
+  the publication. A negative `/clock` taken by hand inside a wait ends the
+  wait in a stop. As a component the node dies with its container on a
+  negative `/clock`, as upstream's component does (its clock thread
+  throws): from source.
+- *The wait loop otherwise.* Tolerance boundary to the nanosecond, a
+  transform arriving during the wait, tolerance 0, `source_timeout: 0`:
+  T07's scenarios pass. Nothing but `/clock` is taken inside the wait:
+  commands and scans queue (observed, `wait-reentrancy`; which of a queued
+  scan and a queued command runs first afterwards differed between the two
+  nodes in that run, and is the executor's order in both). A command queued
+  during a wait was evaluated with the clock after the wait in three runs
+  (`stale-clock`). SIGINT during a wait ends both nodes with a segmentation
+  fault (observed, `wait-sigint`; equal).
+- *Reading i and coordinate i.* One thread; the scan handed to the core and
+  the one kept by the shim are set in one callback; the model ignores a scan
+  only when finalized, where no command is processed; a shape is kept by the
+  shim exactly when the core accepted it. No way to break the correspondence
+  was found.
+- *Cleanup.* After an effective cleanup the model's state is `State.init`
+  except `stopStamp`, which is not read while `prevZero` is false (Lean,
+  `ModelProbes.lean`); upstream keeps only its toggle and `stop_stamp_`.
+  The shim keeps `clock_valid_` and the last `/clock` reading.
+- *The model's events and the fast path.* No input found where the model
+  passes or slows less than SPEC_NAV2 says; malformed byte arrays stop or
+  are ignored; saturated coordinates lie in no accepted zone; no `sorry`,
+  `native_decide`, `axiom`, `implemented_by` or `extern`; the headline
+  theorems are on the exported calls and their hypotheses are satisfiable.
+- *Nav2.* `navigation_launch.py` with the package name changed and
+  `nav2_params.yaml` with the fixed-polygon edit (`run_bringup.sh`): every
+  server active, the node configured, activated and bonded by Nav2's
+  lifecycle manager, a command through the velocity smoother passes at
+  0.2 m/s, is zero with twenty readings in the footprint zone (state
+  `FootprintStop`), and passes again. The same with the node loaded as a
+  component into `nav2_container`. No robot, no localisation, no goal.
+- *Gazebo.* `pixi run cm-check`: passed in 75 s (27 s simulated).

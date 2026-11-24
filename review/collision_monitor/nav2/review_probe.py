@@ -20,6 +20,10 @@ Cases:
   stale-clock        a command that was queued while another waited is evaluated
                      with the clock reading from before the wait: is a scan
                      older than source_timeout still used?
+  nan-vertex         the first polygon message of a topic stop zone has a NaN
+                     in one vertex (ND6: the Lean node refuses the message).
+  disabled-visualize a zone with enabled: false and visualize: true: is its
+                     polygon published?
   shift-wait-reset   the same clock reset in the ordinary situation with base
                      shift correction: a command that waits a few
                      milliseconds for the next odometry transform.
@@ -44,13 +48,13 @@ V = (0.5, 0.0, 0.25)
 
 
 class Probe:
-    def __init__(self, params, logs):
+    def __init__(self, params, logs, zones='[StopCircle]'):
         self.sides = [Side(resolve(LEAN), 'cm_lean', 'out_lean', 'state_lean'),
                       Side(resolve(UP), 'cm_up', 'out_up', 'state_up')]
         self.d = Driver('review_probe', self.sides, False)
         for sd in self.sides:
             log = os.path.join(logs, sd.name + '.log') if logs else None
-            sd.start(PARAMS, ['polygons:=[StopCircle]'] + params, log)
+            sd.start(PARAMS, [f'polygons:={zones}'] + params, log)
         for sd in self.sides:
             state = self.d.bring_up(sd)
             print(f'{sd.name}: {state}')
@@ -198,7 +202,42 @@ def stale_clock(logs):
     p.stop()
 
 
-CASES = {'stale-clock': stale_clock, 'wait-clock-reset': wait_clock_reset, 'wait-reentrancy': wait_reentrancy,
+def nan_vertex(logs):
+    nan = float('nan')
+    for label, box, pts in (
+            ('NaN in the 4th vertex', [(1, 1), (1, -1), (-1, -1), (nan, 1)], [0.5, 5.0]),
+            ('NaN in the 1st vertex', [(nan, 1), (1, -1), (-1, -1), (-1, 1)], [0.5, 5.0])):
+        p = Probe([], logs, zones='[Dyn]')
+        p.clock(s(100))
+        p.d.shape_publisher('zone_shape')
+        p.d.spin_for(1.0)
+        p.d.send_shape('zone_shape', box, 'base_footprint', 0.5)
+        for r, angle in ((pts[0], 0.0), (pts[1], 3.14159265)):
+            p.d.send_scan(ray(r, angle), 0.3)
+            p.cmd()
+            p.report(f'{label}: first shape {box}; one reading at range {r}, angle {angle}; command')
+        p.stop()
+
+
+def disabled_visualize(logs):
+    # Both nodes publish the polygon on the same topic, so each is run alone:
+    # the other one is stopped before anything is counted.
+    for keep in (0, 1):
+        p = Probe(['StopCircle.enabled:=false', 'StopCircle.visualize:=true',
+                   'StopCircle.polygon_pub_topic:=PUB'], logs)
+        p.sides[1 - keep].stop()
+        p.d.watch_polygon(p.sides[keep], 'PUB')
+        p.d.spin_for(1.0)
+        p.clock(s(100))
+        p.d.send_scan(ray(2.0), 0.3)
+        for _ in range(3):
+            p.cmd()
+        p.report(f'{p.sides[keep].name} alone, zone disabled and visualised, three commands: '
+                 f'{len(p.sides[keep].polys)} polygon message(s) on PUB')
+        p.stop()
+
+
+CASES = {'nan-vertex': nan_vertex, 'disabled-visualize': disabled_visualize, 'stale-clock': stale_clock, 'wait-clock-reset': wait_clock_reset, 'wait-reentrancy': wait_reentrancy,
          'wait-sigint': wait_sigint, 'shift-wait-reset': shift_wait_reset}
 
 if __name__ == '__main__':
