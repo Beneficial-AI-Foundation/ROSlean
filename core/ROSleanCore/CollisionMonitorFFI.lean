@@ -31,6 +31,27 @@ Ownership: every object argument is *consumed* (PLAN, lesson 8). A caller that
 wants to keep using a monitor after a query must `lean_inc` it first.
 
 Theorems about this file are in `ROSlean/CollisionMonitor/FFI.lean`.
+
+**State of this file after task T05.** The model now has the lifecycle, the
+transforms and the topic zones of `docs/collision_monitor/SPEC_NAV2.md`; this
+interface does not yet (task T06 writes the calls of that document's section
+8). Until then the exported functions keep their signatures and their
+behaviour, as the node of SPEC.md uses them, by the following reading of the
+old calls in the new model:
+
+* `cmNew` delivers `configure` and `activate`: the monitor starts in the
+  active phase, since the old node has no lifecycle;
+* a scan call always stores the scan (event `scan`); `usable` is remembered
+  in `Monitor.placed` and stands for the transform lookup: every command
+  carries the identity transform if the scan stored last was usable, and no
+  transform if it was not, which is the model's "the lookup failed" (the
+  stop of R8 follows, as it did for the removed event `scanUnusable`);
+* the beams are in the base frame, as the old shim hands them over, and the
+  identity transform leaves them there (`Xform.identity.pointMm` is
+  `coordMm` on finite coordinates);
+* no zone is a topic zone, and no command carries zone transforms;
+* `roslean_cm_out_kind` returns 0 both for `silent` and for a processed
+  command whose velocity is withheld; the report is not exposed.
 -/
 
 namespace ROSleanCore.CollisionMonitorFFI
@@ -70,8 +91,9 @@ def Builder.cfg (b : Builder) : Config :=
 def zoneError (z : Zone) : UInt8 :=
   if !z.shape.ok then
     match z.shape with
-    | .circle _ => 1
-    | .polygon _ => 2
+    | .fixed (.circle _) => 1
+    | .fixed (.polygon _) => 2
+    | .topic => 2
   else if !z.action.ok then 3 else 0
 
 /-- The error of a zone of the builder: the refused raw value if there was one
@@ -100,6 +122,9 @@ structure Monitor where
   zoneErrs : List UInt8
   st : State
   out : Output
+  /-- The scan stored last was reported as usable (see the head of this
+  file): commands carry the identity transform for it; otherwise none. -/
+  placed : Bool
 
 /-- No zones, source enabled, both timeouts 0, nothing refused, and the
 source not set: the monitor of a new builder is not accepted
@@ -141,7 +166,7 @@ def actionOfRaw (action : UInt8) (ratioBits : UInt64) : ZoneAction :=
 
 /-- A zone from a shape and the raw argument values, with the code of a
 refused `min_points` (4) if it is outside the 32-bit range. -/
-def zoneOfRaw (shape : Shape) (action : UInt8) (ratioBits : UInt64) (minPoints : Int64)
+def zoneOfRaw (shape : ZoneShape) (action : UInt8) (ratioBits : UInt64) (minPoints : Int64)
     (enabled : UInt8) : Zone × UInt8 :=
   ({ shape, action := actionOfRaw action ratioBits,
      minPoints := (minPointsOfRaw minPoints.toInt).getD 0, enabled := enabled != 0 },
@@ -153,14 +178,15 @@ is refused the zone is recorded with code 1. -/
 @[export roslean_cm_builder_add_circle]
 def builderAddCircle (b : Builder) (radius : UInt64) (action : UInt8) (ratioBits : UInt64)
     (minPoints : Int64) (enabled : UInt8) : Builder :=
-  let ze := zoneOfRaw (.circle ((radiusMm radius.toNat).getD 0)) action ratioBits minPoints enabled
+  let ze := zoneOfRaw (.fixed (.circle ((radiusMm radius.toNat).getD 0))) action ratioBits
+    minPoints enabled
   { b with zones := b.zones ++ [if (radiusMm radius.toNat).isNone then (ze.1, 1) else ze] }
 
 /-- Appends a polygon zone that has no vertices yet. -/
 @[export roslean_cm_builder_add_polygon]
 def builderAddPolygon (b : Builder) (action : UInt8) (ratioBits : UInt64) (minPoints : Int64)
     (enabled : UInt8) : Builder :=
-  { b with zones := b.zones ++ [zoneOfRaw (.polygon []) action ratioBits minPoints enabled] }
+  { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon [])) action ratioBits minPoints enabled] }
 
 /-- Appends a vertex to the last zone of the list, if that zone is a polygon;
 `none` is a vertex that was refused, and marks the polygon with code 2 unless
@@ -170,11 +196,11 @@ def addVertexToLast (v : Option Point) : List (Zone × UInt8) → List (Zone × 
   | [] => []
   | [ze] =>
     match ze.1.shape with
-    | .polygon vs =>
+    | .fixed (.polygon vs) =>
       match v with
-      | some p => [({ ze.1 with shape := .polygon (vs ++ [p]) }, ze.2)]
+      | some p => [({ ze.1 with shape := .fixed (.polygon (vs ++ [p])) }, ze.2)]
       | none => [(ze.1, if ze.2 == 0 then 2 else ze.2)]
-    | .circle _ => [ze]
+    | _ => [ze]
   | ze :: zes => ze :: addVertexToLast v zes
 
 /-- The vertex of two numbers of the `points` parameter (binary32 patterns,
@@ -189,8 +215,8 @@ def lastIsPolygon (zs : List (Zone × UInt8)) : Bool :=
   match zs.getLast? with
   | some ze =>
     match ze.1.shape with
-    | .polygon _ => true
-    | .circle _ => false
+    | .fixed (.polygon _) => true
+    | _ => false
   | none => false
 
 /-- Appends a vertex to the zone added last. If that zone is not a polygon, or
@@ -202,13 +228,19 @@ def builderAddVertex (b : Builder) (x y : UInt32) : Builder :=
     zones := addVertexToLast (vertexOfRaw x y) b.zones
     stray := b.stray || !lastIsPolygon b.zones }
 
-/-- The monitor for the configuration built so far, in the initial state and
-with output `silent`. It is accepted iff the source was set, no raw value was
-refused, no vertex was added to no polygon, and `Config.ok` holds. -/
+/-- The state a monitor starts in: the initial state after `configure` and
+`activate`. The node of SPEC.md has no lifecycle and is active from its
+start. -/
+def startState (cfg : Config) : State := (run cfg (State.init cfg) [.configure, .activate]).1
+
+/-- The monitor for the configuration built so far, in the active phase
+(`startState`) and with output `silent`. It is accepted iff the source was
+set, no raw value was refused, no vertex was added to no polygon, and
+`Config.ok` holds. -/
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
-    st := State.init, out := .silent }
+    st := startState b.cfg, out := .silent, placed := true }
 
 /-- The configuration was accepted. The node must refuse to start if this is
 `false`. -/
@@ -235,23 +267,20 @@ def u32At (a : ByteArray) (o : Nat) : Nat :=
   byteAt a o + 0x100 * byteAt a (o + 1) + 0x10000 * byteAt a (o + 2) +
     0x1000000 * byteAt a (o + 3)
 
-/-- The coordinate whose binary64 pattern is stored little-endian at offset
-`o`, in millimetres: `coordMm` of that pattern. The two halves are read
-separately, so that no number of 64 bits or more is formed. -/
-def coordAt (a : ByteArray) (o : Nat) : Int :=
-  let lo := u32At a o
-  let hi := u32At a (o + 4)
-  coordMmOfParts (decide (0x80000000 ≤ hi)) (hi % 0x80000000 * 0x100000000 + lo)
+/-- The binary64 pattern stored little-endian at offset `o`. -/
+def u64At (a : ByteArray) (o : Nat) : Nat := u32At a (o + 4) * 0x100000000 + u32At a o
 
 /-- Bytes per reading in the scan array: the range pattern (4 bytes), then
 the `x` and `y` coordinates of its point in metres as binary64 patterns (8
 bytes each), all little-endian. -/
 def recordSize : Nat := 20
 
-/-- Record `i` of the array: the reading's range pattern and its point. -/
+/-- Record `i` of the array: the reading's range pattern and the patterns of
+its two coordinates, unconverted. -/
 def beamAt (a : ByteArray) (i : Nat) : Beam :=
   { range := u32At a (recordSize * i)
-    point := ⟨coordAt a (recordSize * i + 4), coordAt a (recordSize * i + 12)⟩ }
+    x := u64At a (recordSize * i + 4)
+    y := u64At a (recordSize * i + 12) }
 
 /-- The beams of a scan array: `size / 20` records in order; a remainder of
 fewer than 20 bytes is ignored. Total for an array of any length. -/
@@ -267,61 +296,70 @@ def scanOfRaw (stampNs : Int64) (rangeMinBits rangeMaxBits : UInt32) (beams : By
 /-! ## Events -/
 
 /-- Applies one event and records its output. An accepted monitor does what
-`step` says. A monitor that was not accepted ignores scans, usable or not,
-and answers every command with `stopSource`, whatever the command. -/
+`step` says. A monitor that was not accepted keeps its state and answers
+every command in the active phase with `stopSource`, whatever the command;
+it follows the lifecycle like an accepted one. -/
 def Monitor.apply (m : Monitor) (e : Event) : Monitor :=
   if m.ok then
     let (st, out) := step m.cfg m.st e
     { m with st, out }
   else
     match e with
-    | .cmd _ _ => { m with out := .publish .stopSource }
-    | .scan _ _ | .scanUnusable _ => { m with out := .silent }
+    | .cmd _ _ _ _ =>
+      { m with out := if m.st.phase = .active then .answer (some .stopSource) none else .silent }
+    | .scan _ _ | .shape _ _ _ => { m with out := .silent }
+    | .configure | .activate | .deactivate | .cleanup | .shutdown =>
+      { m with st := (step m.cfg m.st e).1, out := .silent }
 
-/-- The event of the model that a scan call delivers. `usable` is 0 if the
-scan's frame is not the base frame and no sensor pose was configured (D11):
-then the event is `scanUnusable`, and the other arguments are not looked
-at. -/
-def scanEvent (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
-    (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Event :=
-  if usable != 0 then .scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)
-  else .scanUnusable nowNs.toNat
-
-/-- A scan arrived at node-clock time `nowNs`: one `step` of the model on
-`scanEvent`. An unusable scan is not stored and the stored one is discarded,
-so that the source has no data until a usable scan arrives (R8). -/
+/-- A scan arrived at node-clock time `nowNs`: one `step` of the model on a
+`scan` event, which stores the scan. `usable` is 0 if the scan's frame is not
+the base frame and no sensor pose was configured (D11); it is recorded, and
+decides what transform the following commands carry (`cmdEvent`): for an
+unusable scan none, so that the source has no data until a usable scan
+arrives (R8). -/
 @[export roslean_cm_on_scan]
 def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
     (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
-  m.apply (scanEvent nowNs stampNs usable rangeMinBits rangeMaxBits beams)
+  { m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)) with
+    placed := usable != 0 }
+
+/-- The event of the model that a command call delivers: the scan's
+transform is the identity if the scan stored last was usable, and missing if
+it was not; there are no zone transforms. -/
+def cmdEvent (placed : Bool) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Event :=
+  .cmd nowNs.toNat ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
+    (if placed then some Xform.identity else none) []
 
 /-- A velocity command arrived at node-clock time `nowNs`; the six components
 are binary64 bit patterns. -/
 @[export roslean_cm_on_cmd]
 def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
-  m.apply (.cmd nowNs.toNat
-    ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩)
+  m.apply (cmdEvent m.placed nowNs linX linY linZ angX angY angZ)
 
 /-! ## Output queries -/
 
-/-- The code of an output's kind: 0 `silent`, 1 `publish pass`, 2 `publish
-(slowdown …)`, 3 `publish (stopZone …)`, 4 `publish stopSource`. -/
-def kindOf : Output → UInt8
-  | .silent => 0
-  | .publish .pass => 1
-  | .publish (.slowdown _ _) => 2
-  | .publish (.stopZone _) => 3
-  | .publish .stopSource => 4
+/-- The code of an output's kind: 0 nothing to publish (`silent`, or a
+processed command whose velocity is withheld), 1 `pass`, 2 `slowdown …`,
+3 `stopZone …`, 4 `stopSource`. -/
+def kindOf (o : Output) : UInt8 :=
+  match o.velocity with
+  | none => 0
+  | some .pass => 1
+  | some (.slowdown _ _) => 2
+  | some (.stopZone _) => 3
+  | some .stopSource => 4
 
 /-- The zone index of an output of kind 2 or 3; 0 otherwise. -/
-def zoneOf : Output → Nat
-  | .publish (.slowdown k _) => k
-  | .publish (.stopZone k) => k
+def zoneOf (o : Output) : Nat :=
+  match o.velocity with
+  | some (.slowdown k _) => k
+  | some (.stopZone k) => k
   | _ => 0
 
 /-- The ratio pattern of an output of kind 2; 0 otherwise. -/
-def ratioOf : Output → Nat
-  | .publish (.slowdown _ r) => r
+def ratioOf (o : Output) : Nat :=
+  match o.velocity with
+  | some (.slowdown _ r) => r
   | _ => 0
 
 /-- The kind of the most recent event's output. -/

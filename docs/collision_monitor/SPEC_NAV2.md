@@ -9,10 +9,17 @@ Written by task T04. It specifies three additions to the node of
 3. zones whose shape arrives on a topic (the route by which the robot's
    footprint becomes a zone).
 
-Nothing here is implemented yet. Sections 1 and 2 say what upstream does;
-sections 3 to 9 say what the Lean model, the C interface and the node are to
-do; section 10 is the test plan, section 11 the plan for tasks T05 to T07,
-section 12 what will still be missing afterwards.
+Sections 1 and 2 say what upstream does; sections 3 to 9 say what the Lean
+model, the C interface and the node are to do; section 10 is the test plan,
+section 11 the plan for tasks T05 to T07, section 12 what will still be
+missing afterwards.
+
+**What is implemented.** Task T05 has implemented sections 3 and 4: the
+model (`core/ROSleanCore/CollisionMonitor.lean`,
+`core/ROSleanCore/CollisionMonitorXform.lean`) and the theorems
+([THEOREMS.md](THEOREMS.md)). Where the model or a theorem differs from what
+T04 wrote in those sections, the text below is corrected and marked
+"(T05)". The C interface and the node (section 8) are not implemented yet.
 
 Rules are numbered N1, N2, …, differences from upstream ND1, …, in addition
 to the R…, D…, A… and T… of SPEC.md.
@@ -496,6 +503,15 @@ Additions to `core/ROSleanCore/CollisionMonitor.lean`. Names are proposals;
 T05 may choose others but not other meanings. Everything stays `Nat`, `Int`,
 `Bool` and lists; no `Float`; `step` stays total.
 
+(T05) The names chosen: a zone's shape is `ZoneShape.fixed s` or
+`ZoneShape.topic`; `place` is a `Placement` (`base` or `foreign tf`);
+`State.init cfg` takes the configuration; the zones with their shapes are
+`liveConfig cfg st zoneTfs`; the shapes after a command are `shapesAfter`;
+the acceptance of a shape message is `acceptShape`; the report of an action
+is `Action.report`; `Output.velocity` and `Output.report` read an output.
+`Xform`, the points and the bit-pattern reading are in
+`core/ROSleanCore/CollisionMonitorXform.lean`.
+
 ### 3.1 Data
 
 - **`Xform`**: six binary64 bit patterns `qx qy qz qw ox oy`, the quaternion
@@ -516,6 +532,14 @@ T05 may choose others but not other meanings. Everything stays `Nat`, `Int`,
   which lies in no accepted zone. **`Xform.vertexMm`**: the same with
   rounding to the nearest integer, a half away from zero, for zone vertices
   (as `vertexMm` today).
+  (T05) `pointMm` gives `(coordLimit, coordLimit)` (`Point.far`) also when
+  `t` is not usable. `vertexMm` takes binary32 coordinates, as a polygon
+  message has them, and is **not saturated**: a vertex beyond the limit is
+  refused by E7 and by step 4 of E8, so saturation would never be observed,
+  and without it "within 1/2 mm of the exact image" holds without
+  exception. The computation is on dyadic numbers `m · 2^e`; a zero term is
+  never aligned with another, so a zero component of a quaternion costs
+  nothing.
 - **`Scan.points s t`**: the valid readings (R4) mapped by `t.pointMm`.
 - **Zones.** A zone's shape is `fixed (s : Shape)` or `topic`. A topic zone
   has no shape in the configuration.
@@ -529,6 +553,8 @@ T05 may choose others but not other meanings. Everything stays `Nat`, `Int`,
 - **`State`** gains `phase` (initially `unconfigured`), `prevReport`
   (initially `normal`) and `shapes : List (Option TopicShape)`, one entry
   per zone, `none` for a fixed zone and for a topic zone without shape.
+  (T05) For the list to have one entry per zone from the start, the initial
+  state is a function of the configuration: `State.init cfg`.
 - **`Output`**: `silent`, or `answer (velocity : Option Action) (report :
   Option Report)` for a processed command. `answer none _` is today's
   silence of R15; `answer (some a) _` is today's `publish a`. The
@@ -662,7 +688,14 @@ exact image in millimetres: `|(t.pointMm x y).x| ≤ |X|` and `|X| −
 (truncation toward zero, as `coordMm_abs_le` and `coordMm_abs_gt` today);
 `|(t.vertexMm x y).x − X| ≤ 1/2`, likewise `y`; and
 `Xform.identity.pointMm x y = (coordMm x, coordMm y)`, so that a scan in the
-base frame without correction is treated exactly as today. For a quaternion
+base frame without correction is treated exactly as today.
+(T05) Proved, in the stronger form "each coordinate **is** the exact one
+truncated toward zero and saturated" (`pointMm_x_eq`, `pointMm_y_eq`). The
+identity statement holds for finite `x`, `y`, as the sentence's opening
+says; for a coordinate that is not finite it does not: `pointMm` gives
+`(coordLimit, coordLimit)` by 3.1, `coordMm` gives `±coordLimit` on that
+axis alone (example: `x = −∞`, `y = 0`: `(coordLimit, coordLimit)` against
+`(−coordLimit, 0)`). Both points lie in no accepted zone. For a quaternion
 of unit length the exact image is the rotation it denotes followed by the
 translation; for any usable quaternion it is that of its normalisation.
 
@@ -670,11 +703,23 @@ translation; for any usable quaternion it is that of its normalisation.
 iff it is accepted (E7); then `shapes[k]` is as E7 says and nothing else
 changes: not the other entries of `shapes`, not `scan`, `prevZero`,
 `stopStamp`, `prevReport`, `phase`.
+(T05) **False as an "iff".** Counterexample: the same accepted message
+delivered twice; the second is accepted and the state does not change
+(`step_shape_same`). What holds and is proved: the conditions of E7 are
+equivalent to "the message installs a shape" (`acceptShape_eq_some_iff`); a
+message that is not accepted changes nothing; an accepted one sets
+`shapes[k]` as E7 says and changes nothing else; hence the state changes
+**only if** the message is accepted.
 
 **No shape.** If zone `k` is a topic zone and `st.shapes[k] = none`, zone
 `k` is not triggered by any points, and no output for a command names it.
 On runs from `State.init`: no output names a topic zone `k` before an
-accepted `shape k` event that follows the last `cleanup`. This is upstream's
+accepted `shape k` event that follows the last `cleanup`.
+(T05) "The last cleanup" must be one that took effect: a `cleanup` outside
+the inactive phase is a no-op by E4 and discards nothing. Proved as: after
+any history that leaves the node unconfigured, and any events that follow
+among which there is no `shape k` event, no output names zone `k`
+(`run_output_of_no_shape`). This is upstream's
 behaviour (N32) and it is **not** fail-safe: a stop zone without shape does
 not stop. See question 1 in section 13.
 
@@ -689,6 +734,15 @@ zone `k` is triggered in one and not in the other.
 `none`; `shapes` has one entry per zone and `some` only at topic zones;
 every `current` has at least three vertices, all within the coordinate
 limit.
+(T05) **The first clause is false for the finalized phase**, with E5 as
+written. Counterexample: `configure`, `activate`, a finite command while no
+scan is stored and `source_timeout` is not 0 (a stop: `prevZero = true`,
+`prevReport = source`), `shutdown`. E5 changes the phase only, so the
+finalized state has `prevZero = true`. The model was not changed. Proved:
+the clause for `phase = unconfigured` or `phase = inactive` (`Inv.quiet`),
+which is what "After activation" needs; in the finalized phase the two
+fields are never read again (`step_of_finalized`). The other clauses are
+proved as stated.
 
 **After activation.** If `step` on `activate` moves the state to `active`,
 then for the next finite command: if the velocity is zero it **is

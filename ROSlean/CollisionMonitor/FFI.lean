@@ -3,6 +3,7 @@ import ROSleanCore.CollisionMonitorFFI
 import ROSlean.CollisionMonitor.Convert
 import ROSlean.CollisionMonitor.Properties
 import ROSlean.CollisionMonitor.Trace
+import ROSlean.CollisionMonitor.Transform
 
 /-!
 # The C interface computes the collision monitor model
@@ -33,27 +34,37 @@ the node executes.
   `foldl_exec_not_ok`).
 * **Scan decoding.** The byte array of a scan is decoded by a total function
   into `size / 20` beams (`decodeBeams_length`, `getElem_decodeBeams`), every
-  decoded point is within the coordinate limit (`beamAt_inRange`), and
-  decoding inverts the encoding the shim performs
-  (`decodeBeams_encodeBeams`).
-* **Events.** Each of the two event calls is `step` on the event it delivers
-  (`cmOnScan_eq`, `cmOnCmd_eq`, `exec_eq_apply`); a scan that the shim
-  reports as unusable is the event `scanUnusable` (`cmOnScan_unusable`). So
+  decoded pattern fits its field (`beamAt_lt`), and decoding inverts the
+  encoding the shim performs (`decodeBeams_encodeBeams`). The coordinates
+  are no longer converted here: they stay bit patterns until a command, and
+  become points under the command's transform (`Xform.pointMm`;
+  `Transform.pointMm_identity` says that the identity gives `coordMm`).
+* **Events.** Each call is `step` on the event it delivers
+  (`cmOnScan_eq`, `cmOnCmd_eq`, `exec_eq_apply`). The event of a command
+  depends on whether the scan stored last was reported usable
+  (`Call.event`, `events`): the identity transform if so, none if not. So
   after any sequence of calls, with no condition on them, the state is the
-  one `run` reaches on the events they deliver (`foldl_exec`,
-  `foldl_exec_run`).
+  one `run` reaches on the events they deliver (`foldl_exec_run`), from the
+  state after `configure` and `activate` (`startState`, `run_startState`).
 * **Read-back.** The three numbers the node reads after a command determine
-  the model's output exactly (`readBack_eq`).
+  the velocity part of the model's output exactly (`readBack_eq`). The
+  report and the difference between `silent` and a withheld velocity are
+  not exposed by this interface yet (task T06).
 * **End to end.** `cm_readBack_after`: create a monitor from a builder that is
   ok, make any sequence of calls of the two exported event functions (scans
   usable or not, commands), then deliver a command; what the three exported
-  queries return is the output of `step` for that command, in the state `run`
-  reaches on the delivered events, on the configuration the builder holds.
-  The statement is on the exported functions as the node calls them.
+  queries return is the velocity of the output of `step` for that command,
+  in the state `run` reaches on the delivered events, on the configuration
+  the builder holds. The statement is on the exported functions as the node
+  calls them.
 
 What remains outside Lean is the C++ shim: reading the parameters and the
 clock, the floating-point work listed in the SPEC as T1 to T3, and acting on
 the returned decision.
+
+This file describes the interface as it stands after task T05: the calls of
+the node of SPEC.md, read in the extended model. The calls of
+SPEC_NAV2.md, section 8, and their theorems are task T06.
 -/
 
 namespace ROSlean.CollisionMonitor.FFI
@@ -93,14 +104,14 @@ theorem actionOfRaw_of_ne_one (a : UInt8) (r : UInt64) (h : a ≠ 1) : actionOfR
 
 /-- The fields of a zone built from raw values, when `min_points` is
 accepted. -/
-theorem zoneOfRaw_fields (s : Shape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) (n : Nat)
+theorem zoneOfRaw_fields (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) (n : Nat)
     (h : minPointsOfRaw mp.toInt = some n) :
     zoneOfRaw s a r mp en =
       ({ shape := s, action := actionOfRaw a r, minPoints := n, enabled := en != 0 }, 0) := by
   simp [zoneOfRaw, h]
 
 /-- A refused `min_points` is recorded with code 4. -/
-theorem zoneOfRaw_refused (s : Shape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8)
+theorem zoneOfRaw_refused (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8)
     (h : minPointsOfRaw mp.toInt = none) : (zoneOfRaw s a r mp en).2 = 4 := by
   simp [zoneOfRaw, h]
 
@@ -110,27 +121,27 @@ the converted radius. -/
 theorem builderAddCircle_zones (b : Builder) (radius : UInt64) (a : UInt8) (r : UInt64)
     (mp : Int64) (en : UInt8) (rmm : Nat) (h : radiusMm radius.toNat = some rmm) :
     builderAddCircle b radius a r mp en =
-      { b with zones := b.zones ++ [zoneOfRaw (.circle rmm) a r mp en] } := by
+      { b with zones := b.zones ++ [zoneOfRaw (.fixed (.circle rmm)) a r mp en] } := by
   simp [builderAddCircle, h]
 
 /-- A refused radius is recorded with code 1. -/
 theorem builderAddCircle_refused (b : Builder) (radius : UInt64) (a : UInt8) (r : UInt64)
     (mp : Int64) (en : UInt8) (h : radiusMm radius.toNat = none) :
     builderAddCircle b radius a r mp en =
-      { b with zones := b.zones ++ [((zoneOfRaw (.circle 0) a r mp en).1, 1)] } := by
+      { b with zones := b.zones ++ [((zoneOfRaw (.fixed (.circle 0)) a r mp en).1, 1)] } := by
   simp [builderAddCircle, h]
 
 /-- `add_polygon` appends one polygon zone without vertices. -/
 theorem builderAddPolygon_zones (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) :
     builderAddPolygon b a r mp en =
-      { b with zones := b.zones ++ [zoneOfRaw (.polygon []) a r mp en] } := rfl
+      { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon [])) a r mp en] } := rfl
 
 /-- If the zone added last is a polygon, an accepted vertex is appended to
 it; the zones before it are untouched. -/
 theorem addVertexToLast_polygon (p : Point) (zs : List (Zone × UInt8)) (ze : Zone × UInt8)
-    (vs : List Point) (h : ze.1.shape = .polygon vs) :
+    (vs : List Point) (h : ze.1.shape = .fixed (.polygon vs)) :
     addVertexToLast (some p) (zs ++ [ze]) =
-      zs ++ [({ ze.1 with shape := .polygon (vs ++ [p]) }, ze.2)] := by
+      zs ++ [({ ze.1 with shape := .fixed (.polygon (vs ++ [p])) }, ze.2)] := by
   induction zs with
   | nil => simp [addVertexToLast, h]
   | cons a as ih =>
@@ -140,7 +151,7 @@ theorem addVertexToLast_polygon (p : Point) (zs : List (Zone × UInt8)) (ze : Zo
 
 /-- A refused vertex marks the polygon and leaves its vertices as they are. -/
 theorem addVertexToLast_refused (zs : List (Zone × UInt8)) (ze : Zone × UInt8) (vs : List Point)
-    (h : ze.1.shape = .polygon vs) :
+    (h : ze.1.shape = .fixed (.polygon vs)) :
     addVertexToLast none (zs ++ [ze]) = zs ++ [(ze.1, if ze.2 == 0 then 2 else ze.2)] := by
   induction zs with
   | nil => simp [addVertexToLast, h]
@@ -149,11 +160,14 @@ theorem addVertexToLast_refused (zs : List (Zone × UInt8)) (ze : Zone × UInt8)
     | nil => simpa [addVertexToLast] using ih
     | cons a' as' => simpa [addVertexToLast] using ih
 
-/-- If the zone added last is a circle, `add_vertex` has no effect. -/
+/-- If the zone added last is not a fixed polygon (a circle, or a topic
+zone), `add_vertex` has no effect. -/
 theorem addVertexToLast_circle (v : Option Point) (zs : List (Zone × UInt8)) (ze : Zone × UInt8)
-    (r : Nat) (h : ze.1.shape = .circle r) : addVertexToLast v (zs ++ [ze]) = zs ++ [ze] := by
+    (h : ∀ vs, ze.1.shape ≠ .fixed (.polygon vs)) :
+    addVertexToLast v (zs ++ [ze]) = zs ++ [ze] := by
   induction zs with
-  | nil => simp [addVertexToLast, h]
+  | nil =>
+    simp only [List.nil_append, addVertexToLast]
   | cons a as ih =>
     cases as with
     | nil => simpa [addVertexToLast] using ih
@@ -164,7 +178,7 @@ theorem addVertexToLast_nil (v : Option Point) : addVertexToLast v [] = [] := rf
 
 /-- A list of zones that ends with a polygon. -/
 theorem lastIsPolygon_concat (zs : List (Zone × UInt8)) (ze : Zone × UInt8) (vs : List Point)
-    (h : ze.1.shape = .polygon vs) : lastIsPolygon (zs ++ [ze]) = true := by
+    (h : ze.1.shape = .fixed (.polygon vs)) : lastIsPolygon (zs ++ [ze]) = true := by
   simp [lastIsPolygon, h]
 
 /-- **A polygon is the vertices of its calls, in order.** `add_polygon`
@@ -175,12 +189,12 @@ theorem foldl_addVertex (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64) (en 
     (ps : List (UInt32 × UInt32)) (vs : List Point)
     (h : ps.map (fun xy => vertexOfRaw xy.1 xy.2) = vs.map some) :
     ps.foldl (fun b xy => builderAddVertex b xy.1 xy.2) (builderAddPolygon b a r mp en) =
-      { b with zones := b.zones ++ [zoneOfRaw (.polygon vs) a r mp en] } := by
+      { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon vs)) a r mp en] } := by
   suffices key : ∀ (ps : List (UInt32 × UInt32)) (vs done : List Point) (b' : Builder),
       ps.map (fun xy => vertexOfRaw xy.1 xy.2) = vs.map some →
-      b' = { b with zones := b.zones ++ [zoneOfRaw (.polygon done) a r mp en] } →
+      b' = { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon done)) a r mp en] } →
       ps.foldl (fun b xy => builderAddVertex b xy.1 xy.2) b' =
-        { b with zones := b.zones ++ [zoneOfRaw (.polygon (done ++ vs)) a r mp en] } by
+        { b with zones := b.zones ++ [zoneOfRaw (.fixed (.polygon (done ++ vs))) a r mp en] } by
     simpa using key ps vs [] _ h (builderAddPolygon_zones b a r mp en)
   intro ps
   induction ps with
@@ -205,15 +219,35 @@ theorem foldl_addVertex (b : Builder) (a : UInt8) (r : UInt64) (mp : Int64) (en 
 
 /-! ## Refusals -/
 
-/-- A monitor starts in the initial state, with the builder's configuration
-and output `silent`; it is ok iff the builder reports no error. -/
+/-- A monitor starts in the active phase (`startState`), with the builder's
+configuration and output `silent`; it is ok iff the builder reports no
+error. -/
 theorem cmNew_eq (b : Builder) :
     cmNew b = { cfg := b.cfg, ok := b.error == 0, err := b.error,
-                zoneErrs := b.zones.map entryError, st := State.init, out := .silent } := rfl
+                zoneErrs := b.zones.map entryError, st := startState b.cfg, out := .silent,
+                placed := true } := rfl
+
+/-- The state a monitor starts in is the initial state with the phase
+`active`: nothing else is touched by `configure` and `activate`. -/
+theorem startState_eq (cfg : Config) :
+    startState cfg = { State.init cfg with phase := .active } := rfl
+
+/-- A run from the state a monitor starts in is a run from start-up that
+begins with `configure` and `activate`: the theorems of `Trace.lean` about
+runs from `State.init` apply to the node with this prefix. -/
+theorem run_startState (cfg : Config) (es : List Event) :
+    run cfg (startState cfg) es =
+      ((run cfg (State.init cfg) ([.configure, .activate] ++ es)).1,
+        (run cfg (State.init cfg) ([.configure, .activate] ++ es)).2.drop 2) := by
+  rw [run_append]
+  rfl
 
 theorem zoneError_eq_zero_iff (z : Zone) : zoneError z = 0 ↔ z.ok = true := by
   unfold zoneError Zone.ok
-  cases hs : z.shape.ok <;> cases ha : z.action.ok <;> cases z.shape <;> simp
+  cases hsh : z.shape with
+  | topic => cases ha : z.action.ok <;> simp [ZoneShape.ok]
+  | fixed s =>
+    cases hs : (ZoneShape.fixed s).ok <;> cases ha : z.action.ok <;> cases s <;> simp
 
 theorem entryError_eq_zero_iff (ze : Zone × UInt8) :
     entryError ze = 0 ↔ ze.2 = 0 ∧ ze.1.ok = true := by
@@ -296,13 +330,13 @@ theorem entryError_addCircle_ne_zero (b : Builder) (radius : UInt64) (a : UInt8)
     ∃ ze, (builderAddCircle b radius a r mp en).zones = b.zones ++ [ze] ∧ ze.2 ≠ 0 := by
   unfold builderAddCircle
   cases hr : radiusMm radius.toNat with
-  | none => exact ⟨((zoneOfRaw (.circle 0) a r mp en).1, 1), by simp, by simp⟩
+  | none => exact ⟨((zoneOfRaw (.fixed (.circle 0)) a r mp en).1, 1), by simp, by simp⟩
   | some v =>
     have hm : minPointsOfRaw mp.toInt = none := by
       rcases h with h | h
       · rw [hr] at h; cases h
       · exact h
-    exact ⟨zoneOfRaw (.circle v) a r mp en, by simp, by simp [zoneOfRaw, hm]⟩
+    exact ⟨zoneOfRaw (.fixed (.circle v)) a r mp en, by simp, by simp [zoneOfRaw, hm]⟩
 
 /-- A refused vertex leaves a non-zero code on the polygon it was meant for,
 and later vertices do not clear it. -/
@@ -310,14 +344,17 @@ theorem addVertexToLast_code (v : Option Point) (zs : List (Zone × UInt8)) (ze 
     (h : ze.2 ≠ 0) :
     ∃ ze', addVertexToLast v (zs ++ [ze]) = zs ++ [ze'] ∧ ze'.2 ≠ 0 := by
   cases hs : ze.1.shape with
-  | circle r => exact ⟨ze, addVertexToLast_circle v zs ze r hs, h⟩
-  | polygon vs =>
-    cases v with
-    | some p => exact ⟨_, addVertexToLast_polygon p zs ze vs hs, h⟩
-    | none => exact ⟨_, addVertexToLast_refused zs ze vs hs, by simp [h]⟩
+  | topic => exact ⟨ze, addVertexToLast_circle v zs ze (by simp [hs]), h⟩
+  | fixed s =>
+    cases s with
+    | circle r => exact ⟨ze, addVertexToLast_circle v zs ze (by simp [hs]), h⟩
+    | polygon vs =>
+      cases v with
+      | some p => exact ⟨_, addVertexToLast_polygon p zs ze vs hs, h⟩
+      | none => exact ⟨_, addVertexToLast_refused zs ze vs hs, by simp [h]⟩
 
 theorem addVertexToLast_none_code (zs : List (Zone × UInt8)) (ze : Zone × UInt8) (vs : List Point)
-    (hs : ze.1.shape = .polygon vs) :
+    (hs : ze.1.shape = .fixed (.polygon vs)) :
     ∃ ze', addVertexToLast none (zs ++ [ze]) = zs ++ [ze'] ∧ ze'.2 ≠ 0 := by
   refine ⟨_, addVertexToLast_refused zs ze vs hs, ?_⟩
   by_cases h : ze.2 = 0 <;> simp [h]
@@ -387,7 +424,7 @@ theorem addVertexToLast_keeps_code (v : Option Point) :
 
 /-- If the zone added last is a polygon, the list ends with it. -/
 theorem lastIsPolygon_iff (zs : List (Zone × UInt8)) :
-    lastIsPolygon zs = true ↔ ∃ ys ze vs, zs = ys ++ [ze] ∧ ze.1.shape = .polygon vs := by
+    lastIsPolygon zs = true ↔ ∃ ys ze vs, zs = ys ++ [ze] ∧ ze.1.shape = .fixed (.polygon vs) := by
   unfold lastIsPolygon
   constructor
   · intro h
@@ -396,8 +433,11 @@ theorem lastIsPolygon_iff (zs : List (Zone × UInt8)) :
     | some ze =>
       obtain ⟨ys, rfl⟩ := List.getLast?_eq_some_iff.mp hl
       cases hs : ze.1.shape with
-      | circle r => simp [hs] at h
-      | polygon vs => exact ⟨ys, ze, vs, rfl, hs⟩
+      | topic => simp [hs] at h
+      | fixed s =>
+        cases s with
+        | circle r => simp [hs] at h
+        | polygon vs => exact ⟨ys, ze, vs, rfl, hs⟩
   · rintro ⟨ys, ze, vs, rfl, hs⟩
     simp [hs]
 
@@ -433,7 +473,7 @@ theorem exec_marked_of_refused (b : Builder) (c : BuilderCall) (h : c.Refused) :
     obtain ⟨ze, h1, h2⟩ := entryError_addCircle_ne_zero b radius a r mp en h
     exact .inr (.inr (.inr ⟨ze, by simp [BuilderCall.exec, h1], h2⟩))
   | addPolygon a r mp en =>
-    exact .inr (.inr (.inr ⟨zoneOfRaw (.polygon []) a r mp en,
+    exact .inr (.inr (.inr ⟨zoneOfRaw (.fixed (.polygon [])) a r mp en,
       by simp [BuilderCall.exec, builderAddPolygon], by rw [zoneOfRaw_refused _ _ _ _ _ h]; decide⟩))
   | addVertex x y =>
     have hv : vertexOfRaw x y = none := h
@@ -521,7 +561,7 @@ theorem foldl_addVertex_refused (b : Builder) (a : UInt8) (r : UInt64) (mp : Int
   -- Invariant: the zones are `b.zones ++ [ze]` with `ze` a polygon, or with a non-zero code.
   suffices key : ∀ (ps : List (UInt32 × UInt32)) (b' : Builder) (ze : Zone × UInt8),
       b'.zones = b.zones ++ [ze] →
-      (ze.2 ≠ 0 ∨ ((∃ vs, ze.1.shape = .polygon vs) ∧ ∃ xy ∈ ps, vertexOfRaw xy.1 xy.2 = none)) →
+      (ze.2 ≠ 0 ∨ ((∃ vs, ze.1.shape = .fixed (.polygon vs)) ∧ ∃ xy ∈ ps, vertexOfRaw xy.1 xy.2 = none)) →
       ∃ ze', (ps.foldl (fun b xy => builderAddVertex b xy.1 xy.2) b').zones = b.zones ++ [ze'] ∧
         ze'.2 ≠ 0 by
     exact key ps _ _ rfl (.inr ⟨⟨[], rfl⟩, h⟩)
@@ -544,7 +584,7 @@ theorem foldl_addVertex_refused (b : Builder) (a : UInt8) (r : UInt64) (mp : Int
         exact ih _ ze' (by simp only [builderAddVertex, hb, hv, h1]) (.inl h2)
       | some p =>
         have h1 := addVertexToLast_polygon p b.zones ze vs hvs
-        refine ih _ ({ ze.1 with shape := .polygon (vs ++ [p]) }, ze.2)
+        refine ih _ ({ ze.1 with shape := .fixed (.polygon (vs ++ [p])) }, ze.2)
           (by simp only [builderAddVertex, hb, hv, h1]) (.inr ⟨⟨_, rfl⟩, ?_⟩)
         rcases List.mem_cons.mp hxy' with rfl | hin
         · rw [hv] at hnone; cases hnone
@@ -575,6 +615,12 @@ theorem u32At_lt (a : ByteArray) (o : Nat) : u32At a o < 2 ^ 32 := by
   unfold u32At
   omega
 
+theorem u64At_lt (a : ByteArray) (o : Nat) : u64At a o < 2 ^ 64 := by
+  have h0 := u32At_lt a o
+  have h1 := u32At_lt a (o + 4)
+  unfold u64At
+  omega
+
 /-- Reading the two halves of a coordinate separately gives `coordMm` of the
 whole 64-bit pattern. -/
 theorem coordMmOfParts_halves (lo hi : Nat) (hlo : lo < 2 ^ 32) (hhi : hi < 2 ^ 32) :
@@ -591,20 +637,11 @@ theorem coordMmOfParts_halves (lo hi : Nat) (hlo : lo < 2 ^ 32) (hhi : hi < 2 ^ 
       simp [this, h]
   rw [h1, h2]
 
-/-- The 64-bit pattern stored at offset `o`. -/
-def u64At (a : ByteArray) (o : Nat) : Nat := u32At a (o + 4) * 0x100000000 + u32At a o
-
-/-- A decoded coordinate is `coordMm` of the 64-bit pattern in the record. -/
-theorem coordAt_eq (a : ByteArray) (o : Nat) : coordAt a o = coordMm (u64At a o) :=
-  coordMmOfParts_halves _ _ (u32At_lt a o) (u32At_lt a (o + 4))
-
-/-- Every decoded point is within the coordinate limit, and every decoded
-range is a 32-bit pattern, whatever the bytes. -/
-theorem beamAt_inRange (a : ByteArray) (i : Nat) :
-    (beamAt a i).range < 2 ^ 32 ∧ (beamAt a i).point.inRange coordLimit = true := by
-  refine ⟨u32At_lt .., ?_⟩
-  simp only [Point.inRange, beamAt, coordAt_eq, Bool.and_eq_true, decide_eq_true_eq]
-  exact ⟨coordMm_natAbs_le _, coordMm_natAbs_le _⟩
+/-- Every decoded pattern fits its field, whatever the bytes: the range is a
+32-bit pattern and the coordinates are 64-bit patterns. -/
+theorem beamAt_lt (a : ByteArray) (i : Nat) :
+    (beamAt a i).range < 2 ^ 32 ∧ (beamAt a i).x < 2 ^ 64 ∧ (beamAt a i).y < 2 ^ 64 :=
+  ⟨u32At_lt .., u64At_lt .., u64At_lt ..⟩
 
 /-- A byte array of any length is a scan of `size / 20` readings; a trailing
 partial record is ignored. -/
@@ -626,8 +663,9 @@ structure RawBeam where
   x : Nat
   y : Nat
 
-/-- The beam of the model that a raw reading denotes. -/
-def RawBeam.beam (r : RawBeam) : Beam := { range := r.range, point := ⟨coordMm r.x, coordMm r.y⟩ }
+/-- The beam of the model that a raw reading denotes: the same three
+patterns. -/
+def RawBeam.beam (r : RawBeam) : Beam := { range := r.range, x := r.x, y := r.y }
 
 /-- The patterns fit their fields. -/
 def RawBeam.Fits (r : RawBeam) : Prop := r.range < 2 ^ 32 ∧ r.x < 2 ^ 64 ∧ r.y < 2 ^ 64
@@ -688,9 +726,9 @@ theorem toNat_toUInt8_mod (n : Nat) : (n % 256).toUInt8.toNat = n % 256 := by
   simp [Nat.toUInt8]
 
 /-- **Decoding inverts the encoding.** If the shim writes the records of the
-SPEC for readings whose patterns fit their fields, the model sees exactly the
-beams those readings denote, in order: the ranges as given and each coordinate
-converted by `coordMm`. -/
+SPEC for readings whose patterns fit their fields, the model sees exactly
+those readings, in order: the range and the two coordinate patterns as
+given, unconverted. -/
 theorem decodeBeams_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
     decodeBeams (encodeBeams rs) = rs.map RawBeam.beam := by
   apply List.ext_getElem
@@ -739,7 +777,7 @@ theorem decodeBeams_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
       simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k12, k13, k14, k15, k16,
         k17, k18, k19]
       omega
-    simp only [beamAt, coordAt_eq, e0, ex, ey, RawBeam.beam]
+    simp only [beamAt, e0, ex, ey, RawBeam.beam]
 
 /-- The scan the model sees: stamp (negative taken as 0, D8), the two limits
 as given, and the decoded readings. -/
@@ -751,11 +789,12 @@ theorem scanOfRaw_fields (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
 
 /-! ## Events -/
 
-theorem apply_cfg (m : Monitor) (e : Event) : (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok := by
+theorem apply_cfg (m : Monitor) (e : Event) :
+    (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok ∧ (m.apply e).placed = m.placed := by
   unfold Monitor.apply
   split
-  · exact ⟨rfl, rfl⟩
-  · cases e <;> exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩
+  · cases e <;> exact ⟨rfl, rfl, rfl⟩
 
 /-- An ok monitor does what `step` says. -/
 theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
@@ -764,61 +803,59 @@ theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
   rw [if_pos h]
   exact ⟨rfl, rfl⟩
 
-/-- **Fail closed.** A monitor that is not ok answers every command with
-`stopSource`: whatever the command (finite or not), the scans it was given,
-and the time. -/
-theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (h : m.ok = false) :
-    (m.apply (.cmd now v)).out = .publish .stopSource := by
+/-- **Fail closed.** A monitor that is not ok answers every command in the
+active phase with `stopSource`: whatever the command (finite or not), the
+scans it was given, the transforms, and the time. -/
+theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanTf : Option Xform)
+    (zoneTfs : List (Option Xform)) (h : m.ok = false) (hp : m.st.phase = .active) :
+    (m.apply (.cmd now v scanTf zoneTfs)).out = .answer (some .stopSource) none := by
   unfold Monitor.apply
-  simp [h]
+  simp [h, hp]
 
-/-- The event a usable scan call delivers. -/
-theorem scanEvent_usable (now : UInt64) (stamp : Int64) (usable : UInt8) (rmin rmax : UInt32)
-    (a : ByteArray) (h : usable ≠ 0) :
-    scanEvent now stamp usable rmin rmax a = .scan now.toNat (scanOfRaw stamp rmin rmax a) := by
-  simp [scanEvent, h]
+/-- A monitor that is not ok keeps its state under scans, shape messages and
+commands. -/
+theorem apply_st_of_not_ok (m : Monitor) (e : Event) (h : m.ok = false)
+    (he : (∃ now s, e = .scan now s) ∨ (∃ k verts place, e = .shape k verts place) ∨
+      ∃ now v scanTf zoneTfs, e = .cmd now v scanTf zoneTfs) :
+    (m.apply e).st = m.st := by
+  unfold Monitor.apply
+  rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, place, rfl⟩ | ⟨now, v, scanTf, zoneTfs, rfl⟩ <;>
+    simp [h]
 
-/-- The event an unusable scan call delivers: nothing of the scan enters. -/
-theorem scanEvent_unusable (now : UInt64) (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
-    scanEvent now stamp 0 rmin rmax a = .scanUnusable now.toNat := rfl
-
-/-- The scan call is `Monitor.apply` on the event it delivers. -/
+/-- The scan call is `Monitor.apply` on a scan event, which stores the scan,
+and records whether the scan was reported usable. -/
 theorem cmOnScan_eq (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
     (rmin rmax : UInt32) (a : ByteArray) :
-    cmOnScan m now stamp usable rmin rmax a = m.apply (scanEvent now stamp usable rmin rmax a) :=
-  rfl
-
-/-- The scan call with a usable scan is `step` on a scan event. -/
-theorem cmOnScan_usable (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
-    (rmin rmax : UInt32) (a : ByteArray) (h : usable ≠ 0) :
     cmOnScan m now stamp usable rmin rmax a =
-      m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) := by
-  rw [cmOnScan_eq, scanEvent_usable _ _ _ _ _ _ h]
-
-/-- The scan call with an unusable scan is `step` on the event
-`scanUnusable`: the stored scan is discarded. -/
-theorem cmOnScan_unusable (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
-    (a : ByteArray) : cmOnScan m now stamp 0 rmin rmax a = m.apply (.scanUnusable now.toNat) := rfl
-
-/-- **An unusable scan stops the robot by the source rule.** After a scan
-call that the shim reports as unusable, an ok monitor with an enabled source
-and a non-zero source timeout demands `stopSource` at every time, exactly as
-when no scan was ever received (R8). Over sequences: `run_scanUnusable_stop`
-with `cm_out_after`. -/
-theorem cmOnScan_unusable_stop (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
-    (a : ByteArray) (t : Nat) (hok : m.ok = true) (he : m.cfg.sourceEnabled = true)
-    (ht : 0 < m.cfg.sourceTimeout) :
-    evaluate (cmOnScan m now stamp 0 rmin rmax a).cfg (cmOnScan m now stamp 0 rmin rmax a).st t =
-      .stopSource := by
-  rw [cmOnScan_unusable, (apply_cfg _ _).1, (apply_of_ok _ _ hok).1]
-  exact evaluate_after_scanUnusable m.cfg m.st now.toNat t he ht
+      { m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) with placed := usable != 0 } :=
+  rfl
 
 /-- The command call is `Monitor.apply` on a command event with the six
 patterns in the order `linear.x`, `linear.y`, `linear.z`, `angular.x`,
-`angular.y`, `angular.z`. -/
+`angular.y`, `angular.z`, the identity transform for the scan if the scan
+stored last was reported usable and none if it was not, and no zone
+transforms. -/
 theorem cmOnCmd_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) :
     cmOnCmd m now lx ly lz ax ay az =
-      m.apply (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩) := rfl
+      m.apply (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩
+        (if m.placed then some Xform.identity else none) []) := rfl
+
+/-- **An unusable scan stops the robot by the source rule.** After a scan
+call that the shim reports as unusable (D11), commands carry no transform
+for the scan, and with an enabled source and a non-zero source timeout the
+action demanded at every time, in every state, is `stopSource` (N27), until
+a scan is reported usable. This is what the removed event `scanUnusable`
+did. -/
+theorem cmOnScan_unusable_stop (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
+    (a : ByteArray) (he : m.cfg.sourceEnabled = true) (ht : 0 < m.cfg.sourceTimeout) :
+    (cmOnScan m now stamp 0 rmin rmax a).placed = false ∧
+      ∀ (st : State) (t : Nat) (lx ly lz ax ay az : UInt64),
+        ∃ v, cmdEvent false (UInt64.ofNat t) lx ly lz ax ay az =
+            .cmd (UInt64.ofNat t).toNat v none [] ∧
+          evaluate m.cfg st (UInt64.ofNat t).toNat none [] = .stopSource := by
+  refine ⟨rfl, fun st t lx ly lz ax ay az => ⟨_, rfl, ?_⟩⟩
+  rw [evaluate_eq_stopSource_iff]
+  exact ⟨he, ht, Or.inr (Or.inr noTransform_none)⟩
 
 /-- After any sequence of events an ok monitor has the same configuration and
 the state `run` reaches. -/
@@ -828,7 +865,7 @@ theorem foldl_apply (m : Monitor) (es : List Event) (h : m.ok = true) :
   induction es generalizing m with
   | nil => exact ⟨rfl, h, rfl⟩
   | cons e es ih =>
-    obtain ⟨h1, h2, h3⟩ := ih (m.apply e) (by rw [(apply_cfg m e).2]; exact h)
+    obtain ⟨h1, h2, h3⟩ := ih (m.apply e) (by rw [(apply_cfg m e).2.1]; exact h)
     rw [List.foldl_cons, h1, h3, (apply_cfg m e).1, (apply_of_ok m e h).1, run_cons]
     exact ⟨rfl, h2, rfl⟩
 
@@ -844,205 +881,258 @@ def Call.exec (m : Monitor) : Call → Monitor
   | .scan now stamp usable rmin rmax a => cmOnScan m now stamp usable rmin rmax a
   | .cmd now lx ly lz ax ay az => cmOnCmd m now lx ly lz ax ay az
 
-/-- The event of the model that a call delivers. Every call delivers one: a
-scan call a `scan` or, if it is reported as unusable, a `scanUnusable`. -/
-def Call.event : Call → Event
-  | .scan now stamp usable rmin rmax a => scanEvent now stamp usable rmin rmax a
-  | .cmd now lx ly lz ax ay az =>
-    .cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩
+/-- The event of the model that a call delivers, given whether the scan
+stored last was reported usable. A scan call delivers a `scan`; a command
+call a `cmd` with the identity transform or none (`cmdEvent`). -/
+def Call.event (placed : Bool) : Call → Event
+  | .scan now stamp _ rmin rmax a => .scan now.toNat (scanOfRaw stamp rmin rmax a)
+  | .cmd now lx ly lz ax ay az => cmdEvent placed now lx ly lz ax ay az
 
-/-- Every call is `Monitor.apply` on the event it delivers. -/
-theorem exec_eq_apply (m : Monitor) (c : Call) : c.exec m = m.apply c.event := by
-  cases c <;> rfl
+/-- Whether the scan stored last was reported usable, after the call. -/
+def Call.placed (placed : Bool) : Call → Bool
+  | .scan _ _ usable _ _ _ => usable != 0
+  | .cmd _ _ _ _ _ _ _ => placed
+
+/-- The events a sequence of calls delivers. -/
+def events (placed : Bool) : List Call → List Event
+  | [] => []
+  | c :: cs => c.event placed :: events (c.placed placed) cs
+
+/-- Whether the scan stored last was reported usable, after the calls. -/
+def placedAfter (placed : Bool) (cs : List Call) : Bool :=
+  cs.foldl (fun p c => c.placed p) placed
+
+/-- Every call is `Monitor.apply` on the event it delivers, and records
+whether the scan stored last is usable. -/
+theorem exec_eq_apply (m : Monitor) (c : Call) :
+    c.exec m = { m.apply (c.event m.placed) with placed := c.placed m.placed } := by
+  cases c with
+  | scan now stamp usable rmin rmax a => rfl
+  | cmd now lx ly lz ax ay az =>
+    show m.apply (cmdEvent m.placed now lx ly lz ax ay az) =
+      { m.apply (cmdEvent m.placed now lx ly lz ax ay az) with placed := m.placed }
+    have h := (apply_cfg m (cmdEvent m.placed now lx ly lz ax ay az)).2.2
+    generalize m.apply (cmdEvent m.placed now lx ly lz ax ay az) = m' at h ⊢
+    cases m'
+    simp only at h
+    subst h
+    rfl
 
 /-- No call changes the configuration or whether the monitor is ok. -/
-theorem exec_cfg (m : Monitor) (c : Call) : (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok := by
+theorem exec_cfg (m : Monitor) (c : Call) :
+    (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok ∧ (c.exec m).placed = c.placed m.placed := by
   rw [exec_eq_apply]
-  exact apply_cfg ..
+  exact ⟨(apply_cfg ..).1, (apply_cfg ..).2.1, rfl⟩
 
 theorem foldl_exec_cfg (m : Monitor) (cs : List Call) :
-    (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = m.ok := by
+    (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = m.ok ∧
+      (cs.foldl Call.exec m).placed = placedAfter m.placed cs := by
   induction cs generalizing m with
-  | nil => exact ⟨rfl, rfl⟩
+  | nil => exact ⟨rfl, rfl, rfl⟩
   | cons c cs ih =>
-    rw [List.foldl_cons, (ih _).1, (ih _).2]
-    exact exec_cfg m c
+    rw [List.foldl_cons, (ih _).1, (ih _).2.1, (ih _).2.2, (exec_cfg m c).1, (exec_cfg m c).2.1,
+      (exec_cfg m c).2.2]
+    exact ⟨rfl, rfl, rfl⟩
 
-/-- **Any sequence of calls is the sequence of its events.** With no
-condition on the calls: scans may be usable or not. -/
-theorem foldl_exec (m : Monitor) (cs : List Call) :
-    cs.foldl Call.exec m = (cs.map Call.event).foldl Monitor.apply m := by
-  induction cs generalizing m with
-  | nil => rfl
-  | cons c cs ih => rw [List.foldl_cons, List.map_cons, List.foldl_cons, ih, exec_eq_apply]
-
-/-- After any sequence of calls an ok monitor has the same configuration and
-the state `run` reaches on the events the calls deliver. -/
+/-- **Any sequence of calls is the sequence of its events.** After any
+sequence of calls, with no condition on them (scans may be usable or not),
+an ok monitor has the same configuration and the state `run` reaches on the
+events the calls deliver. -/
 theorem foldl_exec_run (m : Monitor) (cs : List Call) (h : m.ok = true) :
     (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = true ∧
-    (cs.foldl Call.exec m).st = (run m.cfg m.st (cs.map Call.event)).1 := by
-  rw [foldl_exec]
-  exact foldl_apply m _ h
+    (cs.foldl Call.exec m).st = (run m.cfg m.st (events m.placed cs)).1 := by
+  induction cs generalizing m with
+  | nil => exact ⟨rfl, h, rfl⟩
+  | cons c cs ih =>
+    obtain ⟨h1, h2, h3⟩ := ih (c.exec m) (by rw [(exec_cfg m c).2.1]; exact h)
+    rw [List.foldl_cons, h1, h3, (exec_cfg m c).1, (exec_cfg m c).2.2]
+    refine ⟨rfl, h2, ?_⟩
+    have hst : (c.exec m).st = (step m.cfg m.st (c.event m.placed)).1 := by
+      rw [exec_eq_apply]
+      exact (apply_of_ok m _ h).1
+    rw [hst, events, run_cons]
+
+/-- A monitor that is not ok keeps its state under every call. -/
+theorem exec_st_of_not_ok (m : Monitor) (c : Call) (h : m.ok = false) : (c.exec m).st = m.st := by
+  rw [exec_eq_apply]
+  cases c with
+  | scan now stamp usable rmin rmax a => exact apply_st_of_not_ok m _ h (Or.inl ⟨_, _, rfl⟩)
+  | cmd now lx ly lz ax ay az =>
+    exact apply_st_of_not_ok m _ h (Or.inr (Or.inr ⟨_, _, _, _, rfl⟩))
 
 /-- **Fail closed, on sequences.** If the monitor was not ok when it was
-created, then after any calls whatever, usable or not, the answer to a
-command is `stopSource`. -/
+created, and is in the active phase (as every monitor of `cmNew` is), then
+after any calls whatever, usable or not, the answer to a command is
+`stopSource`. -/
 theorem foldl_exec_not_ok (m : Monitor) (cs : List Call) (now lx ly lz ax ay az : UInt64)
-    (h : m.ok = false) :
-    (cmOnCmd (cs.foldl Call.exec m) now lx ly lz ax ay az).out = .publish .stopSource := by
+    (h : m.ok = false) (hp : m.st.phase = .active) :
+    (cmOnCmd (cs.foldl Call.exec m) now lx ly lz ax ay az).out =
+      .answer (some .stopSource) none := by
+  have hst : (cs.foldl Call.exec m).st = m.st := by
+    induction cs generalizing m with
+    | nil => rfl
+    | cons c cs ih =>
+      rw [List.foldl_cons, ih (c.exec m) (by rw [(exec_cfg m c).2.1]; exact h)
+        (by rw [exec_st_of_not_ok m c h]; exact hp), exec_st_of_not_ok m c h]
   rw [cmOnCmd_eq]
-  exact apply_cmd_of_not_ok _ _ _ (by rw [(foldl_exec_cfg m cs).2]; exact h)
+  exact apply_cmd_of_not_ok _ _ _ _ _ (by rw [(foldl_exec_cfg m cs).2.1]; exact h)
+    (by rw [hst]; exact hp)
 
 /-! ## Reading the output back
 
-The node reads three numbers. They determine the output, because the zone
-index and the ratio are never truncated. -/
+The node reads three numbers. They determine the velocity part of the
+output, because the zone index and the ratio are never truncated. -/
 
-/-- The output denoted by the three numbers the node reads. -/
-def outputOfCodes (kind : UInt8) (zone ratio : Nat) : Output :=
-  if kind = 1 then .publish .pass
-  else if kind = 2 then .publish (.slowdown zone ratio)
-  else if kind = 3 then .publish (.stopZone zone)
-  else if kind = 4 then .publish .stopSource
-  else .silent
+/-- The velocity action denoted by the three numbers the node reads; `none`
+for kind 0 and for every unknown kind. -/
+def actionOfCodes (kind : UInt8) (zone ratio : Nat) : Option Action :=
+  if kind = 1 then some .pass
+  else if kind = 2 then some (.slowdown zone ratio)
+  else if kind = 3 then some (.stopZone zone)
+  else if kind = 4 then some .stopSource
+  else none
 
-/-- The codes determine the output. -/
-theorem outputOfCodes_codes (o : Output) : outputOfCodes (kindOf o) (zoneOf o) (ratioOf o) = o := by
-  rcases o with _ | a
+/-- The codes determine the velocity of the output. -/
+theorem actionOfCodes_codes (o : Output) :
+    actionOfCodes (kindOf o) (zoneOf o) (ratioOf o) = o.velocity := by
+  unfold kindOf zoneOf ratioOf
+  rcases o.velocity with _ | a
   · rfl
   · cases a <;> rfl
 
-/-- Whatever `step` publishes is what `evaluate` demands. -/
-theorem step_publish (cfg : Config) (st : State) (e : Event) (a : Action)
-    (h : (step cfg st e).2 = .publish a) : ∃ now, a = evaluate cfg st now := by
-  cases e with
-  | scan now s => simp [step] at h
-  | scanUnusable now => simp [step] at h
-  | cmd now v =>
-    refine ⟨now, ?_⟩
-    simp only [step] at h
-    split at h
-    · simp at h
-    · split at h
-      · simp at h
-      · simpa using h.symm
-
 /-- A published stop names a configured zone. -/
 theorem step_publish_stopZone (cfg : Config) (st : State) (e : Event) (k : Nat)
-    (h : (step cfg st e).2 = .publish (.stopZone k)) : k < cfg.zones.length := by
-  obtain ⟨now, ha⟩ := step_publish cfg st e _ h
-  obtain ⟨pts, z, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now k ha.symm
+    (h : (step cfg st e).2.velocity = some (.stopZone k)) : k < cfg.zones.length := by
+  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  obtain ⟨pts, z, z0, -, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now scanTf zoneTfs k ha.symm
   exact (List.getElem?_eq_some_iff.mp hz).1
 
 /-- A published slowdown names a configured slowdown zone and carries that
 zone's ratio, which is below the pattern of 1.0. -/
 theorem step_publish_slowdown (cfg : Config) (st : State) (e : Event) (k r : Nat)
-    (h : (step cfg st e).2 = .publish (.slowdown k r)) :
+    (h : (step cfg st e).2.velocity = some (.slowdown k r)) :
     r < F64.one ∧ ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r := by
-  obtain ⟨now, ha⟩ := step_publish cfg st e _ h
-  exact evaluate_slowdown cfg st now k r ha.symm
+  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  exact evaluate_slowdown cfg st now scanTf zoneTfs k r ha.symm
 
-/-- **The node reads back the model's output.** For an ok monitor with at
+/-- **The node reads back the model's velocity.** For an ok monitor with at
 most 2³² zones, the kind, zone index and ratio that the three queries return
-after an event determine the output of `step` for that event exactly: nothing
-is truncated on the way to C. (A published zone index is below the number of
-zones, and a published ratio is below the pattern of 1.0.) -/
+after an event determine the velocity of the output of `step` for that event
+exactly: nothing is truncated on the way to C. (A published zone index is
+below the number of zones, and a published ratio is below the pattern of
+1.0.) Kind 0 is "no velocity": the event was not a processed command, or
+the velocity is withheld (R15). -/
 theorem readBack_eq (m : Monitor) (e : Event) (hok : m.ok = true)
     (hz : m.cfg.zones.length ≤ 2 ^ 32) :
-    outputOfCodes (cmOutKind (m.apply e)) (cmOutZone (m.apply e)).toNat
-      (cmOutRatio (m.apply e)).toNat = (step m.cfg m.st e).2 := by
+    actionOfCodes (cmOutKind (m.apply e)) (cmOutZone (m.apply e)).toNat
+      (cmOutRatio (m.apply e)).toNat = (step m.cfg m.st e).2.velocity := by
   have hzone : zoneOf (step m.cfg m.st e).2 < 2 ^ 32 := by
-    rcases ho : (step m.cfg m.st e).2 with _ | a
-    · simp [zoneOf]
+    unfold zoneOf
+    rcases ho : (step m.cfg m.st e).2.velocity with _ | a
+    · simp
     · cases a with
-      | pass => simp [zoneOf]
-      | stopSource => simp [zoneOf]
-      | stopZone k => have := step_publish_stopZone _ _ _ _ ho; simp only [zoneOf]; omega
+      | pass => simp
+      | stopSource => simp
+      | stopZone k => have := step_publish_stopZone _ _ _ _ ho; simp only; omega
       | slowdown k r =>
         obtain ⟨-, z, hk, -⟩ := step_publish_slowdown _ _ _ _ _ ho
         have := (List.getElem?_eq_some_iff.mp hk).1
-        simp only [zoneOf]; omega
+        simp only; omega
   have hratio : ratioOf (step m.cfg m.st e).2 < 2 ^ 64 := by
-    rcases ho : (step m.cfg m.st e).2 with _ | a
-    · simp [ratioOf]
+    unfold ratioOf
+    rcases ho : (step m.cfg m.st e).2.velocity with _ | a
+    · simp
     · cases a with
-      | pass => simp [ratioOf]
-      | stopSource => simp [ratioOf]
-      | stopZone k => simp [ratioOf]
+      | pass => simp
+      | stopSource => simp
+      | stopZone k => simp
       | slowdown k r =>
         obtain ⟨hlt, -⟩ := step_publish_slowdown _ _ _ _ _ ho
         have h1 : F64.one < 2 ^ 64 := by unfold F64.one; norm_num
-        simp only [ratioOf]; omega
+        simp only; omega
   simp only [cmOutKind, cmOutZone, cmOutRatio, (apply_of_ok m e hok).2]
   have e1 : (zoneOf (step m.cfg m.st e).2).toUInt32.toNat = zoneOf (step m.cfg m.st e).2 := by
     simp only [Nat.toUInt32, UInt32.toNat_ofNat']; omega
   have e2 : (ratioOf (step m.cfg m.st e).2).toUInt64.toNat = ratioOf (step m.cfg m.st e).2 := by
     simp only [Nat.toUInt64, UInt64.toNat_ofNat']; omega
   rw [e1, e2]
-  exact outputOfCodes_codes _
+  exact actionOfCodes_codes _
 
 /-! ## End to end
 
 Stated on the exported functions in the order the node calls them: `cmNew` on
 the builder, then `cmOnScan` and `cmOnCmd` in any order and number (`Call`,
 `Call.exec`), then `cmOnCmd` for the command in question and the three
-queries. The events of the model are those the calls deliver (`Call.event`),
-so the theorems of `Properties.lean` and `Trace.lean`, which hold for every
-sequence of events, apply with `es := cs.map Call.event`. -/
+queries. The events of the model are those the calls deliver (`events`), from
+the state after `configure` and `activate` (`startState`); by
+`run_startState` the theorems of `Properties.lean`, `Lifecycle.lean` and
+`Trace.lean`, which hold for every sequence of events, apply with
+`es := [.configure, .activate] ++ events true cs`. -/
 
 /-- **End to end.** Create a monitor from a builder that is ok, make any
 sequence of calls of the two event functions (commands, usable scans and
 unusable scans, in any order), then deliver a velocity command at node-clock
-time `now`. The recorded output is the output of `step` for that command, in
-the state `run` reaches from the initial state on the events the calls
-deliver, on the configuration the builder holds. -/
+time `now`. The recorded output is the output of `step` for that command's
+event, in the state `run` reaches from the start state on the events the
+calls deliver, on the configuration the builder holds. -/
 theorem cm_out_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
     (hok : cmOk (cmNew b) = true) :
     (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az).out =
-      (step b.cfg (run b.cfg State.init (cs.map Call.event)).1
-        (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩)).2 := by
+      (step b.cfg (run b.cfg (startState b.cfg) (events true cs)).1
+        (cmdEvent (placedAfter true cs) now lx ly lz ax ay az)).2 := by
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
-  rw [cmOnCmd_eq, (apply_of_ok _ _ h2).2, h1, h3]
+  have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
+  unfold cmOnCmd
+  rw [(apply_of_ok _ _ h2).2, h1, h3, h4]
   rfl
 
 /-- **End to end, as the node sees it.** For at most 2³² zones, the three
-numbers the exported queries return after the command determine the model's
-output for it. -/
+numbers the exported queries return after the command determine the velocity
+of the model's output for it. -/
 theorem cm_readBack_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
     (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) :
     let m := cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az
-    outputOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg State.init (cs.map Call.event)).1
-        (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩)).2 := by
+    actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
+      (step b.cfg (run b.cfg (startState b.cfg) (events true cs)).1
+        (cmdEvent (placedAfter true cs) now lx ly lz ax ay az)).2.velocity := by
   intro m
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
+  have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
   have h := readBack_eq (cs.foldl Call.exec (cmNew b))
-    (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩) h2
+    (cmdEvent (cs.foldl Call.exec (cmNew b)).placed now lx ly lz ax ay az) h2
     (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
-  rw [h1, h3] at h
-  exact h
+  have hm : m = (cs.foldl Call.exec (cmNew b)).apply
+      (cmdEvent (cs.foldl Call.exec (cmNew b)).placed now lx ly lz ax ay az) := rfl
+  rw [hm, h, h1, h3, h4]
+  rfl
 
 /-- **End to end, every output.** The same for every call of the sequence,
 not only for a command at its end: after the first `n + 1` calls the three
-queries return the output of `step` for the event of call `n`, in the state
-`run` reaches on the events of the first `n` calls. (The node reads the
-queries after commands only; for a scan call they say `silent`.) -/
+queries return the velocity of the output of `step` for the event of call
+`n`, in the state `run` reaches on the events of the first `n` calls. (The
+node reads the queries after commands only; for a scan call they say "no
+velocity".) -/
 theorem cm_readBack_at (b : Builder) (cs : List Call) (n : Nat) (c : Call)
     (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) (hc : cs[n]? = some c) :
     let m := (cs.take (n + 1)).foldl Call.exec (cmNew b)
-    outputOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg State.init ((cs.take n).map Call.event)).1 c.event).2 := by
+    actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
+      (step b.cfg (run b.cfg (startState b.cfg) (events true (cs.take n))).1
+        (c.event (placedAfter true (cs.take n)))).2.velocity := by
   intro m
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) (cs.take n) hok
-  have hm : m = ((cs.take n).foldl Call.exec (cmNew b)).apply c.event := by
+  have h4 := (foldl_exec_cfg (cmNew b) (cs.take n)).2.2
+  have hm : m = c.exec ((cs.take n).foldl Call.exec (cmNew b)) := by
     simp only [m]
     rw [List.take_add_one, hc, Option.toList_some, List.foldl_append, List.foldl_cons,
-      List.foldl_nil, exec_eq_apply]
-  have h := readBack_eq ((cs.take n).foldl Call.exec (cmNew b)) c.event h2
+      List.foldl_nil]
+  have h := readBack_eq ((cs.take n).foldl Call.exec (cmNew b))
+    (c.event ((cs.take n).foldl Call.exec (cmNew b)).placed) h2
     (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
-  rw [h1, h3] at h
-  rw [hm]
-  exact h
+  rw [hm, exec_eq_apply]
+  refine Eq.trans ?_ (h.trans ?_)
+  · rfl
+  · rw [h1, h3, h4]
+    rfl
 
 /-- **End to end, when the configuration was refused.** If the builder is not
 ok, the answer to every command, after any calls, is `stopSource`: the node
@@ -1051,7 +1141,7 @@ theorem cm_not_ok_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : 
     (hok : cmOk (cmNew b) = false) :
     cmOutKind (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az) = 4 := by
   unfold cmOutKind
-  rw [foldl_exec_not_ok (cmNew b) cs now lx ly lz ax ay az hok]
+  rw [foldl_exec_not_ok (cmNew b) cs now lx ly lz ax ay az hok rfl]
   rfl
 
 end ROSlean.CollisionMonitor.FFI

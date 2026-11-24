@@ -579,9 +579,10 @@ theorem shape_ok_iff (s : Shape) :
     refine and_congr_right fun _ => forall_congr' fun v => forall_congr' fun _ => ?_
     omega
 
-/-- What `Config.ok` requires of each zone: a circle's radius is at most
-1,000,000 mm; a polygon has at least four vertices, each within 999,997 mm of
-both axes; a slowdown ratio has its sign bit clear (D5, D12, R10). -/
+/-- What `Config.ok` requires of each zone: a fixed circle's radius is at most
+1,000,000 mm; a fixed polygon has at least four vertices, each within
+999,997 mm of both axes; a slowdown ratio has its sign bit clear (D5, D12,
+R10). A topic zone has no shape in the configuration. -/
 theorem config_ok_iff (cfg : Config) :
     cfg.ok = true ↔ ∀ z ∈ cfg.zones,
       z.shape.ok = true ∧ ∀ r, z.action = .slowdown r → r < 0x8000000000000000 := by
@@ -589,18 +590,42 @@ theorem config_ok_iff (cfg : Config) :
   refine forall_congr' fun z => forall_congr' fun _ => and_congr_right fun _ => ?_
   cases z.action <;> simp [ZoneAction.ok]
 
-/-- **A saturated point is in no zone (D12).** If a shape passes `Shape.ok`,
-a point with a coordinate of magnitude `coordLimit` (1000 m) or more is not
-inside it: neither by the circle test, nor by the crossing rule, nor by the
-margin. The shim passes such a point for a reading that is NaN, infinite or
-1000 m or more away. -/
-theorem contains_eq_false_of_far (s : Shape) (p : Point) (hok : s.ok = true)
-    (hfar : coordLimit ≤ p.x.natAbs ∨ coordLimit ≤ p.y.natAbs) : s.contains p = false := by
+/-- The shape lies within the coordinate limit: a circle's radius is at most
+`coordLimit`, a polygon's vertices are at least 3 mm inside it. This is
+`Shape.ok` without the count of vertices; the shape of a topic zone, which
+may be a triangle (N33), satisfies it too. -/
+def ShapeBounded (s : Shape) : Prop :=
+  match s with
+  | .circle r => r ≤ 1000000
+  | .polygon vs => ∀ v ∈ vs, -999997 ≤ v.x ∧ v.x ≤ 999997 ∧ -999997 ≤ v.y ∧ v.y ≤ 999997
+
+theorem shapeBounded_of_ok (s : Shape) (hok : s.ok = true) : ShapeBounded s := by
   rw [shape_ok_iff] at hok
+  cases s with
+  | circle r => exact hok
+  | polygon vs => exact hok.2
+
+/-- Vertices that pass the check of `TopicShape.ofMessage` bound a polygon. -/
+theorem shapeBounded_polygon_of_all (vs : List Point)
+    (h : vs.all (·.inRange (coordLimit - 3)) = true) : ShapeBounded (.polygon vs) := by
+  intro v hv
+  have := List.all_eq_true.mp h v hv
+  simp only [Point.inRange, coordLimit, Bool.and_eq_true, Nat.reduceSub] at this
+  have h1 := of_decide_eq_true this.1
+  have h2 := of_decide_eq_true this.2
+  omega
+
+/-- **A saturated point is in no zone (D12).** If a shape lies within the
+coordinate limit (`ShapeBounded`), a point with a coordinate of magnitude
+`coordLimit` (1000 m) or more is not inside it: neither by the circle test,
+nor by the crossing rule, nor by the margin. The model gives such a point for
+a reading that is NaN, infinite or 1000 m or more away. -/
+theorem contains_eq_false_of_far' (s : Shape) (p : Point) (hok : ShapeBounded s)
+    (hfar : coordLimit ≤ p.x.natAbs ∨ coordLimit ≤ p.y.natAbs) : s.contains p = false := by
   simp only [coordLimit] at hfar
   cases s with
   | circle r =>
-    simp only at hok
+    simp only [ShapeBounded] at hok
     simp only [Shape.contains, decide_eq_false_iff_not, not_lt]
     have hr : ((r * r : Nat) : ℤ) ≤ 1000000 * 1000000 := by
       have : r * r ≤ 1000000 * 1000000 := Nat.mul_le_mul hok hok
@@ -613,50 +638,78 @@ theorem contains_eq_false_of_far (s : Shape) (p : Point) (hok : s.ok = true)
         rcases (show 1000000 ≤ p.y ∨ p.y ≤ -1000000 by omega) with h | h <;> nlinarith
       nlinarith [mul_self_nonneg p.x]
   | polygon vs =>
-    simp only at hok
+    simp only [ShapeBounded] at hok
     apply contains_polygon_eq_false_of_beyond
     rcases (show 1000000 ≤ p.x ∨ p.x ≤ -1000000 ∨ 1000000 ≤ p.y ∨ p.y ≤ -1000000 by omega)
       with h | h | h | h
     · refine Or.inl fun v hv => ?_
-      have := hok.2 v hv
+      have := hok v hv
       omega
     · refine Or.inr (Or.inl fun v hv => ?_)
-      have := hok.2 v hv
+      have := hok v hv
       omega
     · refine Or.inr (Or.inr (Or.inl fun v hv => ?_))
-      have := hok.2 v hv
+      have := hok v hv
       omega
     · refine Or.inr (Or.inr (Or.inr fun v hv => ?_))
-      have := hok.2 v hv
+      have := hok v hv
       omega
 
-/-- The same, read the other way: a point inside a shape that passes
-`Shape.ok` has both coordinates strictly within the limit. -/
-theorem inRange_of_contains (s : Shape) (p : Point) (hok : s.ok = true)
+/-- The same for a shape that passes `Shape.ok`. -/
+theorem contains_eq_false_of_far (s : Shape) (p : Point) (hok : s.ok = true)
+    (hfar : coordLimit ≤ p.x.natAbs ∨ coordLimit ≤ p.y.natAbs) : s.contains p = false :=
+  contains_eq_false_of_far' s p (shapeBounded_of_ok s hok) hfar
+
+/-- Read the other way: a point inside a shape within the coordinate limit
+has both coordinates strictly within the limit. -/
+theorem inRange_of_contains' (s : Shape) (p : Point) (hok : ShapeBounded s)
     (h : s.contains p = true) : p.inRange (coordLimit - 1) = true := by
   by_contra hn
   have hfar : coordLimit ≤ p.x.natAbs ∨ coordLimit ≤ p.y.natAbs := by
     simp only [Point.inRange, Bool.and_eq_true, decide_eq_true_eq] at hn
     simp only [coordLimit] at hn ⊢
     omega
-  rw [contains_eq_false_of_far s p hok hfar] at h
+  rw [contains_eq_false_of_far' s p hok hfar] at h
   exact Bool.false_ne_true h
 
-/-- With an accepted configuration, saturated points do not change the
-action: the zones answer as if those points had been left out. -/
-theorem zonesAction_filter_inRange (cfg : Config) (hok : cfg.ok = true) (pts : List Point) :
+theorem inRange_of_contains (s : Shape) (p : Point) (hok : s.ok = true)
+    (h : s.contains p = true) : p.inRange (coordLimit - 1) = true :=
+  inRange_of_contains' s p (shapeBounded_of_ok s hok) h
+
+/-- Every zone that has a shape has one within the coordinate limit. -/
+def ZonesBounded (cfg : Config) : Prop :=
+  ∀ z ∈ cfg.zones, ∀ s, z.shape = .fixed s → ShapeBounded s
+
+theorem zonesBounded_of_ok (cfg : Config) (hok : cfg.ok = true) : ZonesBounded cfg := by
+  intro z hz s hs
+  have := ((config_ok_iff cfg).mp hok z hz).1
+  rw [hs] at this
+  exact shapeBounded_of_ok s this
+
+/-- **Saturated points do not change the action.** If every zone lies within
+the coordinate limit, the zones answer as if the points with a coordinate of
+magnitude `coordLimit` or more had been left out. -/
+theorem zonesAction_filter_inRange' (cfg : Config) (hok : ZonesBounded cfg) (pts : List Point) :
     zonesAction cfg (pts.filter (·.inRange (coordLimit - 1))) = zonesAction cfg pts := by
   apply zonesAction_congr
   intro z hz
-  have hsok := ((config_ok_iff cfg).mp hok z hz).1
   have hc : (pts.filter (·.inRange (coordLimit - 1))).countP z.shape.contains =
       pts.countP z.shape.contains := by
     rw [List.countP_filter]
     apply List.countP_congr
     intro p _
     simp only [Bool.and_eq_true, and_iff_left_iff_imp]
-    exact inRange_of_contains _ p hsok
+    cases hs : z.shape with
+    | topic => simp [ZoneShape.contains]
+    | fixed s => exact inRange_of_contains' s p (hok z hz s hs)
   unfold Zone.triggered Zone.count
   rw [hc]
+
+/-- With an accepted configuration, saturated points do not change the
+action. (For the zones as they stand at a command, topic zones included:
+`liveConfig_bounded` in `Lifecycle.lean`.) -/
+theorem zonesAction_filter_inRange (cfg : Config) (hok : cfg.ok = true) (pts : List Point) :
+    zonesAction cfg (pts.filter (·.inRange (coordLimit - 1))) = zonesAction cfg pts :=
+  zonesAction_filter_inRange' cfg (zonesBounded_of_ok cfg hok) pts
 
 end ROSlean.CollisionMonitor

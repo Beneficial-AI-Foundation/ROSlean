@@ -18,7 +18,13 @@ mention the loops of the model:
   ratio pattern `r < F64.one`, no triggered slowdown zone has a smaller
   ratio, and none before `k` has the same ratio.
 
-Rule numbers refer to `docs/collision_monitor/SPEC.md`.
+A zone list is always that of some configuration. For a command it is the
+configuration with the shapes of the topic zones filled in
+(`Config.withShapes`, `liveConfig`); the lemmas at the end of this file say
+what that configuration is, zone by zone.
+
+Rule numbers refer to `docs/collision_monitor/SPEC.md` (`R…`) and
+`docs/collision_monitor/SPEC_NAV2.md` (`N…`).
 -/
 
 namespace ROSlean.CollisionMonitor
@@ -35,63 +41,130 @@ theorem isStop_eq_false_iff (z : Zone) : z.isStop = false ↔ ∃ r, z.action = 
   unfold Zone.isStop
   cases z.action <;> simp
 
-/-- R11: a zone triggers iff it is enabled and at least `minPoints` of the
-points are inside its shape. -/
+/-- R11, N32: a zone triggers iff it is enabled, has a shape, and at least
+`minPoints` of the points are inside its shape. -/
 theorem triggered_iff (z : Zone) (pts : List Point) :
     z.triggered pts = true ↔
-      z.enabled = true ∧ z.minPoints ≤ pts.countP z.shape.contains := by
+      z.enabled = true ∧ z.shape.isSet = true ∧ z.minPoints ≤ pts.countP z.shape.contains := by
   unfold Zone.triggered Zone.count
-  rw [Bool.and_eq_true, decide_eq_true_iff]
+  rw [Bool.and_eq_true, Bool.and_eq_true, decide_eq_true_iff, and_assoc]
 
 /-- R11: a disabled zone never triggers. -/
 theorem not_triggered_of_disabled (z : Zone) (pts : List Point) (h : z.enabled = false) :
     z.triggered pts = false := by
   simp [Zone.triggered, h]
 
-/-- R11: an enabled zone with `minPoints = 0` triggers on any points, also on
-none. -/
+/-- N32: a zone without shape never triggers, whatever `minPoints` is. -/
+theorem not_triggered_of_topic (z : Zone) (pts : List Point) (h : z.shape = .topic) :
+    z.triggered pts = false := by
+  simp [Zone.triggered, h, ZoneShape.isSet]
+
+/-- R11: an enabled zone that has a shape and `minPoints = 0` triggers on any
+points, also on none. -/
 theorem triggered_of_minPoints_zero (z : Zone) (pts : List Point) (he : z.enabled = true)
-    (h0 : z.minPoints = 0) : z.triggered pts = true := by
-  simp [Zone.triggered, he, h0]
+    (hs : z.shape.isSet = true) (h0 : z.minPoints = 0) : z.triggered pts = true := by
+  simp [Zone.triggered, he, hs, h0]
 
 /-- Without points, only a zone with `minPoints = 0` triggers. -/
 theorem triggered_nil_iff (z : Zone) :
-    z.triggered [] = true ↔ z.enabled = true ∧ z.minPoints = 0 := by
-  simp [Zone.triggered, Zone.count]
+    z.triggered [] = true ↔ z.enabled = true ∧ z.shape.isSet = true ∧ z.minPoints = 0 := by
+  simp [Zone.triggered, Zone.count, and_assoc]
 
-/-! ## The points that are tested (R5 to R8) -/
+/-! ## The points that are tested (R5 to R8, N22, N27) -/
 
-/-- R8: the source is invalid, and the robot must stop, iff the source is
-enabled, its timeout is not zero, and no scan is stored or the stored scan's
-stamp is more than the timeout before `now`. -/
-theorem sourcePoints_eq_none_iff (cfg : Config) (st : State) (now : Nat) :
-    sourcePoints cfg st now = none ↔
-      cfg.sourceEnabled = true ∧ 0 < cfg.sourceTimeout ∧
-        (st.scan = none ∨ ∃ s, st.scan = some s ∧ s.stamp + cfg.sourceTimeout < now) := by
-  unfold sourcePoints
+/-- The command carries no transform for the scan that can be applied: the
+lookup failed or was not made, or (never, with tf2) its result is not usable
+(ND7). -/
+def NoTransform (scanTf : Option Xform) : Prop := ∀ t, scanTf = some t → t.usable = false
+
+theorem noTransform_none : NoTransform none := fun _ h => by cases h
+
+theorem noTransform_some_iff (t : Xform) : NoTransform (some t) ↔ t.usable = false := by
+  simp [NoTransform]
+
+theorem not_noTransform_iff (scanTf : Option Xform) :
+    ¬ NoTransform scanTf ↔ ∃ t, scanTf = some t ∧ t.usable = true := by
+  cases scanTf with
+  | none => simp [NoTransform]
+  | some t => simp [NoTransform]
+
+/-- **The source is invalid** (R8, N27): it is enabled, its timeout is not
+zero, and no scan is stored, or the stored scan's stamp is more than the
+timeout before `now`, or the command carries no usable transform for it. -/
+def SourceInvalid (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform) : Prop :=
+  cfg.sourceEnabled = true ∧ 0 < cfg.sourceTimeout ∧
+    (st.scan = none ∨ (∃ s, st.scan = some s ∧ s.stamp + cfg.sourceTimeout < now) ∨
+      NoTransform scanTf)
+
+/-- R8, N27: the robot must stop for its source iff the source is invalid. -/
+theorem sourcePoints_eq_none_iff (cfg : Config) (st : State) (now : Nat)
+    (scanTf : Option Xform) :
+    sourcePoints cfg st now scanTf = none ↔ SourceInvalid cfg st now scanTf := by
+  unfold sourcePoints SourceInvalid
   cases he : cfg.sourceEnabled <;> cases hs : st.scan with
   | none => simp
-  | some s => simp
+  | some s =>
+    by_cases hstale : 0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now
+    · simp [hstale.1, hstale.2]
+    · cases scanTf with
+      | none =>
+        by_cases h0 : cfg.sourceTimeout = 0
+        · simp [h0, noTransform_none]
+        · have hpos : 0 < cfg.sourceTimeout := by omega
+          simp only [not_and] at hstale
+          simp [h0, hpos, hstale hpos, noTransform_none]
+      | some t =>
+        by_cases h0 : cfg.sourceTimeout = 0
+        · cases hu : t.usable <;> simp [h0, hu]
+        · have hpos : 0 < cfg.sourceTimeout := by omega
+          simp only [not_and] at hstale
+          cases hu : t.usable <;> simp [h0, hpos, hstale hpos, hu, noTransform_some_iff]
 
-/-- R5 to R8: the zones are tested against `pts` iff one of
+/-- R5 to R8, N22, N27: the zones are tested against `pts` iff one of
 
 * the source is disabled and `pts = []` (R6);
 * the timeout is 0, no scan is stored and `pts = []` (R8);
-* a scan is stored, is not too old (R7), and `pts` are its valid points. -/
-theorem sourcePoints_eq_some_iff (cfg : Config) (st : State) (now : Nat) (pts : List Point) :
-    sourcePoints cfg st now = some pts ↔
+* a scan is stored and is not too old (R7), and either the command carries a
+  usable transform `t` and `pts` are the scan's valid points under `t`, or it
+  carries none, the timeout is 0 and `pts = []` (N27). -/
+theorem sourcePoints_eq_some_iff (cfg : Config) (st : State) (now : Nat)
+    (scanTf : Option Xform) (pts : List Point) :
+    sourcePoints cfg st now scanTf = some pts ↔
       (cfg.sourceEnabled = false ∧ pts = []) ∨
       (cfg.sourceEnabled = true ∧ st.scan = none ∧ cfg.sourceTimeout = 0 ∧ pts = []) ∨
       (cfg.sourceEnabled = true ∧ ∃ s, st.scan = some s ∧
-        ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) ∧ pts = s.points) := by
+        ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) ∧
+        ((∃ t, scanTf = some t ∧ t.usable = true ∧ pts = s.points t) ∨
+          (NoTransform scanTf ∧ cfg.sourceTimeout = 0 ∧ pts = []))) := by
   unfold sourcePoints
-  cases he : cfg.sourceEnabled <;> cases hs : st.scan with
+  cases he : cfg.sourceEnabled
+  · simp [eq_comm (b := pts)]
+  cases hs : st.scan with
   | none => simp [eq_comm (b := pts)]
-  | some s => simp [eq_comm (b := pts)]
+  | some s =>
+    by_cases hstale : 0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now
+    · simp [hstale.1, hstale.2]
+    · have hst : (decide (0 < cfg.sourceTimeout) && decide (s.stamp + cfg.sourceTimeout < now))
+          = false := by simpa using hstale
+      have hfresh : 0 < cfg.sourceTimeout → now ≤ s.stamp + cfg.sourceTimeout := by
+        intro hp; omega
+      cases scanTf with
+      | none =>
+        by_cases h0 : cfg.sourceTimeout = 0
+        · simp [h0, noTransform_none, eq_comm (b := pts)]
+        · simp [h0, hst, noTransform_none]
+      | some t =>
+        by_cases h0 : cfg.sourceTimeout = 0
+        · cases hu : t.usable <;> simp [h0, hu, noTransform_some_iff, eq_comm (b := pts)]
+        · cases hu : t.usable
+          · simp [h0, hst, hu, noTransform_some_iff]
+          · simpa [h0, hst, hu, noTransform_some_iff, eq_comm (b := pts)] using
+              fun (_ : pts = s.points t) => hfresh
 
 /-- `sourcePoints` reads the state only through the stored scan. -/
-theorem sourcePoints_congr (cfg : Config) (st st' : State) (now : Nat) (h : st.scan = st'.scan) :
-    sourcePoints cfg st now = sourcePoints cfg st' now := by
+theorem sourcePoints_congr (cfg : Config) (st st' : State) (now : Nat) (scanTf : Option Xform)
+    (h : st.scan = st'.scan) :
+    sourcePoints cfg st now scanTf = sourcePoints cfg st' now scanTf := by
   simp [sourcePoints, h]
 
 /-! ## The first triggered stop zone (R12) -/
@@ -419,46 +492,108 @@ theorem zonesAction_ne_stopSource (cfg : Config) (pts : List Point) :
   | none =>
     rcases hb : bestSlowdown cfg pts with ⟨r', _ | k'⟩ <;> simp
 
+/-- The action depends on the zones and the points only through the action of
+each zone, in order, and whether it is triggered. -/
+theorem zonesAction_eq_of_map (cfg cfg' : Config) (pts pts' : List Point)
+    (h : cfg.zones.map (fun z => (z.action, z.triggered pts)) =
+      cfg'.zones.map (fun z => (z.action, z.triggered pts'))) :
+    zonesAction cfg pts = zonesAction cfg' pts' := by
+  have hfirst : firstStop cfg pts = firstStop cfg' pts' := by
+    rw [firstStop_eq_findIdx?, firstStop_eq_findIdx?]
+    have key : ∀ (zs : List Zone) (q : List Point),
+        zs.findIdx? (fun z => z.isStop && z.triggered q) =
+          (zs.map (fun z => (z.action, z.triggered q))).findIdx?
+            (fun a => (match a.1 with | .stop => true | .slowdown _ => false) && a.2) := by
+      intro zs q
+      rw [List.findIdx?_map]
+      rfl
+    rw [key, key, h]
+  have hbest : bestSlowdown cfg pts = bestSlowdown cfg' pts' := by
+    have key : ∀ (zs : List Zone) (q : List Point),
+        zs.zipIdx.foldl (slowdownStep q) (F64.one, none) =
+          (zs.map (fun z => (z.action, z.triggered q))).zipIdx.foldl
+            (fun (best : Nat × Option Nat) (ai : (ZoneAction × Bool) × Nat) =>
+              match ai.1.1 with
+              | .stop => best
+              | .slowdown r => if ai.1.2 && decide (r < best.1) then (r, some ai.2) else best)
+            (F64.one, none) := by
+      intro zs q
+      rw [List.zipIdx_map, List.foldl_map]
+      rfl
+    unfold bestSlowdown
+    rw [key, key, h]
+  unfold zonesAction
+  rw [hfirst, hbest]
+
 /-- The action depends on the points only through which zones they trigger. -/
 theorem zonesAction_congr (cfg : Config) (pts pts' : List Point)
     (h : ∀ z ∈ cfg.zones, z.triggered pts = z.triggered pts') :
     zonesAction cfg pts = zonesAction cfg pts' := by
-  have hstop : ∀ k, IsFirstStop cfg.zones pts k ↔ IsFirstStop cfg.zones pts' k := by
-    intro k
-    unfold IsFirstStop
-    refine exists_congr fun z => and_congr_right fun hz => and_congr_right fun _ => ?_
-    rw [h z (List.mem_of_getElem? hz)]
-    refine and_congr_right fun _ => ?_
-    refine forall_congr' fun j => forall_congr' fun z' => forall_congr' fun _ =>
-      forall_congr' fun hz' => ?_
-    rw [h z' (List.mem_of_getElem? hz')]
-  have hnostop : NoStop cfg.zones pts ↔ NoStop cfg.zones pts' := by
-    unfold NoStop
-    refine forall_congr' fun z => forall_congr' fun hz => ?_
-    rw [h z hz]
-  have hbest : ∀ k r, IsBestSlowdown cfg.zones pts k r ↔ IsBestSlowdown cfg.zones pts' k r := by
-    intro k r
-    unfold IsBestSlowdown
-    refine exists_congr fun z => and_congr_right fun hz => and_congr_right fun _ => ?_
-    rw [h z (List.mem_of_getElem? hz)]
-    refine and_congr_right fun _ => and_congr_right fun _ => ?_
-    refine forall_congr' fun j => forall_congr' fun z' => forall_congr' fun r' =>
-      forall_congr' fun hz' => ?_
-    rw [h z' (List.mem_of_getElem? hz')]
-  have hnoslow : NoSlowdown cfg.zones pts ↔ NoSlowdown cfg.zones pts' := by
-    unfold NoSlowdown
-    refine forall_congr' fun z => forall_congr' fun hz => ?_
-    rw [h z hz]
-  cases ha : zonesAction cfg pts' with
-  | pass =>
-    rw [zonesAction_eq_pass_iff] at ha ⊢
-    exact ⟨hnostop.mpr ha.1, hnoslow.mpr ha.2⟩
-  | slowdown k r =>
-    rw [zonesAction_eq_slowdown_iff] at ha ⊢
-    exact ⟨hnostop.mpr ha.1, (hbest k r).mpr ha.2⟩
-  | stopZone k =>
-    rw [zonesAction_eq_stopZone_iff] at ha ⊢
-    exact (hstop k).mpr ha
-  | stopSource => exact absurd ha (zonesAction_ne_stopSource cfg pts')
+  apply zonesAction_eq_of_map
+  apply List.map_congr_left
+  intro z hz
+  rw [h z hz]
+
+/-! ## The zones with their shapes filled in (N32, N34) -/
+
+/-- Filling in a shape changes nothing but the shape. -/
+theorem withShape_fields (z : Zone) (sh : Option TopicShape) :
+    (z.withShape sh).action = z.action ∧ (z.withShape sh).minPoints = z.minPoints ∧
+      (z.withShape sh).enabled = z.enabled := by
+  unfold Zone.withShape
+  split <;> exact ⟨rfl, rfl, rfl⟩
+
+/-- A fixed zone is not affected by the state. -/
+theorem withShape_of_fixed (z : Zone) (sh : Option TopicShape) (s : Shape)
+    (h : z.shape = .fixed s) : z.withShape sh = z := by
+  unfold Zone.withShape
+  split
+  · rename_i h'; rw [h] at h'; cases h'
+  · rfl
+
+/-- N32: a topic zone without shape stays without one. -/
+theorem withShape_none (z : Zone) : z.withShape none = z := by
+  unfold Zone.withShape
+  split
+  · rename_i h; cases h
+  · rfl
+
+/-- A topic zone with an accepted shape is the polygon of its current
+vertices. -/
+theorem withShape_of_topic (z : Zone) (sh : TopicShape) (h : z.shape = .topic) :
+    z.withShape (some sh) = { z with shape := .fixed (.polygon sh.current) } := by
+  simp [Zone.withShape, h]
+
+theorem withShapes_length (cfg : Config) (shapes : List (Option TopicShape)) :
+    (cfg.withShapes shapes).zones.length = cfg.zones.length := by
+  simp [Config.withShapes]
+
+/-- Zone `k` of the configuration with shapes is zone `k` with entry `k` of
+the shapes. -/
+theorem withShapes_getElem? (cfg : Config) (shapes : List (Option TopicShape)) (k : Nat) :
+    (cfg.withShapes shapes).zones[k]? =
+      cfg.zones[k]?.map (fun z => z.withShape (shapes.getD k none)) := by
+  simp only [Config.withShapes, List.getElem?_map, List.getElem?_zipIdx]
+  cases cfg.zones[k]? <;> simp
+
+theorem withShapes_fields (cfg : Config) (shapes : List (Option TopicShape)) :
+    (cfg.withShapes shapes).sourceEnabled = cfg.sourceEnabled ∧
+      (cfg.withShapes shapes).sourceTimeout = cfg.sourceTimeout ∧
+      (cfg.withShapes shapes).stopPubTimeout = cfg.stopPubTimeout := ⟨rfl, rfl, rfl⟩
+
+/-- A configured zone with its action, as it stands in the configuration with
+shapes. -/
+theorem withShapes_action (cfg : Config) (shapes : List (Option TopicShape)) (k : Nat) (z : Zone)
+    (h : (cfg.withShapes shapes).zones[k]? = some z) :
+    ∃ z0, cfg.zones[k]? = some z0 ∧ z = z0.withShape (shapes.getD k none) ∧
+      z.action = z0.action ∧ z.minPoints = z0.minPoints ∧ z.enabled = z0.enabled := by
+  rw [withShapes_getElem?] at h
+  cases h0 : cfg.zones[k]? with
+  | none => simp [h0] at h
+  | some z0 =>
+    simp only [h0, Option.map_some, Option.some.injEq] at h
+    subst h
+    exact ⟨z0, rfl, rfl, (withShape_fields z0 _).1, (withShape_fields z0 _).2.1,
+      (withShape_fields z0 _).2.2⟩
 
 end ROSlean.CollisionMonitor
