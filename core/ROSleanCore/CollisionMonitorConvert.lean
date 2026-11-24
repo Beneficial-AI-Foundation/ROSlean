@@ -10,7 +10,8 @@ one of the model's integers is here, in exact integer arithmetic: there is no
 
 | Value | Function | Rule |
 | --- | --- | --- |
-| scan coordinate, `double` metres | `coordMm` | millimetres truncated toward zero, saturated at ±`coordLimit`; NaN is `+coordLimit` |
+| scan coordinate, `double` metres, base frame | `coordMm` | millimetres truncated toward zero, saturated at ±`coordLimit`; NaN is `+coordLimit` |
+| vertex coordinate of a topic zone, `double` metres, base frame | `vertexCoordMm` | millimetres rounded to nearest; ±`coordLimit` (always refused) if not finite or 1024 m or more |
 | circle radius, `double` metres | `radiusMm` | magnitude in millimetres rounded up, plus 1; refused if not finite or 1000 m or more |
 | polygon vertex coordinate, `float` metres | `vertexMm` | millimetres rounded to nearest; refused if not finite |
 | timeout, `double` seconds | `timeoutNs` | nanoseconds as `rclcpp::Duration::from_seconds` computes them; refused if negative, not finite, or 9.2·10⁹ s or more |
@@ -19,12 +20,11 @@ one of the model's integers is here, in exact integer arithmetic: there is no
 "Refused" is `none`: the builder then marks the configuration as not accepted
 (`ROSleanCore.CollisionMonitorFFI`).
 
-Since the model applies a transform to every scan point
-(`Xform.pointMm`, `ROSleanCore.CollisionMonitorXform`), `coordMm` is no
-longer on the path of a scan: it remains as the reference for the identity
-transform (`Xform.identity.pointMm x y = (coordMm x, coordMm y)` for finite
-coordinates, proved in `ROSlean/CollisionMonitor/Transform.lean`) and as the
-exported query `roslean_cm_coord_mm`.
+`coordMm` and `vertexCoordMm` are applied by the model itself, to the
+coordinates a command or a shape message carries (`scanPointMm`,
+`vertexPointMm`), so they are defined below the model, in
+`ROSleanCore.CollisionMonitorPoint`, with the reading of a bit pattern. The
+others are applied when the configuration is built and are defined here.
 
 A finite binary64 value with pattern `b` has magnitude
 `F64.mant b * 2 ^ F64.shift b / 2 ^ 1075`, and a finite binary32 value has
@@ -40,32 +40,8 @@ namespace ROSleanCore.CollisionMonitorFFI
 
 open ROSleanCore.CollisionMonitor
 
-/-! The reading of a bit pattern (`F64.mant`, `F64.shift`, `F32.mant`, …) is
-in `ROSleanCore.CollisionMonitorXform`, because the model's transform needs
-it too. -/
-
-/-! ## Scan coordinates -/
-
-/-- The magnitude of a coordinate in whole millimetres, rounded down, given
-the pattern without its sign bit: `⌊|v| · 1000⌋`, or `coordLimit` if that is
-`coordLimit` or more, or if the value is infinite or NaN.
-
-A value of 1024 m or more saturates without any arithmetic; below that the
-product `mant * 1000` is shifted right by at least 43 bits, and both fit a
-machine word. -/
-def coordMagMm (mag : Nat) : Nat :=
-  if 1033 ≤ F64.expField mag then coordLimit
-  else min coordLimit ((F64.mant mag * 1000) >>> (F64.bias - F64.shift mag))
-
-/-- A coordinate in metres, given as sign and pattern without the sign bit, in
-whole millimetres: truncated toward zero, so that a point never moves away
-from the origin, and saturated at `±coordLimit`. NaN, of either sign, is
-`+coordLimit` (SPEC, "Far and non-finite points"). -/
-def coordMmOfParts (neg : Bool) (mag : Nat) : Int :=
-  if neg && !F64.isNaN mag then -(coordMagMm mag : Int) else (coordMagMm mag : Int)
-
-/-- `coordMmOfParts` for a whole binary64 pattern. -/
-def coordMm (b : Nat) : Int := coordMmOfParts (F64.neg b) (b % 0x8000000000000000)
+/-! The reading of a bit pattern (`F64.mant`, `F64.shift`, `F32.mant`, …),
+`coordMm` and `vertexCoordMm` are in `ROSleanCore.CollisionMonitorPoint`. -/
 
 /-! ## Shapes -/
 

@@ -3,7 +3,7 @@ import ROSleanCore.CollisionMonitorFFI
 import ROSlean.CollisionMonitor.Convert
 import ROSlean.CollisionMonitor.Properties
 import ROSlean.CollisionMonitor.Trace
-import ROSlean.CollisionMonitor.Transform
+import ROSlean.CollisionMonitor.Margin
 
 /-!
 # The C interface computes the collision monitor model
@@ -33,16 +33,20 @@ the node executes.
   `stopSource`, after any sequence of calls (`apply_cmd_of_not_ok`,
   `foldl_exec_not_ok`).
 * **Scan decoding.** The byte array of a scan is decoded by a total function
-  into `size / 20` beams (`decodeBeams_length`, `getElem_decodeBeams`), every
-  decoded pattern fits its field (`beamAt_lt`), and decoding inverts the
-  encoding the shim performs (`decodeBeams_encodeBeams`). The coordinates
-  are no longer converted here: they stay bit patterns until a command, and
-  become points under the command's transform (`Xform.pointMm`;
-  `Transform.pointMm_identity` says that the identity gives `coordMm`).
+  into `size / 20` readings and as many coordinate pairs
+  (`decodeBeams_length`, `decodeCoords_length`, `getElem_decodeBeams`,
+  `getElem_decodeCoords`), every decoded pattern fits its field
+  (`beamAt_lt`, `coordsAt_lt`), and decoding inverts the encoding the shim
+  performs (`decodeBeams_encodeBeams`, `decodeCoords_encodeBeams`). The
+  coordinates are in the base frame already. They are kept as bit patterns
+  and travel with every command; the model converts them with `coordMm`
+  when the command is evaluated. They always fit the stored scan
+  (`fits_decode`), and the points are those of the valid records
+  (`points_decode`).
 * **Events.** Each call is `step` on the event it delivers
   (`cmOnScan_eq`, `cmOnCmd_eq`, `exec_eq_apply`). The event of a command
-  depends on whether the scan stored last was reported usable
-  (`Call.event`, `events`): the identity transform if so, none if not. So
+  carries the coordinates of the scan call made last
+  (`Call.event`, `events`), or none if that scan was reported unusable. So
   after any sequence of calls, with no condition on them, the state is the
   one `run` reaches on the events they deliver (`foldl_exec_run`), from the
   state after `configure` and `activate` (`startState`, `run_startState`).
@@ -62,8 +66,8 @@ What remains outside Lean is the C++ shim: reading the parameters and the
 clock, the floating-point work listed in the SPEC as T1 to T3, and acting on
 the returned decision.
 
-This file describes the interface as it stands after task T05: the calls of
-the node of SPEC.md, read in the extended model. The calls of
+This file describes the interface as it stands after tasks T05 and T05b: the
+calls of the node of SPEC.md, read in the extended model. The calls of
 SPEC_NAV2.md, section 8, and their theorems are task T06.
 -/
 
@@ -104,7 +108,8 @@ theorem actionOfRaw_of_ne_one (a : UInt8) (r : UInt64) (h : a ≠ 1) : actionOfR
 
 /-- The fields of a zone built from raw values, when `min_points` is
 accepted. -/
-theorem zoneOfRaw_fields (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) (n : Nat)
+theorem zoneOfRaw_fields (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8)
+    (n : Nat)
     (h : minPointsOfRaw mp.toInt = some n) :
     zoneOfRaw s a r mp en =
       ({ shape := s, action := actionOfRaw a r, minPoints := n, enabled := en != 0 }, 0) := by
@@ -225,7 +230,7 @@ error. -/
 theorem cmNew_eq (b : Builder) :
     cmNew b = { cfg := b.cfg, ok := b.error == 0, err := b.error,
                 zoneErrs := b.zones.map entryError, st := startState b.cfg, out := .silent,
-                placed := true } := rfl
+                coords := none } := rfl
 
 /-- The state a monitor starts in is the initial state with the phase
 `active`: nothing else is touched by `configure` and `activate`. -/
@@ -638,20 +643,50 @@ theorem coordMmOfParts_halves (lo hi : Nat) (hlo : lo < 2 ^ 32) (hhi : hi < 2 ^ 
   rw [h1, h2]
 
 /-- Every decoded pattern fits its field, whatever the bytes: the range is a
-32-bit pattern and the coordinates are 64-bit patterns. -/
-theorem beamAt_lt (a : ByteArray) (i : Nat) :
-    (beamAt a i).range < 2 ^ 32 ∧ (beamAt a i).x < 2 ^ 64 ∧ (beamAt a i).y < 2 ^ 64 :=
-  ⟨u32At_lt .., u64At_lt .., u64At_lt ..⟩
+32-bit pattern. -/
+theorem beamAt_lt (a : ByteArray) (i : Nat) : (beamAt a i).range < 2 ^ 32 := u32At_lt ..
+
+/-- The coordinates are 64-bit patterns. -/
+theorem coordsAt_lt (a : ByteArray) (i : Nat) :
+    (coordsAt a i).1 < 2 ^ 64 ∧ (coordsAt a i).2 < 2 ^ 64 := ⟨u64At_lt .., u64At_lt ..⟩
 
 /-- A byte array of any length is a scan of `size / 20` readings; a trailing
 partial record is ignored. -/
 theorem decodeBeams_length (a : ByteArray) : (decodeBeams a).length = a.size / 20 := by
   simp [decodeBeams, recordSize]
 
+/-- There is one coordinate pair per reading. -/
+theorem decodeCoords_length (a : ByteArray) : (decodeCoords a).length = a.size / 20 := by
+  simp [decodeCoords, recordSize]
+
 /-- Reading `i` of the decoded scan is record `i` of the array. -/
 theorem getElem_decodeBeams (a : ByteArray) (i : Nat) (h : i < (decodeBeams a).length) :
     (decodeBeams a)[i] = beamAt a i := by
   simp [decodeBeams]
+
+/-- Pair `i` of the decoded coordinates is that of record `i` of the array. -/
+theorem getElem_decodeCoords (a : ByteArray) (i : Nat) (h : i < (decodeCoords a).length) :
+    (decodeCoords a)[i] = coordsAt a i := by
+  simp [decodeCoords]
+
+/-- **The coordinates of a scan call fit the scan of that call**, whatever
+the bytes: the model never treats them as a failed lookup. -/
+theorem fits_decode (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
+    (scanOfRaw stamp rmin rmax a).fits (decodeCoords a) = true := by
+  simp [Scan.fits, scanOfRaw, decodeBeams_length, decodeCoords_length]
+
+/-- **The points of a scan call.** With the coordinates of its own records,
+the scan's points are the converted coordinates of the records whose range
+is valid (R4), in order: what the node of SPEC.md computed when the scan
+arrived, now computed for each command. -/
+theorem points_decode (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
+    (scanOfRaw stamp rmin rmax a).points (decodeCoords a) =
+      ((List.range (a.size / recordSize)).filter
+        (fun i => (scanOfRaw stamp rmin rmax a).validBeam (beamAt a i))).map
+        (fun i => scanPointMm (coordsAt a i)) := by
+  simp only [Scan.points, scanOfRaw, decodeBeams, decodeCoords, List.zip_map', List.filter_map,
+    List.map_map]
+  rfl
 
 /-- An empty array is a scan without readings. -/
 theorem decodeBeams_empty : decodeBeams ByteArray.empty = [] := rfl
@@ -663,9 +698,11 @@ structure RawBeam where
   x : Nat
   y : Nat
 
-/-- The beam of the model that a raw reading denotes: the same three
-patterns. -/
-def RawBeam.beam (r : RawBeam) : Beam := { range := r.range, x := r.x, y := r.y }
+/-- The beam of the model that a raw reading denotes: its range pattern. -/
+def RawBeam.beam (r : RawBeam) : Beam := { range := r.range }
+
+/-- The coordinates of a raw reading: the two patterns as given. -/
+def RawBeam.coords (r : RawBeam) : Coords := (r.x, r.y)
 
 /-- The patterns fit their fields. -/
 def RawBeam.Fits (r : RawBeam) : Prop := r.range < 2 ^ 32 ∧ r.x < 2 ^ 64 ∧ r.y < 2 ^ 64
@@ -725,10 +762,56 @@ theorem getElem?_flatMap_rawBytes (rs : List RawBeam) (i j : Nat) (hj : j < 20) 
 theorem toNat_toUInt8_mod (n : Nat) : (n % 256).toUInt8.toNat = n % 256 := by
   simp [Nat.toUInt8]
 
-/-- **Decoding inverts the encoding.** If the shim writes the records of the
-SPEC for readings whose patterns fit their fields, the model sees exactly
-those readings, in order: the range and the two coordinate patterns as
-given, unconverted. -/
+/-- The three fields of record `i` of an encoded scan are those of reading
+`i`. -/
+theorem record_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) (i : Nat)
+    (h2 : i < rs.length) :
+    u32At (encodeBeams rs) (recordSize * i) = rs[i].range ∧
+      u64At (encodeBeams rs) (recordSize * i + 4) = rs[i].x ∧
+      u64At (encodeBeams rs) (recordSize * i + 12) = rs[i].y := by
+  obtain ⟨hr, hx, hy⟩ := h rs[i] (List.getElem_mem h2)
+  have hb : rs[i]? = some rs[i] := List.getElem?_eq_getElem h2
+  have key : ∀ j, j < 20 → byteAt (encodeBeams rs) (20 * i + j) =
+      (((rawBytes rs[i])[j]?).map UInt8.toNat).getD 0 := by
+    intro j hj
+    rw [byteAt_encodeBeams, getElem?_flatMap_rawBytes rs i j hj, hb]
+    rfl
+  have k0 := key 0 (by omega)
+  have k1 := key 1 (by omega)
+  have k2 := key 2 (by omega)
+  have k3 := key 3 (by omega)
+  have k4 := key 4 (by omega)
+  have k5 := key 5 (by omega)
+  have k6 := key 6 (by omega)
+  have k7 := key 7 (by omega)
+  have k8 := key 8 (by omega)
+  have k9 := key 9 (by omega)
+  have k10 := key 10 (by omega)
+  have k11 := key 11 (by omega)
+  have k12 := key 12 (by omega)
+  have k13 := key 13 (by omega)
+  have k14 := key 14 (by omega)
+  have k15 := key 15 (by omega)
+  have k16 := key 16 (by omega)
+  have k17 := key 17 (by omega)
+  have k18 := key 18 (by omega)
+  have k19 := key 19 (by omega)
+  simp only [rawBytes, leBytes, List.cons_append, List.nil_append, List.getElem?_cons_zero,
+    List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.add_zero,
+    toNat_toUInt8_mod] at k0 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k17 k18 k19
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [u32At, recordSize, k0, k1, k2, k3]
+    omega
+  · simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k4, k5, k6, k7, k8, k9,
+      k10, k11]
+    omega
+  · simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k12, k13, k14, k15, k16,
+      k17, k18, k19]
+    omega
+
+/-- **Decoding inverts the encoding (ranges).** If the shim writes the
+records of the SPEC for readings whose patterns fit their fields, the model
+sees exactly those readings, in order. -/
 theorem decodeBeams_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
     decodeBeams (encodeBeams rs) = rs.map RawBeam.beam := by
   apply List.ext_getElem
@@ -736,48 +819,19 @@ theorem decodeBeams_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
   · intro i h1 h2
     rw [List.length_map] at h2
     rw [getElem_decodeBeams, List.getElem_map]
-    obtain ⟨hr, hx, hy⟩ := h rs[i] (List.getElem_mem h2)
-    have hb : rs[i]? = some rs[i] := List.getElem?_eq_getElem h2
-    have key : ∀ j, j < 20 → byteAt (encodeBeams rs) (20 * i + j) =
-        (((rawBytes rs[i])[j]?).map UInt8.toNat).getD 0 := by
-      intro j hj
-      rw [byteAt_encodeBeams, getElem?_flatMap_rawBytes rs i j hj, hb]
-      rfl
-    have k0 := key 0 (by omega)
-    have k1 := key 1 (by omega)
-    have k2 := key 2 (by omega)
-    have k3 := key 3 (by omega)
-    have k4 := key 4 (by omega)
-    have k5 := key 5 (by omega)
-    have k6 := key 6 (by omega)
-    have k7 := key 7 (by omega)
-    have k8 := key 8 (by omega)
-    have k9 := key 9 (by omega)
-    have k10 := key 10 (by omega)
-    have k11 := key 11 (by omega)
-    have k12 := key 12 (by omega)
-    have k13 := key 13 (by omega)
-    have k14 := key 14 (by omega)
-    have k15 := key 15 (by omega)
-    have k16 := key 16 (by omega)
-    have k17 := key 17 (by omega)
-    have k18 := key 18 (by omega)
-    have k19 := key 19 (by omega)
-    simp only [rawBytes, leBytes, List.cons_append, List.nil_append, List.getElem?_cons_zero,
-      List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.add_zero,
-      toNat_toUInt8_mod] at k0 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 k16 k17 k18 k19
-    have e0 : u32At (encodeBeams rs) (recordSize * i) = rs[i].range := by
-      simp only [u32At, recordSize, k0, k1, k2, k3]
-      omega
-    have ex : u64At (encodeBeams rs) (recordSize * i + 4) = rs[i].x := by
-      simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k4, k5, k6, k7, k8, k9,
-        k10, k11]
-      omega
-    have ey : u64At (encodeBeams rs) (recordSize * i + 12) = rs[i].y := by
-      simp only [u64At, u32At, recordSize, Nat.add_assoc, Nat.reduceAdd, k12, k13, k14, k15, k16,
-        k17, k18, k19]
-      omega
-    simp only [beamAt, e0, ex, ey, RawBeam.beam]
+    simp only [beamAt, (record_encodeBeams rs h i h2).1, RawBeam.beam]
+
+/-- **Decoding inverts the encoding (coordinates).** The model sees the two
+coordinate patterns of every reading as given, unconverted, in order. -/
+theorem decodeCoords_encodeBeams (rs : List RawBeam) (h : ∀ r ∈ rs, r.Fits) :
+    decodeCoords (encodeBeams rs) = rs.map RawBeam.coords := by
+  apply List.ext_getElem
+  · rw [decodeCoords_length, encodeBeams_size, List.length_map]; omega
+  · intro i h1 h2
+    rw [List.length_map] at h2
+    rw [getElem_decodeCoords, List.getElem_map]
+    simp only [coordsAt, (record_encodeBeams rs h i h2).2.1, (record_encodeBeams rs h i h2).2.2,
+      RawBeam.coords]
 
 /-- The scan the model sees: stamp (negative taken as 0, D8), the two limits
 as given, and the decoded readings. -/
@@ -790,7 +844,7 @@ theorem scanOfRaw_fields (stamp : Int64) (rmin rmax : UInt32) (a : ByteArray) :
 /-! ## Events -/
 
 theorem apply_cfg (m : Monitor) (e : Event) :
-    (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok ∧ (m.apply e).placed = m.placed := by
+    (m.apply e).cfg = m.cfg ∧ (m.apply e).ok = m.ok ∧ (m.apply e).coords = m.coords := by
   unfold Monitor.apply
   split
   · exact ⟨rfl, rfl, rfl⟩
@@ -805,57 +859,58 @@ theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
 
 /-- **Fail closed.** A monitor that is not ok answers every command in the
 active phase with `stopSource`: whatever the command (finite or not), the
-scans it was given, the transforms, and the time. -/
-theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanTf : Option Xform)
-    (zoneTfs : List (Option Xform)) (h : m.ok = false) (hp : m.st.phase = .active) :
-    (m.apply (.cmd now v scanTf zoneTfs)).out = .answer (some .stopSource) none := by
+scans it was given, the coordinates, and the time. -/
+theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanPts : Option (List Coords))
+    (zoneVerts : List (Option (List Coords))) (h : m.ok = false) (hp : m.st.phase = .active) :
+    (m.apply (.cmd now v scanPts zoneVerts)).out = .answer (some .stopSource) none := by
   unfold Monitor.apply
   simp [h, hp]
 
 /-- A monitor that is not ok keeps its state under scans, shape messages and
 commands. -/
 theorem apply_st_of_not_ok (m : Monitor) (e : Event) (h : m.ok = false)
-    (he : (∃ now s, e = .scan now s) ∨ (∃ k verts place, e = .shape k verts place) ∨
-      ∃ now v scanTf zoneTfs, e = .cmd now v scanTf zoneTfs) :
+    (he : (∃ now s, e = .scan now s) ∨ (∃ k verts foreign, e = .shape k verts foreign) ∨
+      ∃ now v scanPts zoneVerts, e = .cmd now v scanPts zoneVerts) :
     (m.apply e).st = m.st := by
   unfold Monitor.apply
-  rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, place, rfl⟩ | ⟨now, v, scanTf, zoneTfs, rfl⟩ <;>
+  rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, foreign, rfl⟩ | ⟨now, v, scanPts, zoneVerts, rfl⟩ <;>
     simp [h]
 
 /-- The scan call is `Monitor.apply` on a scan event, which stores the scan,
-and records whether the scan was reported usable. -/
+and remembers the coordinates of its records, or none if the scan was
+reported unusable. -/
 theorem cmOnScan_eq (m : Monitor) (now : UInt64) (stamp : Int64) (usable : UInt8)
     (rmin rmax : UInt32) (a : ByteArray) :
     cmOnScan m now stamp usable rmin rmax a =
-      { m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) with placed := usable != 0 } :=
+      { m.apply (.scan now.toNat (scanOfRaw stamp rmin rmax a)) with
+        coords := if usable != 0 then some (decodeCoords a) else none } :=
   rfl
 
 /-- The command call is `Monitor.apply` on a command event with the six
 patterns in the order `linear.x`, `linear.y`, `linear.z`, `angular.x`,
-`angular.y`, `angular.z`, the identity transform for the scan if the scan
-stored last was reported usable and none if it was not, and no zone
-transforms. -/
+`angular.y`, `angular.z`, the coordinates remembered from the scan call made
+last (none if that scan was reported unusable), and no zone vertices. -/
 theorem cmOnCmd_eq (m : Monitor) (now lx ly lz ax ay az : UInt64) :
     cmOnCmd m now lx ly lz ax ay az =
       m.apply (.cmd now.toNat ⟨lx.toNat, ly.toNat, lz.toNat, ax.toNat, ay.toNat, az.toNat⟩
-        (if m.placed then some Xform.identity else none) []) := rfl
+        m.coords []) := rfl
 
 /-- **An unusable scan stops the robot by the source rule.** After a scan
-call that the shim reports as unusable (D11), commands carry no transform
+call that the shim reports as unusable (D11), commands carry no coordinates
 for the scan, and with an enabled source and a non-zero source timeout the
 action demanded at every time, in every state, is `stopSource` (N27), until
 a scan is reported usable. This is what the removed event `scanUnusable`
 did. -/
 theorem cmOnScan_unusable_stop (m : Monitor) (now : UInt64) (stamp : Int64) (rmin rmax : UInt32)
     (a : ByteArray) (he : m.cfg.sourceEnabled = true) (ht : 0 < m.cfg.sourceTimeout) :
-    (cmOnScan m now stamp 0 rmin rmax a).placed = false ∧
+    (cmOnScan m now stamp 0 rmin rmax a).coords = none ∧
       ∀ (st : State) (t : Nat) (lx ly lz ax ay az : UInt64),
-        ∃ v, cmdEvent false (UInt64.ofNat t) lx ly lz ax ay az =
+        ∃ v, cmdEvent none (UInt64.ofNat t) lx ly lz ax ay az =
             .cmd (UInt64.ofNat t).toNat v none [] ∧
           evaluate m.cfg st (UInt64.ofNat t).toNat none [] = .stopSource := by
   refine ⟨rfl, fun st t lx ly lz ax ay az => ⟨_, rfl, ?_⟩⟩
   rw [evaluate_eq_stopSource_iff]
-  exact ⟨he, ht, Or.inr (Or.inr noTransform_none)⟩
+  exact ⟨he, ht, Or.inr (Or.inr (noScanPoints_none st))⟩
 
 /-- After any sequence of events an ok monitor has the same configuration and
 the state `run` reaches. -/
@@ -881,38 +936,39 @@ def Call.exec (m : Monitor) : Call → Monitor
   | .scan now stamp usable rmin rmax a => cmOnScan m now stamp usable rmin rmax a
   | .cmd now lx ly lz ax ay az => cmOnCmd m now lx ly lz ax ay az
 
-/-- The event of the model that a call delivers, given whether the scan
-stored last was reported usable. A scan call delivers a `scan`; a command
-call a `cmd` with the identity transform or none (`cmdEvent`). -/
-def Call.event (placed : Bool) : Call → Event
+/-- The event of the model that a call delivers, given the coordinates
+remembered from the scan call made last. A scan call delivers a `scan`; a
+command call a `cmd` that carries those coordinates (`cmdEvent`). -/
+def Call.event (coords : Option (List Coords)) : Call → Event
   | .scan now stamp _ rmin rmax a => .scan now.toNat (scanOfRaw stamp rmin rmax a)
-  | .cmd now lx ly lz ax ay az => cmdEvent placed now lx ly lz ax ay az
+  | .cmd now lx ly lz ax ay az => cmdEvent coords now lx ly lz ax ay az
 
-/-- Whether the scan stored last was reported usable, after the call. -/
-def Call.placed (placed : Bool) : Call → Bool
-  | .scan _ _ usable _ _ _ => usable != 0
-  | .cmd _ _ _ _ _ _ _ => placed
+/-- The coordinates remembered after the call: those of a usable scan call,
+none after an unusable one, unchanged by a command. -/
+def Call.coords (coords : Option (List Coords)) : Call → Option (List Coords)
+  | .scan _ _ usable _ _ a => if usable != 0 then some (decodeCoords a) else none
+  | .cmd _ _ _ _ _ _ _ => coords
 
 /-- The events a sequence of calls delivers. -/
-def events (placed : Bool) : List Call → List Event
+def events (coords : Option (List Coords)) : List Call → List Event
   | [] => []
-  | c :: cs => c.event placed :: events (c.placed placed) cs
+  | c :: cs => c.event coords :: events (c.coords coords) cs
 
-/-- Whether the scan stored last was reported usable, after the calls. -/
-def placedAfter (placed : Bool) (cs : List Call) : Bool :=
-  cs.foldl (fun p c => c.placed p) placed
+/-- The coordinates remembered after the calls. -/
+def coordsAfter (coords : Option (List Coords)) (cs : List Call) : Option (List Coords) :=
+  cs.foldl (fun p c => c.coords p) coords
 
-/-- Every call is `Monitor.apply` on the event it delivers, and records
-whether the scan stored last is usable. -/
+/-- Every call is `Monitor.apply` on the event it delivers, and remembers the
+coordinates of the scan call made last. -/
 theorem exec_eq_apply (m : Monitor) (c : Call) :
-    c.exec m = { m.apply (c.event m.placed) with placed := c.placed m.placed } := by
+    c.exec m = { m.apply (c.event m.coords) with coords := c.coords m.coords } := by
   cases c with
   | scan now stamp usable rmin rmax a => rfl
   | cmd now lx ly lz ax ay az =>
-    show m.apply (cmdEvent m.placed now lx ly lz ax ay az) =
-      { m.apply (cmdEvent m.placed now lx ly lz ax ay az) with placed := m.placed }
-    have h := (apply_cfg m (cmdEvent m.placed now lx ly lz ax ay az)).2.2
-    generalize m.apply (cmdEvent m.placed now lx ly lz ax ay az) = m' at h ⊢
+    show m.apply (cmdEvent m.coords now lx ly lz ax ay az) =
+      { m.apply (cmdEvent m.coords now lx ly lz ax ay az) with coords := m.coords }
+    have h := (apply_cfg m (cmdEvent m.coords now lx ly lz ax ay az)).2.2
+    generalize m.apply (cmdEvent m.coords now lx ly lz ax ay az) = m' at h ⊢
     cases m'
     simp only at h
     subst h
@@ -920,13 +976,13 @@ theorem exec_eq_apply (m : Monitor) (c : Call) :
 
 /-- No call changes the configuration or whether the monitor is ok. -/
 theorem exec_cfg (m : Monitor) (c : Call) :
-    (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok ∧ (c.exec m).placed = c.placed m.placed := by
+    (c.exec m).cfg = m.cfg ∧ (c.exec m).ok = m.ok ∧ (c.exec m).coords = c.coords m.coords := by
   rw [exec_eq_apply]
   exact ⟨(apply_cfg ..).1, (apply_cfg ..).2.1, rfl⟩
 
 theorem foldl_exec_cfg (m : Monitor) (cs : List Call) :
     (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = m.ok ∧
-      (cs.foldl Call.exec m).placed = placedAfter m.placed cs := by
+      (cs.foldl Call.exec m).coords = coordsAfter m.coords cs := by
   induction cs generalizing m with
   | nil => exact ⟨rfl, rfl, rfl⟩
   | cons c cs ih =>
@@ -940,14 +996,14 @@ an ok monitor has the same configuration and the state `run` reaches on the
 events the calls deliver. -/
 theorem foldl_exec_run (m : Monitor) (cs : List Call) (h : m.ok = true) :
     (cs.foldl Call.exec m).cfg = m.cfg ∧ (cs.foldl Call.exec m).ok = true ∧
-    (cs.foldl Call.exec m).st = (run m.cfg m.st (events m.placed cs)).1 := by
+    (cs.foldl Call.exec m).st = (run m.cfg m.st (events m.coords cs)).1 := by
   induction cs generalizing m with
   | nil => exact ⟨rfl, h, rfl⟩
   | cons c cs ih =>
     obtain ⟨h1, h2, h3⟩ := ih (c.exec m) (by rw [(exec_cfg m c).2.1]; exact h)
     rw [List.foldl_cons, h1, h3, (exec_cfg m c).1, (exec_cfg m c).2.2]
     refine ⟨rfl, h2, ?_⟩
-    have hst : (c.exec m).st = (step m.cfg m.st (c.event m.placed)).1 := by
+    have hst : (c.exec m).st = (step m.cfg m.st (c.event m.coords)).1 := by
       rw [exec_eq_apply]
       exact (apply_of_ok m _ h).1
     rw [hst, events, run_cons]
@@ -1003,8 +1059,8 @@ theorem actionOfCodes_codes (o : Output) :
 /-- A published stop names a configured zone. -/
 theorem step_publish_stopZone (cfg : Config) (st : State) (e : Event) (k : Nat)
     (h : (step cfg st e).2.velocity = some (.stopZone k)) : k < cfg.zones.length := by
-  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
-  obtain ⟨pts, z, z0, -, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now scanTf zoneTfs k ha.symm
+  obtain ⟨now, v, scanPts, zoneVerts, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  obtain ⟨pts, z, z0, -, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now scanPts zoneVerts k ha.symm
   exact (List.getElem?_eq_some_iff.mp hz).1
 
 /-- A published slowdown names a configured slowdown zone and carries that
@@ -1012,8 +1068,8 @@ zone's ratio, which is below the pattern of 1.0. -/
 theorem step_publish_slowdown (cfg : Config) (st : State) (e : Event) (k r : Nat)
     (h : (step cfg st e).2.velocity = some (.slowdown k r)) :
     r < F64.one ∧ ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r := by
-  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
-  exact evaluate_slowdown cfg st now scanTf zoneTfs k r ha.symm
+  obtain ⟨now, v, scanPts, zoneVerts, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  exact evaluate_slowdown cfg st now scanPts zoneVerts k r ha.symm
 
 /-- **The node reads back the model's velocity.** For an ok monitor with at
 most 2³² zones, the kind, zone index and ratio that the three queries return
@@ -1067,7 +1123,7 @@ queries. The events of the model are those the calls deliver (`events`), from
 the state after `configure` and `activate` (`startState`); by
 `run_startState` the theorems of `Properties.lean`, `Lifecycle.lean` and
 `Trace.lean`, which hold for every sequence of events, apply with
-`es := [.configure, .activate] ++ events true cs`. -/
+`es := [.configure, .activate] ++ events none cs`. -/
 
 /-- **End to end.** Create a monitor from a builder that is ok, make any
 sequence of calls of the two event functions (commands, usable scans and
@@ -1078,8 +1134,8 @@ calls deliver, on the configuration the builder holds. -/
 theorem cm_out_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az : UInt64)
     (hok : cmOk (cmNew b) = true) :
     (cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az).out =
-      (step b.cfg (run b.cfg (startState b.cfg) (events true cs)).1
-        (cmdEvent (placedAfter true cs) now lx ly lz ax ay az)).2 := by
+      (step b.cfg (run b.cfg (startState b.cfg) (events none cs)).1
+        (cmdEvent (coordsAfter none cs) now lx ly lz ax ay az)).2 := by
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
   have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
   unfold cmOnCmd
@@ -1093,16 +1149,16 @@ theorem cm_readBack_after (b : Builder) (cs : List Call) (now lx ly lz ax ay az 
     (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) :
     let m := cmOnCmd (cs.foldl Call.exec (cmNew b)) now lx ly lz ax ay az
     actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg (startState b.cfg) (events true cs)).1
-        (cmdEvent (placedAfter true cs) now lx ly lz ax ay az)).2.velocity := by
+      (step b.cfg (run b.cfg (startState b.cfg) (events none cs)).1
+        (cmdEvent (coordsAfter none cs) now lx ly lz ax ay az)).2.velocity := by
   intro m
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) cs hok
   have h4 := (foldl_exec_cfg (cmNew b) cs).2.2
   have h := readBack_eq (cs.foldl Call.exec (cmNew b))
-    (cmdEvent (cs.foldl Call.exec (cmNew b)).placed now lx ly lz ax ay az) h2
+    (cmdEvent (cs.foldl Call.exec (cmNew b)).coords now lx ly lz ax ay az) h2
     (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
   have hm : m = (cs.foldl Call.exec (cmNew b)).apply
-      (cmdEvent (cs.foldl Call.exec (cmNew b)).placed now lx ly lz ax ay az) := rfl
+      (cmdEvent (cs.foldl Call.exec (cmNew b)).coords now lx ly lz ax ay az) := rfl
   rw [hm, h, h1, h3, h4]
   rfl
 
@@ -1116,8 +1172,8 @@ theorem cm_readBack_at (b : Builder) (cs : List Call) (n : Nat) (c : Call)
     (hok : cmOk (cmNew b) = true) (hz : b.zones.length ≤ 2 ^ 32) (hc : cs[n]? = some c) :
     let m := (cs.take (n + 1)).foldl Call.exec (cmNew b)
     actionOfCodes (cmOutKind m) (cmOutZone m).toNat (cmOutRatio m).toNat =
-      (step b.cfg (run b.cfg (startState b.cfg) (events true (cs.take n))).1
-        (c.event (placedAfter true (cs.take n)))).2.velocity := by
+      (step b.cfg (run b.cfg (startState b.cfg) (events none (cs.take n))).1
+        (c.event (coordsAfter none (cs.take n)))).2.velocity := by
   intro m
   obtain ⟨h1, h2, h3⟩ := foldl_exec_run (cmNew b) (cs.take n) hok
   have h4 := (foldl_exec_cfg (cmNew b) (cs.take n)).2.2
@@ -1126,7 +1182,7 @@ theorem cm_readBack_at (b : Builder) (cs : List Call) (n : Nat) (c : Call)
     rw [List.take_add_one, hc, Option.toList_some, List.foldl_append, List.foldl_cons,
       List.foldl_nil]
   have h := readBack_eq ((cs.take n).foldl Call.exec (cmNew b))
-    (c.event ((cs.take n).foldl Call.exec (cmNew b)).placed) h2
+    (c.event ((cs.take n).foldl Call.exec (cmNew b)).coords) h2
     (by rw [h1]; simpa [cmNew, Builder.cfg] using hz)
   rw [hm, exec_eq_apply]
   refine Eq.trans ?_ (h.trans ?_)

@@ -11,10 +11,19 @@ Times are nanoseconds, written with `ms`. Points are millimetres. Floating
 point values appear as IEEE-754 bit patterns; the ones used here are named
 below.
 
-The first part is about the decision for a command in an active node whose
-scan is in the base frame: the examples there start the node (`configure`,
-`activate`), give every command the identity transform (`cmd`), and look at
-the velocity part of the outputs only (`velocities`: `none` is "no velocity
+The model receives, with every command, the base-frame coordinates of the
+readings of the stored scan (the C++ shim applies the sensor-to-base
+transform; SPEC_NAV2, section 5, option A). The examples therefore write a
+scan as a `Sweep`: ranges together with the coordinates the shim would hand
+over for them, and deliver events through `deliver`, which plays the shim:
+a scan event stores the ranges, and every later `cmd` carries the
+coordinates of the sweep given last, unless the example says otherwise
+(`cmdNone`: the transform lookup failed; `cmdPts`: other coordinates, as
+after the robot or the sensor frame has moved; `cmdZ`: vertices for a zone).
+
+The first part is about the decision for a command in an active node: the
+examples there start the node (`configure`, `activate`) and look at the
+velocity part of the outputs only (`velocities`: `none` is "no velocity
 published", `some a` is "the command with `a` applied"). The second part
 ("The Nav2 extension") has a scenario for each new event and looks at whole
 outputs: `silent`, or `answer velocity report`.
@@ -48,6 +57,7 @@ def d0_3 : Nat := 0x3FD3333333333333
 def d0_25 : Nat := 0x3FD0000000000000
 def d0_5 : Nat := 0x3FE0000000000000
 def d0_7 : Nat := 0x3FE6666666666666
+def d0_75 : Nat := 0x3FE8000000000000
 def d1 : Nat := F64.one
 def d2 : Nat := 0x4000000000000000
 def d10 : Nat := 0x4024000000000000
@@ -66,23 +76,51 @@ def fwd : Twist := twist d0_5 d0_2
 /-- All components zero. -/
 def halt : Twist := twist d0 d0
 
-/-- A scan with range limits 0.1 m to 10 m. -/
-def scanAt (stamp : Nat) (beams : List Beam) : Scan :=
-  { stamp, rangeMin := r0_1, rangeMax := r10, beams }
+/-- One reading as the examples write it: the range (binary32 pattern) and
+the coordinates of its point in the base frame, in metres (binary64
+patterns), as the shim computes them. -/
+structure Rd where
+  range : Nat
+  x : Nat
+  y : Nat
+
+/-- A scan together with the base-frame coordinates of its readings. -/
+structure Sweep where
+  stamp : Nat
+  rangeMin : Nat
+  rangeMax : Nat
+  rds : List Rd
+
+/-- What the model stores of a sweep: stamp, limits and ranges. -/
+def Sweep.scan (s : Sweep) : Scan :=
+  { stamp := s.stamp, rangeMin := s.rangeMin, rangeMax := s.rangeMax,
+    beams := s.rds.map (fun r => ⟨r.range⟩) }
+
+/-- What a command carries for it: one coordinate pair per reading. -/
+def Sweep.coords (s : Sweep) : List Coords := s.rds.map (fun r => (r.x, r.y))
+
+/-- The points of the sweep's valid readings, in millimetres. -/
+def Sweep.points (s : Sweep) : List Point := s.scan.points s.coords
+
+/-- A sweep with range limits 0.1 m to 10 m. -/
+def scanAt (stamp : Nat) (rds : List Rd) : Sweep :=
+  { stamp, rangeMin := r0_1, rangeMax := r10, rds }
 
 /-- A reading straight ahead at 0.2 m, 0.25 m, 0.5 m and 2 m, and one at
-0.25 m to the left: the range, and the coordinates in the scan's frame in
+0.25 m to the left: the range, and the coordinates in the base frame in
 metres. -/
-def at0_2 : Beam := ⟨r0_2, d0_2, d0⟩
-def at0_25 : Beam := ⟨r0_25, d0_25, d0⟩
-def at0_5 : Beam := ⟨r0_5, d0_5, d0⟩
-def at2 : Beam := ⟨r2, d2, d0⟩
-def left0_25 : Beam := ⟨r0_25, d0, d0_25⟩
+def at0_2 : Rd := ⟨r0_2, d0_2, d0⟩
+def at0_25 : Rd := ⟨r0_25, d0_25, d0⟩
+def at0_5 : Rd := ⟨r0_5, d0_5, d0⟩
+def at2 : Rd := ⟨r2, d2, d0⟩
+def left0_25 : Rd := ⟨r0_25, d0, d0_25⟩
 
-/-- The millimetres of these readings under the identity transform. 0.2 m is
-not a binary number; its double is a little above 0.2 and truncates to
-200 mm. -/
-example : (scanAt 0 [at0_2, at0_25, at0_5, at2, left0_25]).points Xform.identity
+-- The millimetres of these readings. 0.2 m is not a binary number; its
+-- double is a little above 0.2 and truncates to 200 mm. (The option only
+-- lets the elaborator unfold the list functions far enough; the kernel
+-- checks the result as for every other example.)
+set_option maxRecDepth 4000 in
+example : (scanAt 0 [at0_2, at0_25, at0_5, at2, left0_25]).points
     = [⟨200, 0⟩, ⟨250, 0⟩, ⟨500, 0⟩, ⟨2000, 0⟩, ⟨0, 250⟩] := by decide
 
 /-- Zone 0: stop inside 0.3 m. Zone 1: slow down to half inside 0.6 m. Each
@@ -95,23 +133,62 @@ def cfg : Config :=
     sourceTimeout := ms 2000
     stopPubTimeout := ms 1000 }
 
-/-- The outputs of a run from start-up, where the node is unconfigured. -/
-def outputs (c : Config) (es : List Event) : List Output := (run c (State.init c) es).2
+/-- What the examples deliver. The lifecycle transitions and `shape` are the
+model's events; `scan` gives a sweep; the four kinds of command differ in
+what they carry (see the head of this file). -/
+inductive Ev where
+  | configure
+  | activate
+  | deactivate
+  | cleanup
+  | shutdown
+  | scan (now : Nat) (s : Sweep)
+  | shape (k : Nat) (verts : Option (List Coords)) (foreign : Bool)
+  /-- A command with the coordinates of the sweep given last, unchanged. -/
+  | cmd (now : Nat) (v : Twist)
+  /-- A command without scan coordinates: the transform lookup failed. -/
+  | cmdNone (now : Nat) (v : Twist)
+  /-- A command with the given scan coordinates. -/
+  | cmdPts (now : Nat) (v : Twist) (pts : List Coords)
+  /-- As `cmd`, with the vertices `z` for zone 0 and none for zone 1. -/
+  | cmdZ (now : Nat) (v : Twist) (z : Option (List Coords))
+
+/-- The events of the model for a list of example events, as a shim that
+remembers the coordinates of the sweep given last (`last`) delivers them. -/
+def deliver : Option (List Coords) → List Ev → List Event
+  | _, [] => []
+  | last, .configure :: es => .configure :: deliver last es
+  | last, .activate :: es => .activate :: deliver last es
+  | last, .deactivate :: es => .deactivate :: deliver last es
+  | last, .cleanup :: es => .cleanup :: deliver last es
+  | last, .shutdown :: es => .shutdown :: deliver last es
+  | _, .scan now s :: es => .scan now s.scan :: deliver (some s.coords) es
+  | last, .shape k verts foreign :: es => .shape k verts foreign :: deliver last es
+  | last, .cmd now v :: es => .cmd now v last [] :: deliver last es
+  | last, .cmdNone now v :: es => .cmd now v none [] :: deliver last es
+  | last, .cmdPts now v pts :: es => .cmd now v (some pts) [] :: deliver last es
+  | last, .cmdZ now v z :: es => .cmd now v last [z, none] :: deliver last es
+
+/-- The state after a run from start-up, where the node is unconfigured. -/
+def final (c : Config) (es : List Ev) : State := (run c (State.init c) (deliver none es)).1
+
+/-- The outputs of a run from start-up. -/
+def outputs (c : Config) (es : List Ev) : List Output :=
+  (run c (State.init c) (deliver none es)).2
 
 /-- The two transitions that bring the node up. -/
-def up : List Event := [.configure, .activate]
+def up : List Ev := [.configure, .activate]
 
 /-- The state of a node that has just been brought up. -/
-def active (c : Config) : State := (run c (State.init c) up).1
+def active (c : Config) : State := final c up
 
 /-- The velocity part of the outputs for the events `es`, delivered to a node
 that has just been brought up. -/
-def velocities (c : Config) (es : List Event) : List (Option Action) :=
-  ((run c (active c) es).2).map Output.velocity
+def velocities (c : Config) (es : List Ev) : List (Option Action) :=
+  ((run c (active c) (deliver none es)).2).map Output.velocity
 
-/-- A command with the identity transform for the scan (the scan is in the
-base frame, no base shift correction) and no zone transforms. -/
-def cmd (now : Nat) (v : Twist) : Event := .cmd now v (some Xform.identity) []
+/-- A command with the coordinates of the sweep given last. -/
+def cmd (now : Nat) (v : Twist) : Ev := .cmd now v
 
 /-! ## The three outcomes -/
 
@@ -178,13 +255,14 @@ example : velocities cfgSourceOff [cmd (ms 1000) fwd,
 /-! ## Invalid readings (R4) -/
 
 -- Readings below `range_min`, above `range_max`, negative, infinite or NaN are
--- skipped one by one; their points do not count, whatever coordinates they
--- carry.
+-- skipped one by one; their points do not count, whatever coordinates the
+-- command carries for them.
+set_option maxRecDepth 4000 in
 example : (scanAt 0 [⟨r0_05, d0_5, d0⟩, ⟨r30, d0, d0⟩, ⟨rNeg1, d0, d0⟩, ⟨rInf, d0, d0⟩,
-      ⟨rNaN, d0, d0⟩, at0_25]).points Xform.identity = [⟨250, 0⟩] := by decide
+      ⟨rNaN, d0, d0⟩, at0_25]).points = [⟨250, 0⟩] := by decide
 
 -- The limits themselves are valid.
-example : (scanAt 0 [⟨r0_1, d0_2, d0⟩, ⟨r10, d10, d0⟩]).points Xform.identity
+example : (scanAt 0 [⟨r0_1, d0_2, d0⟩, ⟨r10, d10, d0⟩]).points
     = [⟨200, 0⟩, ⟨10000, 0⟩] := by decide
 
 -- A scan in which no reading is valid is a scan without obstacles: the command
@@ -201,34 +279,39 @@ example : velocities cfg [.scan (ms 1000) ⟨ms 990, rNaN, r10, [at0_25, left0_2
       cmd (ms 1010) fwd]
     = [none, some .pass] := by decide
 
--- With `range_max` infinite an infinite reading is valid. Its coordinates are
--- not finite: its point is `Point.far`, which lies in no accepted zone. A
--- finite coordinate of 1000 m or more is saturated at the coordinate limit.
-example : (Scan.mk 0 r0_1 rInf [⟨rInf, dInf, d0⟩]).points Xform.identity = [Point.far] := by
+-- With `range_max` infinite an infinite reading is valid. Its coordinate is
+-- not finite and is saturated at the coordinate limit, as is a NaN and a
+-- finite coordinate of 1000 m or more; such a point lies in no accepted zone.
+example : (Sweep.mk 0 r0_1 rInf [⟨rInf, dInf, d0⟩]).points = [⟨1000000, 0⟩] := by decide
+example : scanPointMm (dNaN, d0) = ⟨1000000, 0⟩ := by decide
+example : scanPointMm (0x40F86A0000000000, 0xC0F86A0000000000) = ⟨1000000, -1000000⟩ := by
   decide
-example : Point.far = ⟨1000000, 1000000⟩ := by decide
-example : Xform.identity.pointMm 0x40F86A0000000000 0xC0F86A0000000000
-    = ⟨1000000, -1000000⟩ := by decide
 example : (Shape.circle coordLimit).contains ⟨1000000, 0⟩ = false := by decide
+
+-- **The number of points is the number of valid readings** (`points_length`):
+-- the shim hands over a pair for every reading; which of them count is
+-- decided from the stored ranges.
+example : (scanAt 0 [at0_25, ⟨rNaN, d0_25, d0⟩, ⟨r30, d0_25, d0⟩, left0_25]).points.length = 2 := by
+  decide
 
 /-! ## Commands -/
 
 -- A command with an infinite or NaN component is ignored: nothing is
 -- published and the state does not change (R2). This includes the three
 -- components the monitor does not otherwise use.
-example : step cfg (active cfg) (cmd (ms 1000) (twist dNaN d0)) = (active cfg, .silent) := by
-  decide
-example : step cfg (active cfg) (cmd (ms 1000) ⟨d0_5, 0, dInf, 0, 0, 0⟩)
+example : step cfg (active cfg) (.cmd (ms 1000) (twist dNaN d0) none [])
+    = (active cfg, .silent) := by decide
+example : step cfg (active cfg) (.cmd (ms 1000) ⟨d0_5, 0, dInf, 0, 0, 0⟩ none [])
     = (active cfg, .silent) := by decide
 
 /-! ## Zero velocity is published for `stop_pub_timeout`, then not at all (R15) -/
 
 /-- Two points inside the stop zone, stamped far in the future so that the
 scan stays valid throughout. -/
-def blocked : Event := .scan 0 (scanAt (ms 900000) [at0_25, left0_25])
+def blocked : Ev := .scan 0 (scanAt (ms 900000) [at0_25, left0_25])
 
 /-- Nothing near, likewise. -/
-def clear : Event := .scan 0 (scanAt (ms 900000) [at2])
+def clear : Ev := .scan 0 (scanAt (ms 900000) [at2])
 
 -- Stop is published from the first stopped command (at 1000 ms) up to and
 -- including 1 s later, and no longer after that. When the zone clears, the
@@ -432,86 +515,93 @@ example : outputs cfg (up ++ [clear, cmd (ms 1000) fwd, .shutdown, cmd (ms 1100)
       .configure, .activate, cmd (ms 1200) fwd])
     = [.silent, .silent, .silent, pub .pass, .silent, .silent, .silent, .silent, .silent] := by
   decide
-example : (run cfg (State.init cfg) (up ++ [.shutdown, .configure, .activate])).1.phase
-    = .finalized := by decide
+example : (final cfg (up ++ [.shutdown, .configure, .activate])).phase = .finalized := by
+  decide
 
 -- **Counterexample to "if the phase is not active, no zero is on record"**
 -- (SPEC_NAV2, section 4, "Lifecycle invariants", as first written): a node
 -- shut down while a stop is in force is finalized with `prevZero` set and
 -- the previous report `source`. The invariant holds for the unconfigured and
 -- the inactive phase (`Inv.quiet`); here the fields are never read again.
-example : (run cfg (State.init cfg) (up ++ [cmd (ms 1000) fwd, .shutdown])).1
+example : final cfg (up ++ [cmd (ms 1000) fwd, .shutdown])
     = { State.init cfg with phase := .finalized, prevZero := true, stopStamp := ms 1000,
                             prevReport := .source } := by decide
 
 -- Transitions the lifecycle does not allow change nothing: `activate` while
 -- unconfigured, `cleanup` while active.
-example : (run cfg (State.init cfg) [.activate]).1 = State.init cfg := by decide
-example : (run cfg (State.init cfg) (up ++ [.cleanup])).1 = active cfg := by decide
+example : final cfg [.activate] = State.init cfg := by decide
+example : final cfg (up ++ [.cleanup]) = active cfg := by decide
 
-/-! ## Transforms (E8, N22–N27) -/
+/-! ## Points that arrive with the command (E8, N22–N27) -/
 
-/-- The scan is in a sensor frame 0.5 m ahead of the base. -/
-def ahead0_5 : Xform := { Xform.identity with ox := d0_5 }
-
-/-- The sensor looks backwards: a half turn about z, quaternion (0, 0, 1, 0). -/
-def halfTurn : Xform := ⟨0, 0, d1, 0, 0, 0⟩
-
-/-- A quaternion that is not of unit length: (0, 0, 0, 2). -/
-def twice : Xform := ⟨0, 0, 0, d2, 0, 0⟩
-
-/-- A "quaternion" of zeros, which tf2 never returns (ND7). -/
-def zeroQ : Xform := ⟨0, 0, 0, 0, 0, 0⟩
-
--- The same readings under three transforms (N25): shifted, turned, and under
--- a quaternion of length 2, which acts as its normalisation, the identity.
-example : (scanAt 0 [at0_2, at0_25, left0_25]).points ahead0_5
-    = [⟨700, 0⟩, ⟨750, 0⟩, ⟨500, 250⟩] := by decide
-example : (scanAt 0 [at0_2, at0_25, left0_25]).points halfTurn
-    = [⟨-200, 0⟩, ⟨-250, 0⟩, ⟨0, -250⟩] := by decide
-example : (scanAt 0 [at0_2, at0_25, left0_25]).points twice
-    = [⟨200, 0⟩, ⟨250, 0⟩, ⟨0, 250⟩] := by decide
-
--- The transform arrives with the command, not with the scan (N22): the same
--- stored scan stops the robot under the identity and lets it pass when the
--- sensor frame is 0.5 m ahead.
+-- The points belong to the command, not to the scan (N22): the same stored
+-- scan stops the robot with the coordinates it was given with, and lets it
+-- pass when a later command carries the coordinates the shim computes after
+-- the sensor frame has moved 0.5 m ahead of the base (0.25 m ahead becomes
+-- 0.75 m ahead; 0.25 m to the left becomes 0.5 m ahead and 0.25 m left).
 example : outputs cfg (up ++ [blocked, cmd (ms 1000) fwd,
-      .cmd (ms 1010) fwd (some ahead0_5) []])
+      .cmdPts (ms 1010) fwd [(d0_75, d0), (d0_5, d0_25)]])
     = [.silent, .silent, .silent, pubR (.stopZone 0) (.stop 0), pubR .pass .normal] := by decide
 
--- A missing transform is not an event: it is a command without one. With a
--- non-zero `source_timeout` it stops the robot for an invalid source (N27),
+-- A missing transform is not an event: it is a command without points. With
+-- a non-zero `source_timeout` it stops the robot for an invalid source (N27),
 -- although the stored scan is fresh and shows nothing near; the next command
--- that carries a transform passes. A transform that is not usable counts as
--- missing (ND7).
-example : outputs cfg (up ++ [clear, .cmd (ms 1000) fwd none [], cmd (ms 1010) fwd,
-      .cmd (ms 1020) fwd (some zeroQ) []])
-    = [.silent, .silent, .silent, pubR .stopSource .source, pubR .pass .normal,
-       pubR .stopSource .source] := by decide
+-- that carries points passes.
+example : outputs cfg (up ++ [clear, .cmdNone (ms 1000) fwd, cmd (ms 1010) fwd])
+    = [.silent, .silent, .silent, pubR .stopSource .source, pubR .pass .normal] := by decide
+
+-- Coordinates that are not one pair per reading of the stored scan are not
+-- used: they count as a missing transform (`wrong_count`). Here the stored
+-- scan has two readings and the command carries one pair, then three.
+example : outputs cfg (up ++ [blocked, .cmdPts (ms 1000) fwd [(d2, d0)],
+      .cmdPts (ms 1010) fwd [(d2, d0), (d2, d0), (d2, d0)], cmd (ms 1020) fwd])
+    = [.silent, .silent, .silent, pubR .stopSource .source, .answer (some .stopSource) none,
+       pubR (.stopZone 0) (.stop 0)] := by decide
 
 -- **The counterexample to "No transform" without its hypothesis.** With
 -- `source_timeout: 0` a missing transform means "no obstacle" (N27): the scan
--- that stops the robot when its transform is known lets it pass when the
+-- that stops the robot when its points are known lets it pass when the
 -- transform is missing. This is upstream's behaviour, kept, and it is
 -- fail-open.
-example : outputs cfgNoTimeout (up ++ [blocked, cmd (ms 1000) fwd,
-      .cmd (ms 1010) fwd none []])
+example : outputs cfgNoTimeout (up ++ [blocked, cmd (ms 1000) fwd, .cmdNone (ms 1010) fwd])
     = [.silent, .silent, .silent, pubR (.stopZone 0) (.stop 0), pubR .pass .normal] := by decide
 
 /-! ## Zones fed by a topic (E7, N32–N34) -/
 
-/-! Bit patterns of `float` vertex coordinates. -/
-def f0 : Nat := 0
-def f0_3 : Nat := 0x3E99999A
-def fNeg0_3 : Nat := 0xBE99999A
-def f5 : Nat := 0x40A00000
-def fNaN : Nat := 0x7FC00000
+/-! Bit patterns of `double` vertex coordinates in the base frame, as the
+shim hands them over: a polygon message has `float` coordinates, and 0.3 as
+a `float`, widened to `double`, is 0.300000011920929. -/
+def w0_3 : Nat := 0x3FD3333340000000
+def wNeg0_3 : Nat := 0xBFD3333340000000
+def d5 : Nat := 0x4014000000000000
+/-- 0.3 as a `float`, minus 1, in `double`: −0.699999988079071. -/
+def wNeg0_7 : Nat := 0xBFE6666660000000
 
-/-- The box of 0.3 m ahead and 0.3 m to each side, as a polygon message. -/
-def boxMsg : List (Nat × Nat) := [(f0_3, f0_3), (f0_3, fNeg0_3), (f0, fNeg0_3), (f0, f0_3)]
+/-- The box of 0.3 m ahead and 0.3 m to each side, as the vertices of a
+polygon message in the base frame. -/
+def boxMsg : List Coords := [(w0_3, w0_3), (w0_3, wNeg0_3), (d0, wNeg0_3), (d0, w0_3)]
 
 /-- A box from 0.3 m to 5 m ahead. -/
-def farBoxMsg : List (Nat × Nat) := [(f5, f0_3), (f5, fNeg0_3), (f0_3, fNeg0_3), (f0_3, f0_3)]
+def farBoxMsg : List Coords := [(d5, w0_3), (d5, wNeg0_3), (w0_3, wNeg0_3), (w0_3, w0_3)]
+
+/-- The box after the base has driven 1 m forward since the message: 1 m
+further back. -/
+def boxBehind : List Coords :=
+  [(wNeg0_7, w0_3), (wNeg0_7, wNeg0_3), (dNeg1, wNeg0_3), (dNeg1, w0_3)]
+
+-- A vertex is rounded to the nearest millimetre, a half away from zero
+-- (0.0005 m is 1 mm, 0.0015 m is 2 mm; their doubles lie just above).
+example : vertexPointMm (w0_3, wNeg0_7) = ⟨300, -700⟩ := by decide
+example : vertexPointMm (0x3F40624DD2F1A9FC, 0x3F589374BC6A7EFA) = ⟨1, 2⟩ := by decide
+
+-- A vertex coordinate that is not finite, or is 1024 m or more, becomes the
+-- coordinate limit, which no shape may reach: the message is refused (ND6).
+example : vertexPointMm (dNaN, dInf) = ⟨1000000, 1000000⟩ := by decide
+example : vertexPointMm (0x4090000000000000, 0xC090000000000000) = ⟨1000000, -1000000⟩ := by
+  decide
+example : placeVerts [(d0, d0), (dNaN, d0), (d0, w0_3)] = none := by decide
+-- 999.998 m is 999998 mm, 1 mm beyond what a shape may have.
+example : placeVerts [(d0, d0), (0x408F3FFBE76C8B44, d0), (d0, w0_3)] = none := by decide
 
 /-- Zone 0 is a stop zone fed by a topic, needing one point. Zone 1 is a
 fixed slowdown circle that needs nine points and never triggers here. -/
@@ -519,104 +609,106 @@ def cfgTopic : Config :=
   { cfg with zones := [⟨.topic, .stop, 1, true⟩, ⟨.fixed (.circle 600), .slowdown d0_5, 9, true⟩] }
 
 /-- One point 0.2 m ahead. -/
-def near : Event := .scan 0 (scanAt (ms 900000) [at0_2])
+def near : Ev := .scan 0 (scanAt (ms 900000) [at0_2])
 
 /-- One point 0.85 m behind. -/
-def behind : Event := .scan 0 (scanAt (ms 900000) [⟨r2, dNeg0_85, d0⟩])
+def behind : Ev := .scan 0 (scanAt (ms 900000) [⟨r2, dNeg0_85, d0⟩])
 
 -- **A stop zone without shape does not stop** (N32, upstream's behaviour,
 -- not fail-safe): with a point 0.2 m ahead the command passes. After the
 -- first accepted message the zone stops the robot. A replaced shape is in
 -- force from the next command on.
-example : outputs cfgTopic (up ++ [near, cmd (ms 1000) fwd, .shape 0 boxMsg .base,
-      cmd (ms 1010) fwd, .shape 0 farBoxMsg .base, cmd (ms 1020) fwd])
+example : outputs cfgTopic (up ++ [near, cmd (ms 1000) fwd, .shape 0 (some boxMsg) false,
+      cmd (ms 1010) fwd, .shape 0 (some farBoxMsg) false, cmd (ms 1020) fwd])
     = [.silent, .silent, .silent, pub .pass, .silent, pubR (.stopZone 0) (.stop 0), .silent,
        pubR .pass .normal] := by decide
 
--- The accepted shape: the vertices as received, and in millimetres.
-example : (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base])).1.shapes
-    = [some ⟨boxMsg, false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+-- The accepted shape: whether its frame is foreign, and the vertices in
+-- millimetres.
+example : (final cfgTopic (up ++ [.shape 0 (some boxMsg) false])).shapes
+    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
 
 -- **Counterexample to "a shape message changes the state iff it is
 -- accepted"** (SPEC_NAV2, section 4, "Shape accepted", as first written): the
 -- same message a second time is accepted and changes nothing. Only "only if"
 -- holds (`step_shape_changes`, `step_shape_same`).
-example : (acceptShape cfgTopic (run cfgTopic (State.init cfgTopic)
-      (up ++ [.shape 0 boxMsg .base])).1 0 boxMsg .base).isSome = true := by decide
-example : (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base,
-      .shape 0 boxMsg .base])).1
-    = (run cfgTopic (State.init cfgTopic) (up ++ [.shape 0 boxMsg .base])).1 := by decide
+example : (acceptShape cfgTopic (final cfgTopic (up ++ [.shape 0 (some boxMsg) false])) 0
+      (some boxMsg) false).isSome = true := by decide
+example : final cfgTopic (up ++ [.shape 0 (some boxMsg) false, .shape 0 (some boxMsg) false])
+    = final cfgTopic (up ++ [.shape 0 (some boxMsg) false]) := by decide
 
 -- Refused messages leave the shape in force (N33, ND6): two points; a NaN
 -- coordinate (upstream accepts it and the zone goes blind); a frame whose
--- transform is missing. The robot is still stopped by the box.
-example : outputs cfgTopic (up ++ [near, .shape 0 boxMsg .base,
-      .shape 0 [(f0_3, f0_3), (f0, f0)] .base,
-      .shape 0 [(f5, f0_3), (f5, fNaN), (f0_3, fNeg0_3)] .base,
-      .shape 0 farBoxMsg (.foreign none), cmd (ms 1000) fwd])
+-- transform is missing, so that the shim has no vertices to hand over. The
+-- robot is still stopped by the box.
+example : outputs cfgTopic (up ++ [near, .shape 0 (some boxMsg) false,
+      .shape 0 (some [(w0_3, w0_3), (d0, d0)]) false,
+      .shape 0 (some [(d5, w0_3), (d5, dNaN), (w0_3, wNeg0_3)]) false,
+      .shape 0 none true, cmd (ms 1000) fwd])
     = [.silent, .silent, .silent, .silent, .silent, .silent, .silent,
        pubR (.stopZone 0) (.stop 0)] := by decide
 
 -- A triangle is enough for a topic zone (N33), where a fixed polygon needs
 -- four vertices (R10).
-example : (TopicShape.ofMessage [(f0_3, f0), (f0, f0_3), (f0, fNeg0_3)] .base).isSome = true := by
-  decide
+example : (TopicShape.ofMessage (some [(w0_3, d0), (d0, w0_3), (d0, wNeg0_3)]) false).isSome
+    = true := by decide
 
 -- A message is ignored while the node is unconfigured, for a zone that is not
 -- a topic zone, and for a zone that does not exist. It is taken while the
 -- node is inactive (N4).
-example : (run cfgTopic (State.init cfgTopic) [.shape 0 boxMsg .base, .configure,
-      .shape 1 boxMsg .base, .shape 7 boxMsg .base]).1.shapes = [none, none] := by decide
-example : ((run cfgTopic (State.init cfgTopic) [.configure, .shape 0 boxMsg .base]).1.shapes.map
+example : (final cfgTopic [.shape 0 (some boxMsg) false, .configure,
+      .shape 1 (some boxMsg) false, .shape 7 (some boxMsg) false]).shapes = [none, none] := by
+  decide
+example : ((final cfgTopic [.configure, .shape 0 (some boxMsg) false]).shapes.map
       Option.isSome) = [true, false] := by decide
 
 -- A shape received while inactive is used after activation (N35); cleanup
 -- discards it (N7), and the zone is again without shape: the same point
 -- passes.
-example : outputs cfgTopic [.configure, .shape 0 boxMsg .base, near, .activate,
+example : outputs cfgTopic [.configure, .shape 0 (some boxMsg) false, near, .activate,
       cmd (ms 1000) fwd, .deactivate, .cleanup, .configure, .activate, near, cmd (ms 1010) fwd]
     = [.silent, .silent, .silent, .silent, pubR (.stopZone 0) (.stop 0), .silent, .silent,
        .silent, .silent, .silent, pub .pass] := by decide
 
-/-- A command with the identity for the scan and the transform `z` for zone
-0. -/
-def cmdZ (now : Nat) (v : Twist) (z : Option Xform) : Event :=
-  .cmd now v (some Xform.identity) [z, none]
-
-/-- The frame of the shape is now 1 m behind the base: the base has driven
-1 m since the shape was published. -/
-def back1 : Xform := { Xform.identity with ox := dNeg1 }
-
 -- **A shape in another frame follows that frame** (N34). The box is received
 -- in a frame that coincides with the base: a point 0.2 m ahead stops the
--- robot. Then the base has moved 1 m and no new message has come: the zone
--- is where the box was, 1 m behind, and the same point passes. This is the
--- footprint that the robot drives out of (N34). A point 0.85 m behind is now
--- inside the zone; and when the zone's transform is missing, the vertices
--- stay where they were last, so it still stops. With the frames coinciding
--- again it passes.
-example : outputs cfgTopic (up ++ [near, .shape 0 boxMsg (.foreign (some Xform.identity)),
-      cmdZ (ms 1000) fwd (some Xform.identity), cmdZ (ms 1010) fwd (some back1), behind,
-      cmdZ (ms 1020) fwd none, cmdZ (ms 1030) fwd (some Xform.identity)])
+-- robot. Then the base has moved 1 m and no new message has come: the shim
+-- hands over the box where it now is, 1 m behind, and the same point passes.
+-- This is the footprint that the robot drives out of (N34). A point 0.85 m
+-- behind is now inside the zone; and when the zone's transform is missing,
+-- the vertices stay where they were last, so it still stops. With the frames
+-- coinciding again it passes.
+example : outputs cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
+      .cmdZ (ms 1000) fwd (some boxMsg), .cmdZ (ms 1010) fwd (some boxBehind), behind,
+      .cmdZ (ms 1020) fwd none, .cmdZ (ms 1030) fwd (some boxMsg)])
     = [.silent, .silent, .silent, .silent, pubR (.stopZone 0) (.stop 0), pubR .pass .normal,
        .silent, pubR (.stopZone 0) (.stop 0), pubR .pass .normal] := by decide
 
--- The vertices of that zone after the command that carried `back1`.
-example : (run cfgTopic (State.init cfgTopic) (up ++ [near,
-      .shape 0 boxMsg (.foreign (some Xform.identity)),
-      cmdZ (ms 1010) fwd (some back1)])).1.shapes
-    = [some ⟨boxMsg, true, [⟨-700, 300⟩, ⟨-700, -300⟩, ⟨-1000, -300⟩, ⟨-1000, 300⟩]⟩, none] := by
+-- The vertices of that zone after the command that carried `boxBehind`.
+example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
+      .cmdZ (ms 1010) fwd (some boxBehind)])).shapes
+    = [some ⟨true, [⟨-700, 300⟩, ⟨-700, -300⟩, ⟨-1000, -300⟩, ⟨-1000, 300⟩]⟩, none] := by
   decide
 
--- A shape received in the base frame is not moved by any transform.
-example : (run cfgTopic (State.init cfgTopic) (up ++ [near, .shape 0 boxMsg .base,
-      cmdZ (ms 1010) fwd (some back1)])).1.shapes
-    = [some ⟨boxMsg, false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+-- A shape received in the base frame is not moved by anything a command
+-- carries.
+example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) false,
+      .cmdZ (ms 1010) fwd (some boxBehind)])).shapes
+    = [some ⟨false, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
+
+-- Vertices that are refused leave the shape where it was: a different number
+-- of vertices than the shape has (here a triangle for a box), or a vertex
+-- that is not finite.
+example : (final cfgTopic (up ++ [near, .shape 0 (some boxMsg) true,
+      .cmdZ (ms 1010) fwd (some [(w0_3, d0), (d0, w0_3), (d0, wNeg0_3)]),
+      .cmdZ (ms 1020) fwd (some [(dNaN, w0_3), (wNeg0_7, wNeg0_3), (dNeg1, wNeg0_3),
+        (dNeg1, w0_3)])])).shapes
+    = [some ⟨true, [⟨300, 300⟩, ⟨300, -300⟩, ⟨0, -300⟩, ⟨0, 300⟩]⟩, none] := by decide
 
 /-! ## The report (N13, N14) -/
 
 /-- Two points inside the slowdown zone and outside the stop zone. -/
-def slow : Event := .scan 0 (scanAt (ms 900000) [at0_5, at0_5])
+def slow : Ev := .scan 0 (scanAt (ms 900000) [at0_5, at0_5])
 
 -- No message for the first command if it passes; one for each change, none
 -- while the report stays the same; a zero command in a triggered slowdown

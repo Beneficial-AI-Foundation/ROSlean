@@ -1,4 +1,4 @@
-import ROSleanCore.CollisionMonitorXform
+import ROSleanCore.CollisionMonitorPoint
 
 /-!
 # Collision monitor model
@@ -8,9 +8,15 @@ scan source, one velocity input, circle and polygon zones and the `stop` and
 `slowdown` actions, as specified in `docs/collision_monitor/SPEC.md` (rule
 numbers `R…`, differences `D…` and assumptions `A…` refer to that file), with
 the Nav2 extension of `docs/collision_monitor/SPEC_NAV2.md` (rules `N…`,
-differences `ND…`, events `E1`–`E8`): the lifecycle, transforms that arrive
-with each command, zones whose shape arrives on a topic, and the report for
-the state topic.
+differences `ND…`, events `E1`–`E8`): the lifecycle, scan points and zone
+vertices that arrive with each command already in the base frame, zones whose
+shape arrives on a topic, and the report for the state topic.
+
+The transform from a sensor's frame to the base frame is **not** in this
+model. The C++ shim applies it in `double`, as upstream does (option A of
+SPEC_NAV2, section 5), and hands over coordinates in the base frame. What the
+model decides is everything after that: which readings count, the conversion
+to millimetres, the zones and the action.
 
 The core decides; it does not compute velocities. For each velocity command it
 answers "publish nothing", "publish the command unchanged", "publish zero" or
@@ -20,11 +26,11 @@ computed").
 Everything is an integer:
 
 * times are node-clock readings or message stamps in nanoseconds;
-* zone shapes are in millimetres in the robot's base frame; a scan's
-  readings are kept as received (coordinates in the scan's frame, as bit
-  patterns) and become points in millimetres in the base frame when a command
-  is evaluated, under the transform that command carries
-  (`Xform.pointMm`, in `ROSleanCore.CollisionMonitorXform`);
+* zone shapes are in millimetres in the robot's base frame; of a scan the
+  ranges are kept as received, and each command carries the base-frame
+  coordinates of the stored scan's readings as bit patterns, which become
+  points in millimetres when the command is evaluated (`scanPointMm`, in
+  `ROSleanCore.CollisionMonitorPoint`);
 * floating-point values that are only classified or compared (scan ranges and
   range limits, velocity components, slowdown ratios) are passed as their
   IEEE-754 bit patterns, so that the comparison is exact.
@@ -142,12 +148,11 @@ structure Config where
 /-! ## Events and state -/
 
 /-- One reading of a laser scan: the range as received (binary32 bit
-pattern) and the coordinates of its point **in the scan's frame**, in metres,
-as binary64 bit patterns, as the shim computes them (R3). -/
+pattern). Where its point lies is not stored: the coordinates in the base
+frame depend on the transform at the time of each command (N22, N24) and
+arrive with the command. -/
 structure Beam where
   range : Nat
-  x : Nat
-  y : Nat
   deriving Repr, DecidableEq
 
 /-- A laser scan as the model sees it. -/
@@ -180,24 +185,18 @@ def Twist.finite (v : Twist) : Bool :=
 def Twist.planarZero (v : Twist) : Bool :=
   F64.isZero v.linX && F64.isZero v.linY && F64.isZero v.angZ
 
-/-- The shape of a topic zone, as last accepted (N33, N34). -/
+/-- Coordinates as the shim hands them over: `x` and `y` in metres **in the
+base frame**, as binary64 bit patterns. -/
+abbrev Coords := Nat × Nat
+
+/-- The shape of a topic zone, as last accepted (N33, N34). The message
+itself is kept by the shim, which recomputes the vertices for each command
+if the message's frame is not the base frame. -/
 structure TopicShape where
-  /-- The vertices as received: the `x` and `y` of each point, as binary32
-  bit patterns. -/
-  raw : List (Nat × Nat)
   /-- The message's frame is not the base frame. -/
   foreign : Bool
   /-- The vertices in the base frame, in millimetres (upstream's `poly_`). -/
   current : List Point
-  deriving Repr, DecidableEq
-
-/-- How a shape message is placed in the base frame (N33, step 2). -/
-inductive Placement where
-  /-- The message is in the base frame. -/
-  | base
-  /-- It is in another frame; `tf` is the looked-up transform to the base
-  frame, `none` if the lookup failed. -/
-  | foreign (tf : Option Xform)
   deriving Repr, DecidableEq
 
 /-- The lifecycle state of the node (N2–N8). -/
@@ -234,15 +233,21 @@ inductive Event where
   carried so that statements about event sequences can speak about arrival
   order. -/
   | scan (now : Nat) (s : Scan)
-  /-- E7: a polygon message arrived for zone `k`: its vertices (binary32
-  patterns) and how it is placed. -/
-  | shape (k : Nat) (verts : List (Nat × Nat)) (place : Placement)
-  /-- E8: a velocity command arrived. `scanTf` is the transform looked up for
-  the stored scan (`none` if the lookup failed or was not made); `zoneTfs`
-  has one entry per zone, the transform looked up for that zone's shape. A
-  missing transform is not an event: upstream looks the transform up at
-  every command (N22). -/
-  | cmd (now : Nat) (v : Twist) (scanTf : Option Xform) (zoneTfs : List (Option Xform))
+  /-- E7: a polygon message arrived for zone `k`. `verts` are its vertices in
+  the base frame, as the shim computed them (N33, step 3), or `none` if the
+  transform from the message's frame could not be looked up; `foreign` says
+  that the message's frame is not the base frame. -/
+  | shape (k : Nat) (verts : Option (List Coords)) (foreign : Bool)
+  /-- E8: a velocity command arrived. `scanPts` are the base-frame
+  coordinates of the readings of the stored scan, one pair per reading in
+  scan order, as the shim computed them under the transform it looked up for
+  this command (N22–N25); `none` if the lookup failed or was not made.
+  `zoneVerts` has one entry per zone: the vertices of that zone's stored
+  message in the base frame under the transform looked up for this command
+  (N34), or `none`. A missing transform is not an event: upstream looks the
+  transform up at every command (N22). -/
+  | cmd (now : Nat) (v : Twist) (scanPts : Option (List Coords))
+      (zoneVerts : List (Option (List Coords)))
   deriving Repr, DecidableEq
 
 /-- Dynamic state. -/
@@ -274,15 +279,19 @@ comparisons. A NaN range, or a NaN limit, makes it unused. -/
 def Scan.validBeam (s : Scan) (b : Beam) : Bool :=
   F32.le s.rangeMin b.range && F32.le b.range s.rangeMax
 
-/-- The points of the valid readings in the base frame under the transform
-`t`, in scan order (N25): each is `t.pointMm` of the reading's coordinates
-(`points_eq` in `ROSlean/CollisionMonitor/Properties.lean`). The matrix of
-the transform is computed once. -/
-def Scan.points (s : Scan) (t : Xform) : List Point :=
-  if t.usable then
-    let m := t.mat
-    (s.beams.filter s.validBeam).map (fun b => m.pointMm b.x b.y)
-  else (s.beams.filter s.validBeam).map (fun _ => Point.far)
+/-- The coordinates a command carries can be those of this scan: there is
+exactly one pair per reading. Anything else is treated like a failed lookup
+(`sourcePoints`); a shim that works as specified never produces it. -/
+def Scan.fits (s : Scan) (c : List Coords) : Bool := c.length == s.beams.length
+
+/-- The points of the scan's valid readings in the base frame, in scan order,
+given the base-frame coordinates `c` of all its readings: reading `i` is
+paired with pair `i` of `c`; the pairs of the readings that are not valid
+(R4) are dropped; the others are converted to millimetres (`scanPointMm`).
+Which readings count is decided here, from the stored ranges, not by the
+shim. -/
+def Scan.points (s : Scan) (c : List Coords) : List Point :=
+  ((s.beams.zip c).filter (fun bc => s.validBeam bc.1)).map (fun bc => scanPointMm bc.2)
 
 /-! ## Zones -/
 
@@ -375,39 +384,35 @@ indices are unchanged. -/
 def Config.withShapes (cfg : Config) (shapes : List (Option TopicShape)) : Config :=
   { cfg with zones := cfg.zones.zipIdx.map (fun zi => zi.1.withShape (shapes.getD zi.2 none)) }
 
-/-- The vertices `verts` under the transform `t`, as a shape, if every
-resulting vertex is within the coordinate limit of `Shape.ok`. -/
-def TopicShape.place (verts : List (Nat × Nat)) (foreign : Bool) (t : Xform) :
-    Option TopicShape :=
-  let vs := verts.map (fun v => t.vertexMm v.1 v.2)
-  if vs.all (·.inRange (coordLimit - 3)) then some ⟨verts, foreign, vs⟩ else none
+/-- The base-frame vertices `verts` in millimetres (`vertexPointMm`), if
+every one of them is within the coordinate limit of `Shape.ok`. A coordinate
+that is not finite, or is 1024 m or more, is never within it (ND6). -/
+def placeVerts (verts : List Coords) : Option (List Point) :=
+  let vs := verts.map vertexPointMm
+  if vs.all (·.inRange (coordLimit - 3)) then some vs else none
 
-/-- N33, ND6, ND7: the shape a polygon message denotes, or `none` if the
-message is ignored: fewer than three vertices, a coordinate that is not
-finite, a failed or unusable transform, or a vertex beyond the coordinate
-limit. -/
-def TopicShape.ofMessage (verts : List (Nat × Nat)) (place : Placement) : Option TopicShape :=
-  if decide (3 ≤ verts.length) &&
-      verts.all (fun v => CollisionMonitorFFI.F32.finite v.1 && CollisionMonitorFFI.F32.finite v.2)
-  then
-    match place with
-    | .base => TopicShape.place verts false Xform.identity
-    | .foreign (some t) => if t.usable then TopicShape.place verts true t else none
-    | .foreign none => none
-  else none
+/-- N33, ND6: the shape a polygon message denotes, or `none` if the message
+is ignored: the transform from its frame could not be looked up (`verts` is
+`none`), it has fewer than three vertices, or a vertex is not finite or
+beyond the coordinate limit. -/
+def TopicShape.ofMessage (verts : Option (List Coords)) (foreign : Bool) : Option TopicShape :=
+  match verts with
+  | some vs =>
+    if 3 ≤ vs.length then (placeVerts vs).map (fun ps => ⟨foreign, ps⟩) else none
+  | none => none
 
-/-- N34: a shape given in another frame follows that frame: with a usable
-transform under which every vertex stays within the coordinate limit, the
-current vertices are recomputed from the received ones; otherwise they stay.
-A shape given in the base frame never changes. -/
-def TopicShape.refresh (sh : TopicShape) (tf : Option Xform) : TopicShape :=
+/-- N34: a shape given in another frame follows that frame: when a command
+carries the vertices of the stored message under a new transform, and they
+are as many as before and all within the coordinate limit, they replace the
+current ones; otherwise the current ones stay. A shape given in the base
+frame never changes. -/
+def TopicShape.refresh (sh : TopicShape) (verts : Option (List Coords)) : TopicShape :=
   if sh.foreign then
-    match tf with
-    | some t =>
-      if t.usable then
-        let vs := sh.raw.map (fun v => t.vertexMm v.1 v.2)
-        if vs.all (·.inRange (coordLimit - 3)) then { sh with current := vs } else sh
-      else sh
+    match verts with
+    | some vs =>
+      match placeVerts vs with
+      | some ps => if ps.length = sh.current.length then { sh with current := ps } else sh
+      | none => sh
     | none => sh
   else sh
 
@@ -417,13 +422,13 @@ def Config.refreshes (cfg : Config) (k : Nat) : Bool :=
   | some z => z.enabled && z.shape.isTopic
   | none => false
 
-/-- N34, ND3: the shapes after the transforms of a command have been
-applied: the shape of every enabled topic zone is refreshed with its entry
-of `zoneTfs` (a missing entry is "no transform"). -/
+/-- N34, ND3: the shapes after the vertices a command carries have been
+taken over: the shape of every enabled topic zone is refreshed with its entry
+of `zoneVerts` (a missing entry is "no transform"). -/
 def refreshShapes (cfg : Config) (shapes : List (Option TopicShape))
-    (zoneTfs : List (Option Xform)) : List (Option TopicShape) :=
+    (zoneVerts : List (Option (List Coords))) : List (Option TopicShape) :=
   shapes.zipIdx.map (fun si =>
-    if cfg.refreshes si.2 then si.1.map (·.refresh (zoneTfs.getD si.2 none)) else si.1)
+    if cfg.refreshes si.2 then si.1.map (·.refresh (zoneVerts.getD si.2 none)) else si.1)
 
 def Zone.isStop (z : Zone) : Bool :=
   match z.action with
@@ -458,10 +463,11 @@ def Action.isStop : Action → Bool
 * Otherwise the scan must exist and its stamp must not be more than the
   timeout in the past: `now - stamp > timeout` is invalid (R7). A stamp in the
   future is valid.
-* Then the scan needs a transform: with a usable `scanTf` the points are the
-  scan's under it; without one the source is invalid, or has no points if
-  the timeout is 0 (N27). -/
-def sourcePoints (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform) :
+* Then the scan needs its points in the base frame: if the command carries
+  coordinates that fit the scan (`Scan.fits`), the points are the scan's
+  under them (`Scan.points`); without them the source is invalid, or has no
+  points if the timeout is 0 (N27). -/
+def sourcePoints (cfg : Config) (st : State) (now : Nat) (scanPts : Option (List Coords)) :
     Option (List Point) :=
   if !cfg.sourceEnabled then some []
   else
@@ -470,9 +476,9 @@ def sourcePoints (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform)
     | some s =>
       if 0 < cfg.sourceTimeout && s.stamp + cfg.sourceTimeout < now then none
       else
-        match scanTf with
-        | some t =>
-          if t.usable then some (s.points t)
+        match scanPts with
+        | some c =>
+          if s.fits c then some (s.points c)
           else if cfg.sourceTimeout = 0 then some [] else none
         | none => if cfg.sourceTimeout = 0 then some [] else none
 
@@ -506,27 +512,27 @@ def zonesAction (cfg : Config) (pts : List Point) : Action :=
     | (_, none) => .pass
 
 /-- The zones as they are tested for a command that carries the zone
-transforms `zoneTfs`: the configuration with the shapes of the state,
+vertices `zoneVerts`: the configuration with the shapes of the state,
 refreshed (N34). -/
-def liveConfig (cfg : Config) (st : State) (zoneTfs : List (Option Xform)) : Config :=
-  cfg.withShapes (refreshShapes cfg st.shapes zoneTfs)
+def liveConfig (cfg : Config) (st : State) (zoneVerts : List (Option (List Coords))) : Config :=
+  cfg.withShapes (refreshShapes cfg st.shapes zoneVerts)
 
 /-- The action demanded for a command arriving at `now` with the given
-transforms (upstream's `process` up to the point where it publishes). It does
-not depend on the command's velocity. -/
-def evaluate (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform)
-    (zoneTfs : List (Option Xform)) : Action :=
-  match sourcePoints cfg st now scanTf with
+coordinates (upstream's `process` up to the point where it publishes). It
+does not depend on the command's velocity. -/
+def evaluate (cfg : Config) (st : State) (now : Nat) (scanPts : Option (List Coords))
+    (zoneVerts : List (Option (List Coords))) : Action :=
+  match sourcePoints cfg st now scanPts with
   | none => .stopSource
-  | some pts => zonesAction (liveConfig cfg st zoneTfs) pts
+  | some pts => zonesAction (liveConfig cfg st zoneVerts) pts
 
 /-- E8 step 4: the shapes after a command: refreshed, unless the source is
 invalid (upstream's zone loop is then not entered). -/
-def shapesAfter (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform)
-    (zoneTfs : List (Option Xform)) : List (Option TopicShape) :=
-  match sourcePoints cfg st now scanTf with
+def shapesAfter (cfg : Config) (st : State) (now : Nat) (scanPts : Option (List Coords))
+    (zoneVerts : List (Option (List Coords))) : List (Option TopicShape) :=
+  match sourcePoints cfg st now scanPts with
   | none => st.shapes
-  | some _ => refreshShapes cfg st.shapes zoneTfs
+  | some _ => refreshShapes cfg st.shapes zoneVerts
 
 /-- The velocity the action yields for command `v` is zero in the three
 components the monitor publishes (R15, D6). -/
@@ -577,13 +583,13 @@ def Output.processed : Output → Bool
 the message is ignored: the node is unconfigured or finalized, there is no
 zone `k`, zone `k` is not a topic zone, or `TopicShape.ofMessage` refuses
 the message. -/
-def acceptShape (cfg : Config) (st : State) (k : Nat) (verts : List (Nat × Nat))
-    (place : Placement) : Option TopicShape :=
+def acceptShape (cfg : Config) (st : State) (k : Nat) (verts : Option (List Coords))
+    (foreign : Bool) : Option TopicShape :=
   if st.phase = .inactive ∨ st.phase = .active then
     match cfg.zones[k]? with
     | some z =>
       match z.shape with
-      | .topic => TopicShape.ofMessage verts place
+      | .topic => TopicShape.ofMessage verts foreign
       | .fixed _ => none
     | none => none
   else none
@@ -621,19 +627,19 @@ def step (cfg : Config) (st : State) : Event → State × Output
   | .scan _ s =>
     (if st.phase = .inactive ∨ st.phase = .active then { st with scan := some s } else st,
       .silent)
-  | .shape k verts place =>
-    match acceptShape cfg st k verts place with
+  | .shape k verts foreign =>
+    match acceptShape cfg st k verts foreign with
     | some sh => ({ st with shapes := st.shapes.set k (some sh) }, .silent)
     | none => (st, .silent)
-  | .cmd now v scanTf zoneTfs =>
+  | .cmd now v scanPts zoneVerts =>
     if st.phase ≠ .active then (st, .silent)
     else if !v.finite then (st, .silent)
     else
-      let a := evaluate cfg st now scanTf zoneTfs
+      let a := evaluate cfg st now scanPts zoneVerts
       let zero := a.yieldsZero v
       let r := a.report v
       ({ st with
-          shapes := shapesAfter cfg st now scanTf zoneTfs
+          shapes := shapesAfter cfg st now scanPts zoneVerts
           prevZero := zero
           stopStamp := if zero && !st.prevZero then now else st.stopStamp
           prevReport := r },

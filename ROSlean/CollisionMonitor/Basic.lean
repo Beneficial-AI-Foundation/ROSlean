@@ -72,70 +72,76 @@ theorem triggered_nil_iff (z : Zone) :
 
 /-! ## The points that are tested (R5 to R8, N22, N27) -/
 
-/-- The command carries no transform for the scan that can be applied: the
-lookup failed or was not made, or (never, with tf2) its result is not usable
-(ND7). -/
-def NoTransform (scanTf : Option Xform) : Prop := ∀ t, scanTf = some t → t.usable = false
+/-- The command carries no coordinates that can be used for the stored scan:
+none at all (the transform lookup failed or was not made, N27), or a list
+that does not have one pair per reading (`Scan.fits`; never, with a shim that
+works as specified). Vacuous if no scan is stored. -/
+def NoScanPoints (st : State) (scanPts : Option (List Coords)) : Prop :=
+  ∀ s c, st.scan = some s → scanPts = some c → s.fits c = false
 
-theorem noTransform_none : NoTransform none := fun _ h => by cases h
+theorem noScanPoints_none (st : State) : NoScanPoints st none := fun _ _ _ h => by cases h
 
-theorem noTransform_some_iff (t : Xform) : NoTransform (some t) ↔ t.usable = false := by
-  simp [NoTransform]
+theorem noScanPoints_of_no_scan (st : State) (scanPts : Option (List Coords))
+    (h : st.scan = none) : NoScanPoints st scanPts := fun s _ hs _ => by rw [h] at hs; cases hs
 
-theorem not_noTransform_iff (scanTf : Option Xform) :
-    ¬ NoTransform scanTf ↔ ∃ t, scanTf = some t ∧ t.usable = true := by
-  cases scanTf with
-  | none => simp [NoTransform]
-  | some t => simp [NoTransform]
+theorem noScanPoints_some_iff (st : State) (s : Scan) (c : List Coords) (hs : st.scan = some s) :
+    NoScanPoints st (some c) ↔ s.fits c = false := by
+  simp [NoScanPoints, hs]
+
+/-- The coordinates fit the scan iff there is one pair per reading. -/
+theorem fits_iff (s : Scan) (c : List Coords) : s.fits c = true ↔ c.length = s.beams.length := by
+  simp [Scan.fits]
 
 /-- **The source is invalid** (R8, N27): it is enabled, its timeout is not
 zero, and no scan is stored, or the stored scan's stamp is more than the
-timeout before `now`, or the command carries no usable transform for it. -/
-def SourceInvalid (cfg : Config) (st : State) (now : Nat) (scanTf : Option Xform) : Prop :=
+timeout before `now`, or the command carries no usable coordinates for it. -/
+def SourceInvalid (cfg : Config) (st : State) (now : Nat) (scanPts : Option (List Coords)) : Prop :=
   cfg.sourceEnabled = true ∧ 0 < cfg.sourceTimeout ∧
     (st.scan = none ∨ (∃ s, st.scan = some s ∧ s.stamp + cfg.sourceTimeout < now) ∨
-      NoTransform scanTf)
+      NoScanPoints st scanPts)
 
 /-- R8, N27: the robot must stop for its source iff the source is invalid. -/
 theorem sourcePoints_eq_none_iff (cfg : Config) (st : State) (now : Nat)
-    (scanTf : Option Xform) :
-    sourcePoints cfg st now scanTf = none ↔ SourceInvalid cfg st now scanTf := by
+    (scanPts : Option (List Coords)) :
+    sourcePoints cfg st now scanPts = none ↔ SourceInvalid cfg st now scanPts := by
   unfold sourcePoints SourceInvalid
   cases he : cfg.sourceEnabled <;> cases hs : st.scan with
   | none => simp
   | some s =>
     by_cases hstale : 0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now
     · simp [hstale.1, hstale.2]
-    · cases scanTf with
+    · cases scanPts with
       | none =>
+        have hn : NoScanPoints st none := noScanPoints_none st
         by_cases h0 : cfg.sourceTimeout = 0
-        · simp [h0, noTransform_none]
+        · simp [h0]
         · have hpos : 0 < cfg.sourceTimeout := by omega
           simp only [not_and] at hstale
-          simp [h0, hpos, hstale hpos, noTransform_none]
-      | some t =>
+          simp [h0, hpos, hstale hpos, hn]
+      | some c =>
+        have hn := noScanPoints_some_iff st s c hs
         by_cases h0 : cfg.sourceTimeout = 0
-        · cases hu : t.usable <;> simp [h0, hu]
+        · cases hu : s.fits c <;> simp [h0, hu]
         · have hpos : 0 < cfg.sourceTimeout := by omega
           simp only [not_and] at hstale
-          cases hu : t.usable <;> simp [h0, hpos, hstale hpos, hu, noTransform_some_iff]
+          cases hu : s.fits c <;> simp [h0, hpos, hstale hpos, hu, hn]
 
 /-- R5 to R8, N22, N27: the zones are tested against `pts` iff one of
 
 * the source is disabled and `pts = []` (R6);
 * the timeout is 0, no scan is stored and `pts = []` (R8);
-* a scan is stored and is not too old (R7), and either the command carries a
-  usable transform `t` and `pts` are the scan's valid points under `t`, or it
-  carries none, the timeout is 0 and `pts = []` (N27). -/
+* a scan is stored and is not too old (R7), and either the command carries
+  coordinates `c` that fit it and `pts` are the scan's valid points under
+  `c`, or it carries none that fit, the timeout is 0 and `pts = []` (N27). -/
 theorem sourcePoints_eq_some_iff (cfg : Config) (st : State) (now : Nat)
-    (scanTf : Option Xform) (pts : List Point) :
-    sourcePoints cfg st now scanTf = some pts ↔
+    (scanPts : Option (List Coords)) (pts : List Point) :
+    sourcePoints cfg st now scanPts = some pts ↔
       (cfg.sourceEnabled = false ∧ pts = []) ∨
       (cfg.sourceEnabled = true ∧ st.scan = none ∧ cfg.sourceTimeout = 0 ∧ pts = []) ∨
       (cfg.sourceEnabled = true ∧ ∃ s, st.scan = some s ∧
         ¬ (0 < cfg.sourceTimeout ∧ s.stamp + cfg.sourceTimeout < now) ∧
-        ((∃ t, scanTf = some t ∧ t.usable = true ∧ pts = s.points t) ∨
-          (NoTransform scanTf ∧ cfg.sourceTimeout = 0 ∧ pts = []))) := by
+        ((∃ c, scanPts = some c ∧ s.fits c = true ∧ pts = s.points c) ∨
+          (NoScanPoints st scanPts ∧ cfg.sourceTimeout = 0 ∧ pts = []))) := by
   unfold sourcePoints
   cases he : cfg.sourceEnabled
   · simp [eq_comm (b := pts)]
@@ -148,23 +154,25 @@ theorem sourcePoints_eq_some_iff (cfg : Config) (st : State) (now : Nat)
           = false := by simpa using hstale
       have hfresh : 0 < cfg.sourceTimeout → now ≤ s.stamp + cfg.sourceTimeout := by
         intro hp; omega
-      cases scanTf with
+      cases scanPts with
       | none =>
+        have hn : NoScanPoints st none := noScanPoints_none st
         by_cases h0 : cfg.sourceTimeout = 0
-        · simp [h0, noTransform_none, eq_comm (b := pts)]
-        · simp [h0, hst, noTransform_none]
-      | some t =>
+        · simp [h0, hn, eq_comm (b := pts)]
+        · simp [h0, hst]
+      | some c =>
+        have hn := noScanPoints_some_iff st s c hs
         by_cases h0 : cfg.sourceTimeout = 0
-        · cases hu : t.usable <;> simp [h0, hu, noTransform_some_iff, eq_comm (b := pts)]
-        · cases hu : t.usable
-          · simp [h0, hst, hu, noTransform_some_iff]
-          · simpa [h0, hst, hu, noTransform_some_iff, eq_comm (b := pts)] using
-              fun (_ : pts = s.points t) => hfresh
+        · cases hu : s.fits c <;> simp [h0, hu, hn, eq_comm (b := pts)]
+        · cases hu : s.fits c
+          · simp [h0, hst, hu]
+          · simpa [h0, hst, hu, hn, eq_comm (b := pts)] using
+              fun (_ : pts = s.points c) => hfresh
 
 /-- `sourcePoints` reads the state only through the stored scan. -/
-theorem sourcePoints_congr (cfg : Config) (st st' : State) (now : Nat) (scanTf : Option Xform)
-    (h : st.scan = st'.scan) :
-    sourcePoints cfg st now scanTf = sourcePoints cfg st' now scanTf := by
+theorem sourcePoints_congr (cfg : Config) (st st' : State) (now : Nat)
+    (scanPts : Option (List Coords)) (h : st.scan = st'.scan) :
+    sourcePoints cfg st now scanPts = sourcePoints cfg st' now scanPts := by
   simp [sourcePoints, h]
 
 /-! ## The first triggered stop zone (R12) -/

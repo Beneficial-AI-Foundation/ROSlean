@@ -1,21 +1,55 @@
 # T06 — Nav2 extension: C interface and node
 
-Branch: `claude/cm-nav2-node`. Needs: T03 and T05 merged.
+Branch: `claude/cm-nav2-node`. Needs: T03 and T05b merged.
 Read [README.md](README.md) first.
+
+**The transform is applied in the shim (option A; corrected by T05b).** The
+user decided on 2026-11-24 that the sensor-to-base transform is computed in
+C++ in `double`, as upstream computes it, and that Lean receives points.
+Task T05b took the transform out of the model. Where this brief said "the
+shim does no arithmetic on the transform", the opposite now holds: this
+task writes that arithmetic, and it is part of the trusted base
+(SPEC_NAV2.md, section 5 and T2). **Compiler flags: `-ffp-contract=off` on
+every platform, decided by the user**; it is not an open point and is not
+to be chosen per platform. Upstream's arm64 binary fuses the two sums of
+N25, so there the last bits of a coordinate can differ from upstream's;
+that is ND1, and the margin theorems leave 0.04 mm for it.
 
 ## Read
 
 `docs/collision_monitor/SPEC_NAV2.md` (section 8, shim boundary and node
 plumbing; section 7, trusted list; N1–N36; section 6, differences; section
 9, the edits to SPEC.md), SPEC.md, the model as extended by
-T05, the existing interface and node, lessons 3 to 8 and 14 in `docs/PLAN.md`,
+T05 and reworked by T05b (`tasks/reports/T05b.md`: the shape of the command
+event, and what is trusted), the existing interface and node, lessons 3 to 8 and 14 in `docs/PLAN.md`,
 and the CM3/CM4 review in `docs/REVIEWS.md` for the kind of defect to avoid.
 
 ## Do
 
-1. **Interface.** The calls of SPEC_NAV2.md, 8.1 to 8.3, thin wrappers
-   around `step`, plus the query `roslean_cm_cmd_plan` that tells the shim
-   which lookups to make. Conversions and refusals in Lean. Theorems in
+1. **Interface.** The calls of SPEC_NAV2.md, 8.1 to 8.3 (rewritten by
+   T05b), thin wrappers around `step`, plus the query `roslean_cm_cmd_plan`
+   that tells the shim which lookups to make. The scan call hands over the
+   ranges only; **the command call hands over one coordinate pair per
+   reading of the stored scan, in the base frame**, or "none", and for each
+   topic zone in another frame its vertices in the base frame or "none"
+   (events E7 and E8 as they are in the model now). The byte layouts in 8.2
+   and 8.3 are proposals; the meanings are not. Conversions and refusals in
+   Lean: the shim hands over `double` bit patterns in metres and Lean makes
+   the millimetres (`coordMm`, `vertexCoordMm`). **The cost of a command is
+   an open item** (SPEC_NAV2.md, section 5, "Cost of A in the model"): with
+   1080 readings and two circles it is 0.21 ms now, against 18 µs before
+   the extension, and two thirds of that is `coordMm` on `Nat` patterns,
+   because a pattern with the sign bit set is a big number in Lean's
+   runtime. Decode without big numbers: `coordMmOfParts` takes sign and
+   magnitude apart for this, as the decoder before T05 did (41 ns per
+   reading). The model's event carries the patterns, so the fast path is a
+   function from the bytes to the points, proved equal to `Scan.points` of
+   the decoded pairs, and a command call built on it, proved equal to
+   `step` on the event (`sourcePoints_eq_some_iff` says what `step` needs
+   of the points). Measure with `cmd_cost` before and after. The
+   present calls (`on_scan` with coordinates and `usable`, `on_cmd` without
+   arguments for points) are replaced; `Monitor.coords`, which stands in
+   for them today, goes. Theorems in
    `ROSlean/CollisionMonitor/FFI.lean` tying the new calls to the model, up
    to the end-to-end statement on the call sequence the node makes; the
    list is at the end of 8.3.
@@ -33,20 +67,38 @@ and the CM3/CM4 review in `docs/REVIEWS.md` for the kind of defect to avoid.
    (N22): N23 without and N24 with base shift correction, with upstream's
    timeout and its wait inside the callback (N26), on a buffer whose
    listener has its own thread. A failed lookup is passed to Lean as "none"
-   with the command; it is not an event of its own. Under option B, which
-   SPEC_NAV2.md recommends and which holds until the user decides, the shim
-   does **no arithmetic** on the transform: it copies seven numbers. The
-   one file that calls tf2 (`transforms.hpp`, 8.4) has unit tests for which
-   transform it asks for and for every kind of failure. `-ffp-contract=off`
-   stays for `encode_scan`. `roslean_sensor_pose` is removed: the parameter
-   is refused with a message that points to TF.
+   with the command; it is not an event of its own. **The shim then
+   computes the points** (option A): for every reading of the stored scan,
+   valid or not, the scan-frame point of R3 in `float`, widened, and its
+   image by N25 in `double` (the matrix from the quaternion, the two sums,
+   the third coordinate dropped: the projection), and hands the `x` and `y`
+   over; the same for the vertices of a topic zone in another frame. Use
+   tf2's own `fromMsg` and `operator*` for N25, so that the operations and
+   their order are upstream's by construction. The shim does not test the
+   range of a reading and does not skip one: which readings count is
+   Lean's decision, and Lean refuses a list that is not one pair per
+   reading. A transform with a number that is not finite, or with a zero
+   quaternion, is passed as "none" (ND7): the shim checks this, since the
+   model no longer sees the transform. All of this sits in the one file
+   that calls tf2 (`transforms.hpp`, 8.4), with unit tests for which
+   transform it asks for, for every kind of failure, and for the
+   arithmetic: the points equal a reference computation written out
+   operation by operation, bit for bit, on exact and on general
+   quaternions. **`-ffp-contract=off` stays for the whole node, this file
+   included (decided)**; T01's check that the object code has no fused
+   multiply-add is extended to it. `roslean_sensor_pose` is removed: the
+   parameter is refused with a message that points to TF.
 5. **Zones fed by a topic.** `polygon_sub_topic` on a polygon zone without
    `points`, with upstream's QoS (N31). `footprint_topic` is **not** such a
    subscription: upstream reads it for `approach` only (N29). Each message
    with at least three points becomes the shape event, after the lookup of
    N33 if its frame is not the base frame; Lean decides whether it is
-   accepted. For shapes in another frame the transform is looked up again at
-   every command (N34, ND3).
+   accepted. The event carries the vertices **in the base frame**, computed
+   by the shim (N33, step 3; for a message in the base frame the identity
+   is applied, as upstream does), or "none" if the lookup failed. The shim
+   keeps the accepted message: for shapes in another frame the transform is
+   looked up again at every command and the vertices are recomputed and
+   handed over with it (N34, ND3).
 6. **Parameters.** Nav2's `collision_monitor_params.yaml` starts the node
    unchanged (its lists name a fixed stop polygon and a scan, N21). The
    collision monitor section of `nav2_bringup`'s `nav2_params.yaml` starts
@@ -63,6 +115,12 @@ and the CM3/CM4 review in `docs/REVIEWS.md` for the kind of defect to avoid.
    odom frame, a shape arriving late, a state message while the velocity is
    withheld, and the `/clock` and
    performance fixes of T03 still holding. FFI tests for the new calls.
+   `test_cm_ffi` is back to 48 s after T05b (169 s after T05, 39 to 42 s
+   before it), so its leak test needs no fewer rounds on that account;
+   measure it again with the new calls. Measure a command with 360 and with
+   1000 readings through the node against upstream: the cost of handing the
+   points over with every command is only estimated so far (SPEC_NAV2.md,
+   section 5).
 8. Docker build (`docker/Dockerfile`) for the platform you are on.
 
 ## May change
