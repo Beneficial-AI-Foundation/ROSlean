@@ -81,12 +81,20 @@ Both:
 
 ## Quick start
 
-Requires [elan](https://github.com/leanprover/elan) and
-[pixi](https://pixi.sh), both on `PATH`. The ROS 2 Jazzy environment
-(RoboStack, with Nav2 and Gazebo; about 6 GB) is installed into `.pixi/` on
-first use, and the first `pixi run prove` also downloads Mathlib.
+Requires `git`, `curl`, [elan](https://github.com/leanprover/elan) and
+[pixi](https://pixi.sh), with `lake` and `pixi` on `PATH` (each installer
+adds its directory to the `PATH` of new shells only, so open a new terminal
+after installing). On macOS, `git` comes with the Xcode command line tools.
+The ROS 2 Jazzy environment (RoboStack, with Nav2 and Gazebo; 4.5 GB on
+macOS arm64, 6 GB on Linux arm64, and about as much again in pixi's download
+cache) is installed into `.pixi/` on first use; the first build also
+downloads the Lean toolchain (3 GB in `~/.elan`), and the first
+`pixi run prove` downloads Mathlib (8 GB in `.lake/`). Altogether a fresh
+machine needs about 21 GB of disk; the demos need a display. On Linux the
+build needs two more steps for now: see "What has been run where".
 
 ```sh
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git && cd ROSlean
 pixi run build        # lake build of the core + colcon build of the ROS packages
 pixi run test-quick   # the tests without the long comparisons with upstream; about 7 minutes
 pixi run test         # all tests; about 20 minutes before the collision monitor's Nav2 extension, longer now
@@ -122,7 +130,9 @@ pixi run bash -c 'source install/setup.bash && ros2 launch roslean_collision_mon
   collision_monitor_launch.py params_file:=ros/roslean_collision_monitor/config/example.yaml'
 ```
 
-or by hand (it is a lifecycle node and does nothing until activated):
+or by hand (it is a lifecycle node and does nothing until activated), in
+two terminals inside the environment (`pixi run bash`, then
+`source install/setup.bash`):
 
 ```sh
 ros2 run roslean_collision_monitor collision_monitor --ros-args \
@@ -140,7 +150,7 @@ toolchain or to this checkout. Built normally (without `--symlink-install`,
 which `pixi run build` uses for development), it can be copied to another
 machine of the same OS and architecture that has ROS 2 Jazzy.
 
-- **macOS:** the runtime is linked statically into `libroslean_core` (4 MB).
+- **macOS:** the runtime is linked statically into `libroslean_core` (2.5 MB).
 - **Linux:** Lean's static runtime cannot be put in a shared library, so a
   stripped copy of Lean's shared runtime, `libleanshared.so` (about 190 MB),
   is installed next to `libroslean_core.so`.
