@@ -417,6 +417,16 @@ for the lookups of later commands (N34) and for display (N16). -/
 @[export roslean_cm_shape_accepted]
 def cmShapeAccepted (m : Monitor) : Bool := m.accepted
 
+/-- The state holds, for topic zone `zone`, the mark of a polygon message
+with an unusable vertex (ND6): the zone demands its action until a usable
+message arrives. After an accepted shape call the shim asks this to know
+whether the message is one to keep for the lookups of later commands (a
+shape) or not (the mark: there is nothing to look up or to display). A
+query. -/
+@[export roslean_cm_shape_unusable]
+def cmShapeUnusable (m : Monitor) (zone : UInt32) : Bool :=
+  shapeUnusable m.st.shapes zone.toNat
+
 /-- The twist of the six patterns of a command call. -/
 def twistOfRaw (linX linY linZ angX angY angZ : UInt64) : Twist :=
   ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩

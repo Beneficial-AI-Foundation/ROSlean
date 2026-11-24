@@ -23,13 +23,15 @@
 #              120 s (OUT_DIR/long)
 #   soak       both nodes under load for 32 minutes, memory sampled
 #   ctest      the registered tests of roslean_collision_monitor (colcon test)
+#   nav2-roslean  the same three on the Lean node (scenario_nav2.py with
+#              profile_roslean_nav2, random_nav2.py beside upstream, the bond)
 #   nav2       the tests of the Nav2 extension on upstream's node (tasks/T07):
 #              scenario_nav2.py, random_nav2.py seeds 0-19, bond_manager.py.
 #              The test directory of this checkout is mounted over the
 #              image's copy, so the image need not be rebuilt for a changed
-#              test. The image has neither nav2_bringup nor
-#              nav2_lifecycle_manager: the five scenarios that edit
-#              nav2_params.yaml and the manager part report "not run".
+#              test. (Since tasks/T09 the image has nav2_bringup and
+#              nav2_lifecycle_manager, so the scenarios that edit
+#              nav2_params.yaml and the manager part run too.)
 #
 # Every step is one container (`docker run --rm`), so nothing is left over.
 # The containers have their own network: the ROS_DOMAIN_IDs below separate
@@ -142,6 +144,22 @@ for step in "$@"; do
       done
       wait
       tail -n 2 "$OUT/scenario_nav2.log" "$OUT/random_nav2.log" "$OUT/bond_manager.log"
+      ;;
+    nav2-roslean)
+      # The same on the Lean node (tasks/T09): the scenarios with its profile,
+      # 20 random cases beside upstream, the bond with Nav2's lifecycle manager.
+      HERE=$(cd "$(dirname "$0")/../.." && pwd)
+      for run in "roslean_scenario_nav2:64:scenario_nav2.py $NODE --profile profile_roslean_nav2" \
+                 "roslean_random_nav2:65:random_nav2.py $NODE $UP 0 20" \
+                 "roslean_bond_manager:66:bond_manager.py $NODE"; do
+        IFS=: read -r name domain script <<< "$run"
+        echo "== $name"
+        docker run --rm -e PYTHONUNBUFFERED=1 -v "$HERE/$T":/src/$T:ro "$IMAGE" \
+          bash -c "time ROS_DOMAIN_ID=$domain python3 $T/$script" > "$OUT/$name.log" 2>&1 &
+      done
+      wait
+      tail -n 2 "$OUT/roslean_scenario_nav2.log" "$OUT/roslean_random_nav2.log" \
+        "$OUT/roslean_bond_manager.log"
       ;;
     *)
       echo "unknown step: $step" >&2

@@ -298,6 +298,18 @@ if(BUILD_TESTING)
     add_test(NAME smoke_component
       COMMAND "${Python3_EXECUTABLE}" "${_test}/smoke_component.py")
     set_tests_properties(smoke_component PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=147" TIMEOUT 300)
+    # The same in the two other container kinds of rclcpp_components (review
+    # CM5, finding 6): one thread for every node of the container, and a pool
+    # of threads. In both the node's callbacks run in threads the Lean runtime
+    # did not create (finding 5).
+    add_test(NAME smoke_component_single
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/smoke_component.py" component_container)
+    set_tests_properties(smoke_component_single PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=148"
+      TIMEOUT 300)
+    add_test(NAME smoke_component_mt
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/smoke_component.py" component_container_mt)
+    set_tests_properties(smoke_component_mt PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=149"
+      TIMEOUT 300)
   endif()
 endif()
 

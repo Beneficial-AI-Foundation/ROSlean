@@ -6,31 +6,51 @@ version 1.3.14). The files cited below are byte-identical in tags 1.3.12 and
 1.3.13, the versions `pixi.lock` resolves to. Paths are relative to
 `nav2_collision_monitor/` unless they start with `nav2_util/` or `rclcpp/`.
 
-Rule numbers `R…`, differences `D…` and assumptions `A…` are referenced from
-the Lean model, `core/ROSleanCore/CollisionMonitor.lean`, and its examples,
-`ROSlean/CollisionMonitor/Examples.lean`.
+Rule numbers `R…` and `N…`, differences `D…` and `ND…`, trusted parts `T…`
+and assumptions `A…` are referenced from the Lean model,
+`core/ROSleanCore/CollisionMonitor.lean`, its examples,
+`ROSlean/CollisionMonitor/Examples.lean`, the node and the tests.
 
 Scope of this specification: one laser scan source, one velocity command
-input, circle zones and fixed polygon zones, the `stop` and `slowdown`
-actions. Rules are stated for that subset; what upstream does beyond it is
-listed under "Excluded features". The Nav2 extension (the lifecycle and the
-bond, the state topic and the zone polygons, transforms from TF with base
-shift correction, polygon zones whose shape arrives on a topic) is specified
-in [SPEC_NAV2.md](SPEC_NAV2.md): rules `N…`, differences `ND…`, events
-`E1`–`E8`, trusted parts in its section 7.
+input, circle zones and polygon zones (fixed, or with a shape that arrives
+on a topic), the `stop` and `slowdown` actions; as a lifecycle node with a
+bond, a state topic and zone polygons, with transforms from TF and base
+shift correction. Rules are stated for that subset; what upstream does
+beyond it is listed under "Excluded features".
 
-**State of this document (after task T06).** The model, the C interface and
-the node all have the Nav2 extension. This document was written for the
-node before it; task T06 made the edits that SPEC_NAV2.md, section 9,
-lists: "Shim boundary" describes the calls as they are now (in the detail
-of SPEC_NAV2.md, section 8, which it refers to), "Excluded features", the
-differences D2, D7, D11, D13 and D14, the trusted parts and A4 are brought
-up to date. The sensor-to-base transform is **not** in the model: the user
-decided that the C++ shim applies it in `double`, as upstream does (option A
-of SPEC_NAV2.md, section 5); the shim's code for it is
+**This is one document again (task T09).** The Nav2 extension (the
+lifecycle and the bond, the state topic and the zone polygons, transforms
+from TF with base shift correction, polygon zones whose shape arrives on a
+topic) was specified by task T04 in a file of its own,
+[SPEC_NAV2.md](SPEC_NAV2.md). Its rules `N1`–`N36`, its differences `ND…`
+and its trusted parts are here now: "Rules of the Nav2 extension as
+implemented upstream", "Deliberate differences" and the list `T1`–`T10`
+under "Where the velocity is computed". The model, the properties and the
+shim boundary below have described the node with the extension since task
+T06. SPEC_NAV2.md keeps what is not a rule of the node: the design record
+(why the transform is applied in C++ and what that costs, its section 5;
+the interface as proposed and as built, section 8; the test plan and where
+each row is tested, section 10; the implementation plan), the list of what
+still separates the node from Nav2's default configuration (section 12) and
+the questions that were put to the user (section 13). References of the
+form "SPEC_NAV2.md, section 5" below point there. The events of the model
+are numbered `E1`–`E8` as in its section 3.2, and `E9` for a command
+without a clock reading (D15).
+
+The sensor-to-base transform is **not** in the model: the user decided that
+the C++ shim applies it in `double`, as upstream does (option A of
+SPEC_NAV2.md, section 5); the shim's code for it is
 `ros/roslean_collision_monitor/include/roslean_collision_monitor/transforms.hpp`.
-Where a rule below still says "this subset has no lifecycle" or "scans in
-the base frame", the rule of SPEC_NAV2.md that replaces it is named.
+
+**Changed by task T09, after the review CM5** ([REVIEWS.md](../REVIEWS.md)):
+ND6 (a polygon message with an unusable vertex makes its zone demand its
+action; before, the message was ignored and the node could pass where
+upstream stops); N26 and N28 (the wait for a transform ends when the clock
+jumps back by more than 3 s, and the TF buffer is cleared at the jump); N16
+(a disabled zone is not published); N29 (unusable `points` fall back to the
+topic); ND3 (a stop can be delayed by the lookups of later zones); ND13
+(new: a refused refresh); T10 (new: the Lean runtime in the node's
+threads); D15 and ND10 (D15 holds for the stand-alone executable only).
 
 **Added by task T03.** D15 (a `/clock` message with a negative time), with
 the model's transition `stepNoClock`, the call `roslean_cm_on_cmd_no_clock`
@@ -62,7 +82,7 @@ budget for the cost of a command.
   `ranges` in order: if reading `i` is valid (R4), the point is
   `(ranges[i] * cos(angle), ranges[i] * sin(angle))`, computed in single
   precision, in the scan's frame, and then transformed to the base frame by
-  the transform of SPEC_NAV2.md, N23 to N25, looked up for this command; in
+  the transform of N23 to N25, looked up for this command; in
   every case
   `angle += angle_increment` follows, also in single precision. The number of
   readings is `ranges.size()`. `angle_max`, `intensities`, `time_increment`
@@ -90,7 +110,7 @@ budget for the cost of a command.
   below 1 ns is zero.
 - R8. If the source is enabled and its timeout is not zero, and either no
   scan has been received yet, or the stored scan is too old, or its transform
-  to the base frame cannot be obtained (SPEC_NAV2.md, N23, N24, N26, N27),
+  to the base frame cannot be obtained (N23, N24, N26, N27),
   the action is *stop* with the name
   `invalid source`, and no zone is evaluated (`process`, first loop). If the
   timeout is zero, the same conditions only mean that the source contributes
@@ -206,13 +226,513 @@ budget for the cost of a command.
   QoS (`nav2_util/twist_subscriber.hpp`, `twist_publisher.hpp`). The scan
   subscription uses `SensorDataQoS`. The node's name is `collision_monitor`.
   The state topic, the polygon topics and the subscription of a zone fed by
-  a topic: SPEC_NAV2.md, N12, N16, N31.
+  a topic: N12, N16, N31.
 - R19. Upstream is a lifecycle node, and since task T06 so is this node:
-  the transitions are SPEC_NAV2.md, N2 to N10. While it is not active,
+  the transitions are N2 to N10. While it is not active,
   commands are dropped without output. It also has a service `~/toggle` that switches all
   zones off (the invalid-source stop stays), and `enabled` of a zone or source
   can be changed at run time (not provided: ND8). Callbacks run one at a time
   (`rclcpp::spin`).
+
+## Rules of the Nav2 extension as implemented upstream
+
+Three additions to the subset above, so that Nav2's lifecycle manager can
+run the node in place of `nav2_collision_monitor`: the lifecycle interface,
+the state topic and the polygon publishers; transforms from TF, with base
+shift correction; and zones whose shape arrives on a topic (the route by
+which the robot's footprint becomes a zone). The rules were written by task
+T04 in [SPEC_NAV2.md](SPEC_NAV2.md) and moved here by task T09, with the
+corrections of the review CM5 ([REVIEWS.md](../REVIEWS.md)) in N16, N26,
+N28, N29 and N33.
+
+### Sources, and how each statement is marked
+
+| | Version | Used for |
+| --- | --- | --- |
+| Source of `navigation2` | branch `jazzy`, commit `c704655`, package version 1.3.14 (the commit named at the top) | **[S]** |
+| Source of `geometry2` (`tf2`, `tf2_ros`, `tf2_geometry_msgs`) | branch `jazzy`, commit `f702874`, version 0.36.23 | **[S]** |
+| Binary `nav2_collision_monitor` | 1.3.12, RoboStack, macOS arm64, from this repository's pixi environment, with `tf2` 0.36.22, `nav2_lifecycle_manager` 1.3.12, `rmw_fastrtps_cpp` | **[B: case]** |
+
+- **[S]** means read from the source, with file and function. Paths are
+  relative to `nav2_collision_monitor/` unless they start with another
+  package's name.
+- **[B: case]** means observed on the binary on 2026-11-24 by the named case
+  of `review/collision_monitor/nav2/nav2_probe.py`; the output of that run is
+  `review/collision_monitor/nav2/results/macos-arm64.txt`. Nothing is marked
+  [B] that was not run for this document (by T04, or by T09 where it says
+  so). Where the rules above or
+  UPSTREAM_BEHAVIOUR.md already reports an observation, it is cited as such
+  and not marked [B].
+- Between the binary's version 1.3.12 and the source's 1.3.14, `git diff
+  1.3.12 c704655` shows, in the files cited here: one added `using`
+  declaration in `circle.hpp`; the handle of the pre-shutdown callback in
+  `nav2_lifecycle_manager/src/lifecycle_manager.cpp`; and changes to the
+  publication schedule and an empty-footprint check in
+  `nav2_costmap_2d/src/costmap_2d_ros.cpp`. `src/`, `params/` and `launch/`
+  of the package, `nav2_util/src/robot_utils.cpp`,
+  `nav2_util/src/lifecycle_node.cpp`,
+  `nav2_costmap_2d/src/footprint_subscriber.cpp` and `nav2_bringup/launch`,
+  `nav2_bringup/params` are identical.
+- The binary was run on macOS arm64 only. Linux was not run for this
+  document.
+
+Probes: `review/collision_monitor/nav2/run_nav2_probe.sh <env prefix>
+[case …]` (20 cases, about five minutes; simulated time except the cases
+`bond` and `manager`), `run_transform_cost.sh` and `fma_check.sh`.
+
+### Lifecycle (N1–N11)
+
+- **N1. The process.** `main` creates the node and calls `rclcpp::spin`: one
+  thread runs all callbacks of the node, one at a time
+  (`src/collision_monitor_main.cpp`) [S]. The TF listener is created with
+  its own thread (`tf2_ros::TransformListener(*tf_buffer_, this, true)`,
+  `CollisionMonitor::on_configure`) [S], and so, by rclcpp's default, is
+  the `/clock` subscription under simulated time; that both keep running
+  while a callback waits is observed [B: `tf-missing`].
+- **N2. Unconfigured.** The node is a `nav2_util::LifecycleNode` named
+  `collision_monitor`. After start it has the lifecycle services
+  (`~/change_state`, `~/get_state`, `~/get_available_states`,
+  `~/get_available_transitions`, `~/get_transition_graph`), the publisher
+  `~/transition_event`, the parameter services and, with `use_sim_time`, a
+  subscription to `/clock`. It has no subscription to commands, scans or TF
+  and no publisher for velocities [B: `lifecycle`]. A command or scan sent
+  now reaches nobody.
+- **N3. Configure** (`CollisionMonitor::on_configure`) [S]. Creates the TF
+  buffer and listener (subscriptions `/tf`, `/tf_static`); reads every
+  parameter; creates the sources (scan subscription, `SensorDataQoS`) and
+  the zones (N16, N31); the command subscription and the velocity publisher
+  (both keep-last 1); the state publisher if `state_topic` is not empty
+  (N12); the publisher `~/collision_points_marker`; the service `~/toggle`.
+  The lists of publishers, subscriptions and services after the transition
+  are as this says [B: `lifecycle`]. If a parameter is missing or wrong the
+  callback calls `on_cleanup` and returns failure: the node stays
+  unconfigured and the process stays up [S] [B: `footprint-edit`].
+- **N4. Inactive.** A command is dropped: `process` returns at
+  `!process_active_`, having changed nothing [S]; nothing is published
+  [B: `lifecycle`]. A scan is stored as always (`Scan::dataCallback` does
+  not know the lifecycle state) [S], and a scan received while inactive is
+  the one used after activation [B: `lifecycle`, "the scan was received
+  while inactive"]. The same holds for a zone shape received on a topic
+  [B: `polygon-topic-inactive`].
+- **N5. Activate** (`on_activate`) [S]. Activates the velocity, state and
+  marker publishers and the polygon publishers; publishes every visualised
+  zone once (N16); sets `process_active_`; creates the bond (N9). The
+  transition publishes no velocity and no state message [B: `lifecycle`].
+- **N6. Deactivate** (`on_deactivate`) [S]. Clears `process_active_`; sets
+  `robot_action_prev_` back to its initial value (no action, velocity
+  (−1, −1, −1), name `""`); deactivates the publishers; destroys the bond.
+  The stored scan and shapes stay. The stop stamp of R15 is not reset, but
+  because the previous velocity is non-zero again, the next zero stores a
+  new one. Observed consequences [B: `lifecycle`]: nothing is published by
+  the transition; after the next activation, with the same scan and the
+  same clock, the zero velocity is published again although
+  `stop_pub_timeout` had run out before, it is published for another
+  `stop_pub_timeout` (still at +1 s − 1 ns, withheld at +1 s + 1 ns), and
+  the state `(StopCircle, 1)` is reported again.
+- **N7. Cleanup** (`on_cleanup`) [S]. Destroys subscriptions, publishers,
+  zones, sources and the TF buffer. The stored scan is gone: after cleanup,
+  configure and activate the first command is answered with a stop for
+  `invalid source` [B: `lifecycle`]; a zone's received shape is gone too
+  [B: `polygon-topic-inactive`]. The service `~/toggle` is not destroyed: it
+  is still listed after cleanup [B: `lifecycle`]. The toggle flag and the
+  stop stamp survive [S].
+- **N8. Shutdown** (`on_shutdown`) [S] logs and does nothing else. Shut down
+  from the active state, the node reports state `finalized` but keeps its
+  subscriptions and publishers and **keeps answering commands**: a command
+  sent afterwards was forwarded [B: `lifecycle`, last step]. Nav2's
+  lifecycle manager does not take this path: it deactivates and cleans up
+  before it shuts a node down
+  (`nav2_lifecycle_manager/src/lifecycle_manager.cpp`,
+  `shutdownAllNodes`) [S], and on `SIGINT` the node deactivates and cleans
+  itself up first (`nav2_util/src/lifecycle_node.cpp`, `on_rcl_preshutdown`,
+  `runCleanups`) [S].
+- **N9. Bond** (`nav2_util/src/lifecycle_node.cpp`, `createBond`,
+  `destroyBond`) [S]. The parameter `bond_heartbeat_period` (default 0.1 s)
+  is read in the constructor. If it is positive, activation creates
+  `bond::Bond("bond", <node name>, node)` with that heartbeat period and a
+  heartbeat timeout of 4.0 s, and deactivation destroys it. Observed
+  [B: `bond`]: no message on `/bond` while inactive; after activation 23
+  messages of type `bond/msg/Status` in 2 s, with `id` equal to the node
+  name, `active: true`, `heartbeat_timeout: 4.0`, `heartbeat_period: 0.1`,
+  publisher reliable and volatile; one message with `active: false` on
+  deactivation. With `bond_heartbeat_period: 0.0` there is no bond (how the
+  harness runs the node).
+- **N10. The lifecycle manager**
+  (`nav2_lifecycle_manager/src/lifecycle_manager.cpp`) [S]. With
+  `autostart` it configures every node of `node_names` in order, then
+  activates every node in order, each through `<node>/change_state`
+  followed by a check through `<node>/get_state`
+  (`changeStateForNode`). After activating a node it creates its own end of
+  the bond, with heartbeat timeout `bond_timeout` (default 4.0 s), and waits
+  up to half of it for the bond to form (`createBondConnection`); if it does
+  not form the bring-up fails. Afterwards a 200 ms timer checks every bond
+  (`checkBondConnections`); a broken one resets all managed nodes.
+  Observed [B: `manager`]: a manager with `node_names: [collision_monitor]`
+  and `autostart: true` logs `Configuring collision_monitor`, `Activating
+  collision_monitor`, `Server collision_monitor connected with bond.`,
+  `Managed nodes are active`, and the node is active. After the node is
+  killed with `SIGKILL` it logs `CRITICAL FAILURE: SERVER collision_monitor
+  IS DOWN after not receiving a heartbeat for 4000 ms. Shutting down related
+  nodes.` and resets.
+
+  So a replacement must offer the lifecycle services under the node name
+  the manager is given, succeed in `configure` and `activate`, and form the
+  bond on activation, or the manager must be run with `bond_timeout: 0.0`.
+- **N11. Other parameters of the base class** [S]: `autostart_node`
+  (default false: configure and activate by itself),
+  `bond_disable_heartbeat_timeout` (set to true).
+
+### The state topic (N12–N15)
+
+- **N12. Publisher.** `state_topic` (default `""`). If not empty, configure
+  creates a publisher of `nav2_msgs/msg/CollisionMonitorState`, keep-last 1
+  (`on_configure`) [S]; reliable and volatile [B: `state`]. The message is
+  `uint8 action_type` (0 `DO_NOTHING`, 1 `STOP`, 2 `SLOWDOWN`, 3 `APPROACH`,
+  4 `LIMIT`) and `string polygon_name` (`nav2_msgs/msg/CollisionMonitorState.msg`) [S].
+- **N13. When.** In `process`, after the action for the command has been
+  determined and before the velocity is published: if the action's
+  `polygon_name` differs from that of the previous processed command
+  (`robot_action_prev_`, initially `""`, reset by deactivation), one message
+  with the new name and action type is published and a line is logged
+  (`process`, `notifyActionState`) [S]. The comparison is of names only.
+  Values: `(<zone>, 1)` for a stop zone, `(<zone>, 2)` for a slowdown zone,
+  `("invalid source", 1)` for an invalid source, `("", 0)` otherwise.
+  Observed [B: `state`]:
+  - no message for the first command if it passes;
+  - a message for each change, none while the name stays;
+  - **also while the velocity is withheld** (R15): during the silence,
+    `("", 0)` and `("invalid source", 1)` were published without a velocity;
+  - none for a non-finite command, none while inactive [B: `lifecycle`];
+  - after deactivation and activation the current state is reported again
+    [B: `lifecycle`].
+- **N14. A zero command in a triggered slowdown zone** has the name `""`:
+  the slowed velocity is not strictly smaller than the command (R13), so no
+  action is taken. Observed [B: `state`]: `("", 0)` for a zero command with
+  a point in the slowdown zone. (UPSTREAM_BEHAVIOUR.md, finding 9, has the
+  same.) A slowdown whose ratio is 1 or more is not reported either (same
+  finding).
+- **N15. Names that coincide** [S only]: because names are compared, a
+  change between two zones of the same name, or between a zone named
+  `invalid source` and an invalid source, is not reported.
+
+### Zone polygons and point markers (N16, N17)
+
+- **N16. Polygon publishers** (`Polygon::configure`, `Polygon::publish`,
+  `CollisionMonitor::publishPolygons`, `Circle::getPolygon`) [S].
+  `<zone>.visualize` (default false) creates a publisher of
+  `geometry_msgs/msg/PolygonStamped` on `<zone>.polygon_pub_topic` (default:
+  the zone's name) with `SystemDefaultsQoS`: reliable and transient local
+  with this middleware [B: `visualize`]. Every visualised zone is published
+  once on activation and once after every processed command, also when the
+  velocity is withheld; not for a non-finite command and not while inactive
+  [B: `visualize`, `lifecycle`]. **Only a zone that is enabled is
+  published** (`CollisionMonitor::publishPolygons`: `polygon->getEnabled()`)
+  [S] [B: scenario `polygon-pub-disabled` of `scenario_nav2.py`, added by
+  T09; the review CM5, finding 3a, found the node publishing disabled zones
+  too]. Contents [B: `visualize`]: frame
+  `base_frame_id`; stamp the node clock; for a polygon its vertices as
+  `float`, `z = 0`; for a circle 16 points `radius · (cos, sin)(k·π/8)`.
+  For a zone fed by a topic (N31) the last accepted message is republished
+  with a new stamp and its own frame, and before the first message an empty
+  polygon in the base frame [B: `polygon-topic`].
+- **N17. Point markers** (`process`) [S]. If `~/collision_points_marker`
+  (`visualization_msgs/msg/MarkerArray`) has a subscriber, every processed
+  command publishes one `POINTS` marker per source visited, with namespace
+  `collision_points_<source>`, frame `base_frame_id` and the source's points
+  in the base frame [B: `visualize`].
+
+### Who starts the node (N18–N21)
+
+- **N18. `nav2_bringup`** (`nav2_bringup/launch/navigation_launch.py`) [S].
+  The list `lifecycle_nodes` names `collision_monitor` between
+  `velocity_smoother` and `bt_navigator`; a lifecycle manager
+  `lifecycle_manager_navigation` gets that list as `node_names`. Without
+  composition the node is `Node(package='nav2_collision_monitor',
+  executable='collision_monitor', name='collision_monitor',
+  parameters=[configured_params], remappings=[('/tf', 'tf'), ('/tf_static',
+  'tf_static')])`. With composition it is
+  `ComposableNode(package='nav2_collision_monitor',
+  plugin='nav2_collision_monitor::CollisionMonitor',
+  name='collision_monitor', …)` loaded into the container `nav2_container`.
+  `use_composition` defaults to `False` in `navigation_launch.py` and to
+  `True` in `bringup_launch.py`, which passes it on. The simulation launch
+  files reach the node only through these two. No other launch file of
+  `nav2_bringup` names it.
+- **N19. The velocity chain** [S]: the controller's output is remapped to
+  `cmd_vel_nav` (`navigation_launch.py`); `nav2_velocity_smoother` publishes
+  `cmd_vel_smoothed` (`nav2_velocity_smoother/src/velocity_smoother.cpp`);
+  the collision monitor reads `cmd_vel_smoothed` and publishes `cmd_vel`
+  (its parameters).
+- **N20. The package's own launch file**
+  (`launch/collision_monitor_node.launch.py`) [S] starts the node with
+  `params/collision_monitor_params.yaml` and a lifecycle manager
+  `lifecycle_manager_collision_monitor` with `node_names:
+  ['collision_monitor']`, with or without composition.
+- **N21. The parameter files** [S]. `nav2_bringup/params/nav2_params.yaml`
+  (and, with the same values, the three `nav2_multirobot_params_*.yaml`):
+  `state_topic:
+  "collision_monitor_state"`, `base_shift_correction: True`,
+  `transform_tolerance: 0.2`, `source_timeout: 1.0`, `stop_pub_timeout:
+  2.0`, one zone `FootprintApproach` (`type: polygon`, `action_type:
+  approach`, `footprint_topic: "/local_costmap/published_footprint"`,
+  `time_before_collision: 1.2`, `simulation_time_step: 0.1`, `min_points:
+  6`, `visualize: False`), one source `scan` of type `scan` (with
+  `min_height` and `max_height`, which a scan source never reads).
+  `params/collision_monitor_params.yaml` of the package: `polygons:
+  ["PolygonStop"]`, a fixed stop polygon with `visualize: True`;
+  `observation_sources: ["scan"]`; `state_topic`, `base_shift_correction:
+  True`, `transform_tolerance: 0.5`, `source_timeout: 5.0`. It also defines
+  `PolygonSlow`, `PolygonLimit`, `FootprintApproach`, `VelocityPolygonStop`
+  and a `pointcloud` source, none of which is in the two lists, so none is
+  created.
+
+### Transforms (N22–N28)
+
+- **N22. When.** A scan's points are computed when a command is processed,
+  not when the scan arrives (R3): `process` reads the clock once
+  (`curr_time`) and calls `Scan::getData(curr_time, …)`, which returns
+  failure if no scan is stored, then if the scan is too old (R7), and only
+  then looks up the transform (`Scan::getData`) [S]. Every command repeats
+  the lookup.
+- **N23. Without base shift correction** (`Source::getTransform`;
+  `nav2_util/src/robot_utils.cpp`, the `getTransform` overloads without
+  time arguments) [S].
+  If the scan's `frame_id` equals `base_frame_id` as a string, the transform
+  is the identity and nothing is looked up. Otherwise
+  `tf_buffer->lookupTransform(base_frame_id, frame_id, tf2::TimePointZero,
+  transform_tolerance)`: **the newest transform available**, whatever the
+  stamp of the scan and whatever the clock. Observed [B: `tf-latest`]: with
+  a transform at the scan's stamp that puts the point outside the zone, the
+  command passes; a transform stamped 0.5 s *after* the scan and after the
+  clock, putting the point inside, makes the next command stop without a new
+  scan; that transform is still used 3.5 s later; a transform with an older
+  stamp arriving late changes nothing. The age of a transform is never
+  checked.
+- **N24. With base shift correction** (the default, `base_shift_correction:
+  true`) [S]: `tf_buffer->lookupTransform(base_frame_id, curr_time,
+  frame_id, <scan stamp>, odom_frame_id, transform_tolerance)`. tf2 computes
+  it as `T(base ← odom at curr_time) · T(odom ← frame at the scan stamp)`
+  (`tf2/src/buffer_core.cpp`, `BufferCore::lookupTransformImpl` with a fixed
+  frame: `transform = transform2 * transform1`), each factor interpolated
+  between the two samples around its time, linearly for the translation
+  (`tf2/src/cache.cpp`, `TimeCache::interpolate`) [S]. The product is turned
+  into a translation and a quaternion (`BufferCore::lookupTransform`:
+  `getRotation()`) [S]. The lookup is made also when the scan is already in
+  the base frame. Observed:
+  - [B: `shift-straight`] a point 1.2 m ahead at the scan stamp, the base
+    1 m further along odom's x at the command: stop by a 0.5 m circle; with
+    the base half way (between two odom samples): pass; the same sequence
+    with `base_shift_correction: False`: every command passes;
+  - [B: `shift-turn`] the base turned by half a turn since the scan: a point
+    that was ahead is behind (outside a zone in front), and one that was
+    behind is ahead (inside);
+  - [B: `shift-sensor-frame`] with the scan in a sensor frame 0.5 m ahead of
+    the base, both factors apply;
+  - [B: `shift-no-odom`] scan in the base frame, no odom frame: no answer
+    until the tolerance has passed, then a stop for `invalid source`.
+
+  The lookup needs odom data **at or after the command's clock reading**.
+  A command that arrives 0.25 s after the newest odom sample waits (N26) and
+  is then stopped for `invalid source` (`Lookup would require extrapolation
+  into the future`) [B: `shift-straight`]. A scan stamped before the oldest
+  sample fails likewise (`extrapolation into the past`)
+  [B: `shift-sensor-frame`]; tf2 keeps 10 s of samples
+  (`tf2/include/tf2/buffer_core.hpp`, `BUFFER_CORE_DEFAULT_CACHE_TIME`) [S].
+- **N25. Applying it** (`Scan::getData`;
+  `tf2_geometry_msgs.hpp`, `fromMsg`; `tf2/LinearMath/Matrix3x3.hpp`,
+  `setRotation`; `tf2/LinearMath/Transform.hpp`, `operator*`) [S]. The
+  looked-up message, a translation `(ox, oy, oz)` and a quaternion
+  `(qx, qy, qz, qw)`, all `double`, becomes a 3×3 matrix and an origin:
+
+  ```
+  d = qx² + qy² + qz² + qw²;  s = 2 / d
+  xs = qx·s, ys = qy·s, zs = qz·s
+  m00 = 1 − (qy·ys + qz·zs)   m01 = qx·ys − qw·zs
+  m10 = qx·ys + qw·zs         m11 = 1 − (qx·xs + qz·zs)
+  ```
+
+  and for reading `i` with the scan-frame point `(px, py, 0)` of R3
+  (`px = ranges[i] * cos(angle)` in `float`, widened to `double`):
+
+  ```
+  x = m00·px + m01·py + m02·0 + ox
+  y = m10·px + m11·py + m12·0 + oy
+  ```
+
+  in `double`. The third coordinate is dropped: the point is **projected**
+  on the base frame's x–y plane. Height, roll and pitch of the sensor are
+  not checked, and a scan source has no height filter. Observed
+  [B: `tf-tilt`, `tf-pitch-circle`]: a sensor mounted upside down mirrors
+  left and right; a sensor 5 m above the base gives the same points; with a
+  sensor pitched by a quarter turn, a point 3 m along its x axis lands on
+  the base's origin and triggers a 0.5 m stop circle.
+
+  Because of the division by `d` a quaternion that is not of unit length
+  acts as its normalisation. tf2 also normalises on entry (a transform is
+  stored as a matrix) and refuses NaN (`tf2/src/buffer_core.cpp`,
+  `setTransformImpl`) [S]; a transform published with the quaternion
+  (0, 0, 0, 2) acted as the identity [B: `tf-tilt`].
+
+  In the macOS arm64 binary the two sums are compiled to fused
+  multiply-adds (`fmadd`; `review/collision_monitor/nav2/fma_check.sh`,
+  output in `results/macos-arm64-transform.txt`). A build without them, as
+  on baseline x86-64, can differ in the last bit of a coordinate. The Linux
+  binaries were not examined.
+- **N26. Waiting** (`tf2_ros/src/buffer.cpp`, `Buffer::lookupTransform`,
+  `Buffer::canTransform` with a timeout) [S]. If the lookup cannot succeed at
+  once, the calling thread sleeps 10 ms of wall time at a time while the
+  node clock is before `start + transform_tolerance`, `start` being the
+  clock when the lookup began, and then tries once more. **The wait also
+  ends when the node clock is more than 3 s before `start`** (the loop's
+  condition has `clock_->now() + rclcpp::Duration(3, 0) >= start_time`, with
+  the comment "don't wait bag loop detected") [S]: after a backward jump of
+  the clock by more than 3 s the lookup is tried once more and the command
+  is answered at once; a jump back by 3 s or less leaves the wait running
+  until the clock is at `start + transform_tolerance` again, `start` being
+  the clock before the jump [B: scenarios `tf-wait-clock-reset`,
+  `tf-wait-clock-back` and `shift-wait-reset` of `scenario_nav2.py`, added
+  by T09; this condition was missing from this rule and from the node until
+  the review CM5, finding 2]. The callback thread
+  is the node's only one (N1): nothing else is handled meanwhile.
+  `transform_tolerance` is therefore a **waiting time**, not a bound on the
+  age or the extrapolation of a transform. It is converted by
+  `tf2::durationFromSec`: whole seconds plus the remainder times 10⁹
+  rounded to nearest (`tf2/src/time.cpp`) [S]. Observed [B: `tf-missing`],
+  tolerance 0.5 s, scan in a frame without transform: no answer while the
+  clock stands still (1.5 s of wall time); none at `start + 0.5 s − 1 ns`;
+  at `start + 0.5 s` the stop for `invalid source`. If the transform arrives
+  during the wait, the answer comes then, without the clock moving. A scan
+  with an empty `frame_id` behaves like one in an unknown frame. With
+  `transform_tolerance: 0.0` there is no wait [B: `tf-missing-timeout0`].
+  (UPSTREAM_BEHAVIOUR.md, finding 10, has the delayed stop.)
+- **N27. Failure.** A failed lookup makes `getData` fail, which is R8: a
+  stop named `invalid source` if `source_timeout` is not zero
+  [B: `tf-missing`, `shift-straight`, `shift-sensor-frame`,
+  `shift-no-odom`]; with `source_timeout: 0.0` the source has no points and
+  the command passes [B: `tf-missing-timeout0`].
+- **N28. Clock.** `publishVelocity` reads the clock again (D7), now after
+  the wait [S]. A backward jump of the clock clears the TF buffer
+  (`tf2_ros/src/buffer.cpp`, `Buffer::onTimeJump`) [S]: the transforms
+  received on `/tf` are forgotten, those received on `/tf_static` are not
+  [B: scenario `tf-clock-jump-back` of `scenario_nav2.py`, added by T07].
+  The buffer is cleared by rclcpp's clock thread when the `/clock` message
+  arrives, also while a callback waits for a transform: a transform that
+  arrives after the jump is used by the waiting command and is still there
+  for the next one [B: `tf-wait-clock-back`].
+
+### Zones whose shape arrives on a topic (N29–N36)
+
+- **N29. Which zone gets which subscription**
+  (`Polygon::getParameters`, `Polygon::getCommonParameters`) [S].
+  - `<zone>.points` present and usable: the shape is fixed. Neither
+    `polygon_sub_topic` nor `footprint_topic` is read; with both set next to
+    `points` the node subscribes to neither [B: `footprint-topic-ignored`].
+  - `points` present but not usable (the text does not parse, a point is not
+    a pair of numbers, or there are fewer than **four** points:
+    `Polygon::getPolygonFromString`, `vvf.size() <= 3`): an error is logged
+    and the zone is treated as if `points` were absent (`use_dynamic_sub`)
+    [S] [B: scenarios `points-short-topic`, `points-malformed-topic` of
+    `scenario_nav2.py`, added by T09].
+  - `points` absent, `action_type: approach`: `footprint_topic` (default
+    `local_costmap/published_footprint`) through
+    `nav2_costmap_2d::FootprintSubscriber`.
+  - `points` absent, any other action: `polygon_sub_topic` is required. If
+    it is not set, configuration fails. If it is set to the empty string,
+    configuration succeeds, no subscription is created
+    (`Polygon::createSubscription`) and the zone never has a shape [S]
+    [B: scenario `sub-topic-empty`].
+  - `<zone>.slowdown_ratio` is read only if `action_type` is `slowdown`
+    (`Polygon::getCommonParameters`): on a stop zone it may hold anything
+    [S] [B: scenario `stop-zone-ratio-type`].
+
+  **`footprint_topic` is read for `approach` only.** Therefore Nav2's
+  default zone with `action_type` changed to `stop` or to `slowdown` and
+  nothing else changed **does not configure**: `[FootprintApproach]: Error
+  while getting common polygon parameters: parameter
+  'FootprintApproach.polygon_sub_topic' is not initialized`, then `Error
+  while getting polygon parameters: static points and sub topic both not
+  defined`; `configure` fails and the node stays unconfigured
+  [B: `footprint-edit`: `nav2_params.yaml` with `stop`, with `slowdown`, and
+  the package's example file with `polygons: ["FootprintApproach"]` and
+  `stop`; unchanged, with `approach`, the first configures]. With
+  `polygon_sub_topic: "/local_costmap/published_footprint"` added, the
+  `stop` zone configures and the node subscribes to that topic
+  [B: `footprint-sub-topic`]; `footprint_topic`, `time_before_collision` and
+  `simulation_time_step` may stay, they are not read.
+- **N30. What the costmap publishes** [S only, the costmap was not run]:
+  `nav2_costmap_2d/src/costmap_2d_ros.cpp` publishes `published_footprint`
+  as `geometry_msgs/msg/PolygonStamped` with `SystemDefaultsQoS`, in
+  `updateMap`, i.e. once per map update (`update_frequency: 5.0` for the
+  local costmap in `nav2_params.yaml`), with the header of the robot's pose
+  in the costmap's global frame (`odom` for the local costmap) and the
+  padded footprint placed at that pose. So the message is the footprint
+  **in the odom frame**.
+- **N31. Subscription** (`Polygon::createSubscription`) [S]:
+  `geometry_msgs/msg/PolygonStamped` on `polygon_sub_topic`,
+  `SystemDefaultsQoS`: best effort and volatile with this middleware
+  [B: `polygon-topic`, `footprint-sub-topic`].
+  `polygon_subscribe_transient_local: true` makes it transient local, still
+  best effort; a message published reliably and transient-local before the
+  node was configured was **not** delivered [B: `polygon-topic-inactive`].
+- **N32. Before the first accepted message** the zone has no shape and
+  takes no action (`processStopSlowdownLimit`: `!polygon->isShapeSet()`,
+  with a warning per command; `min_points` is not consulted) [S]. A stop
+  zone without shape does not stop: with a point 0.2 m ahead the command
+  passed [B: `polygon-topic`, `footprint-sub-topic`].
+- **N33. A message** (`Polygon::polygonCallback`,
+  `Polygon::updatePolygon(PolygonStamped)`) [S], in this order:
+  1. fewer than **three** points: an error is logged and the message is
+     ignored; the shape stays [B: `polygon-topic`, two points and none].
+     Three points are enough [B: same case, a triangle], where a fixed
+     polygon needs four (R10).
+  2. The transform from the message's frame to the base frame: the identity
+     if the names are equal, else the newest transform with the wait of N26,
+     **inside the subscription callback**. On failure the message is
+     ignored and the shape stays [B: `polygon-topic`, frame `nowhere` and an
+     empty `frame_id`: nothing is answered until the tolerance has passed,
+     and the old shape is still in force].
+  3. The vertices become `M·(x, y, 0) + o` as in N25, x and y kept, from the
+     `float` coordinates of the message; `z` is ignored. The message is
+     stored for N34 and N16.
+
+  The callback runs to completion before the next command is handled (N1),
+  so a command sees the old shape or the new one, never a mixture [S]. The
+  stamp of the message is not read, and a shape never becomes too old [S].
+  The values are not checked. A box with one NaN coordinate was accepted
+  and, in that arrangement, the zone no longer contained a point inside the
+  box; three equal points and a polygon whose first point is repeated at the
+  end were accepted [B: `polygon-topic`]. **A NaN does not blind the zone in
+  general** (review CM5, finding 1; T04 had concluded that it does from the
+  one arrangement it tried): the crossing test of R10 skips the two edges
+  that touch the NaN vertex and still counts the others, so the zone catches
+  some points and misses others, by accident of the arithmetic. Observed
+  [B: scenario `polygon-topic-nan` of `scenario_nav2.py`, added by T09]: a
+  2 m square around the base whose 4th vertex has a NaN `x` stops for a
+  reading inside the square and for a reading 5 m behind the base; with the
+  NaN in the 1st vertex the reading inside passes and the one 5 m behind
+  stops. What this node does instead: ND6.
+- **N34. At each command** (`process`, second loop;
+  `Polygon::updatePolygon(const Velocity &)`) [S]. For every enabled zone
+  the loop reaches (it ends at the first stop, R12, and at once if the
+  source is invalid): if the stored message's frame is not the base frame,
+  the newest transform is looked up again, with the wait of N26, and the
+  vertices are recomputed from the stored message; if the lookup fails the
+  vertices stay as they were. A shape given in another frame therefore
+  follows that frame between messages [B: `polygon-topic-moving`].
+
+  For the footprint this means: the zone is where the footprint was **in
+  odom** when the costmap last published it. Observed
+  [B: `footprint-sub-topic`]: footprint received at the base's position:
+  stop for points 0.1 m ahead; base moved 1 m with no new footprint message:
+  the same points pass, and points 1.1 m behind the base, where the
+  footprint was, stop; after a new footprint message: stop again. Between
+  two costmap updates the zone lags by the distance driven; if the costmap
+  stops publishing, the robot drives out of its zone.
+- **N35. Lifecycle.** Shape messages are taken while inactive (N4) and lost
+  at cleanup (N7).
+- **N36. A circle** with `polygon_sub_topic` receives its radius as
+  `std_msgs/msg/Float32` (`Circle::createSubscription`,
+  `Circle::radiusCallback`) [S only]. Not part of this extension.
 
 ## Things the source does that the documentation does not say
 
@@ -244,6 +764,41 @@ configuration guide was not compared.
 - The output drops `linear.z`, `angular.x` and `angular.y` (R16), yet a NaN
   in one of them discards the command (R2).
 - `min_points: 0` makes a zone trigger always (R11).
+
+From the Nav2 extension:
+
+- The edit "change `action_type` of Nav2's default zone" does not work
+  (N29). A stop or slowdown zone needs `points` or `polygon_sub_topic`.
+- A stop zone fed by a topic protects nothing until its first message, and
+  nothing at all if the publisher never starts (N32).
+- A footprint zone fed from the costmap lags behind the robot and is left
+  behind if the costmap stops (N34). A fixed polygon with the footprint's
+  coordinates has neither problem.
+- `transform_tolerance` is how long a command is held up, by the node
+  clock, before a missing transform turns into a stop (N26). Under a clock
+  that stands still the node never answers.
+- Without base shift correction the newest transform is used however old
+  it is (N23). With it, every command waits for an odom sample newer than
+  itself (N24).
+- A tilted sensor is projected, not rejected (N25).
+- A node shut down from the active state keeps forwarding commands (N8).
+- Deactivating and activating restarts the `stop_pub_timeout` period and
+  re-reports the state (N6).
+- A polygon message with a NaN coordinate is taken as it is; the zone then
+  catches some points and misses others (N33). This node's zone demands its
+  action instead (ND6).
+- A backward jump of the clock makes the node forget every transform it
+  received on `/tf` (N28). With base shift correction every command then
+  stops for `invalid source` until new odometry has arrived (inferred from
+  N24 and N28; `shift-wait-reset` shows the node answering again once it
+  has).
+- A clock that jumps back by 3 s or less while a command waits for a
+  transform holds the node until the clock has caught up with the time the
+  wait began, plus `transform_tolerance`; only a jump of more than 3 s ends
+  the wait (N26).
+- `points` that cannot be used (three points, for instance) do not fail the
+  configuration if `polygon_sub_topic` is set: the zone silently becomes one
+  fed by that topic, without a shape until a message arrives (N29, N32).
 
 ## Units and representation in the Lean core
 
@@ -379,25 +934,33 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   half a unit in the last place of `r·|x|`, and it does not grow when `r`
   is made smaller (the last is what "Slowdown bound" needs). The core guarantees the premise:
   a `slowdown` action always carries a pattern below `F64.one`.
-- T2. *The scan's points in the base frame* (replaced by SPEC_NAV2.md,
-  section 7, T2 and T6, which are larger). (a) The computation of R3 in
-  floating point (angle accumulation, `cos`, `sin`, the product), including
-  which library entry the compiler calls for `cos` and `sin`. (b) The
-  transform of N25 in `double` and the projection, by tf2's own code,
-  compiled without fused multiply-add. (c) Which transform is looked up
-  (N23, N24, N33, N34), and that a failed lookup or an unusable transform
-  (ND7) is handed over as "none". (d) That the coordinates handed over with
-  a command are those of the scan the core has stored, one pair per reading.
-  All of it is `transforms.hpp`, tested by `smoke_transforms` and
-  `smoke_conversions`. The core sees the result only. The conversion of
-  those metres to saturated integer millimetres is **not** trusted: it is
-  done in Lean (`coordMm`) and proved to truncate toward zero; so is which
-  readings count (R4).
+- T2. *The scan's points in the base frame.* (a) The computation of R3 in
+  `float`: the angle accumulation, `cos`, `sin`, the product, widened to
+  `double`, including which library entry the compiler calls for `cos` and
+  `sin`. (b) The transform arithmetic of N25 in `double`: the matrix from
+  the quaternion, the two sums, the projection, by tf2's own inline code;
+  for a topic zone's vertices the same. (c) How (a) and (b) are compiled:
+  with `-ffp-contract=off`, so that no multiply-add is fused (decided by the
+  user; enforced by a test of the build). (d) That the coordinates handed
+  over with a command are those of the scan last handed to Lean, one pair
+  per reading, in order, under the transform looked up for that command;
+  and likewise that the vertices handed over for a zone are those of the
+  message Lean last took as that zone's shape. Lean checks the number of
+  pairs and of vertices, and nothing else about them. All of it is
+  `transforms.hpp`, tested by `smoke_transforms` (the reference computation
+  bit for bit; the angle over a scan of 1080 readings, where accumulation in
+  double precision would give other points) and `smoke_conversions`. The
+  conversion of those metres to saturated integer millimetres is **not**
+  trusted: it is done in Lean (`coordMm`) and proved to truncate toward
+  zero; so is which readings count (R4).
 - T3. *The configuration.* The parsing of the `points` text into `float`s
   (upstream's grammar, `parse_vvf`), that the shim passes every parameter
   as it read it and tells the core truthfully which zones are fed by a
-  topic, and that zone names are distinct, not empty and not `invalid
-  source` (ND5: checked in C++ when the parameters are read). The conversions themselves (radius, vertices, timeouts,
+  topic, that zone names are distinct, not empty and not `invalid
+  source` (ND5: checked in C++ when the parameters are read), and which
+  parameter a polygon's shape comes from (N29: `points` if upstream can use
+  them, `fixed_points_usable` in `conversions.hpp`, otherwise
+  `polygon_sub_topic`). The conversions themselves (radius, vertices, timeouts,
   `min_points`) and every refusal of a value are in Lean. For the radius,
   vertices and coordinates they are proved against the number a bit pattern
   denotes (`ROSlean/CollisionMonitor/Convert.lean`). For timeouts, what is
@@ -413,13 +976,41 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
 - T5. *The shim* delivers every message as one event with one clock reading
   and every lifecycle transition as its event, in order, and no other;
   passes the fields named under "Shim boundary" unaltered; and publishes what
-  the table above and SPEC_NAV2.md, 8.3, say and nothing else (the state
-  message and the zone polygons included; their contents are display, T8
-  of SPEC_NAV2.md). The table itself is one function,
+  the table above and "Command event" say and nothing else (the state
+  message and the zone polygons included; their contents are display, T8). The table itself is one function,
   `apply_answer` in `conversions.hpp`, tested on its own
   (`smoke_conversions`), including what it does with a kind the core cannot
   return ("Command event").
-
+- T6. *The transforms.* (a) tf2: that the transform it returns is the one
+  between the frames and at the times asked for (its tree, its
+  interpolation, its product, its conversion to a quaternion). (b) The
+  shim's lookup: that it asks tf2 for what N23, N24, N33 and N34 say, for
+  the frame and stamp of the scan it last handed to Lean and the frame of
+  the shape message Lean last accepted for that zone; that it uses the
+  seven numbers unaltered (T2 b); that a failed lookup, and a transform
+  with a number that is not finite or with a zero quaternion (ND7), is
+  passed as "none". (c) The wait of N26, which is the node's own loop
+  (`wait_for`; its two conditions on the clock are `wait_goes_on` in
+  `transforms.hpp`, with a unit test), and the clearing of the TF buffer on
+  a backward jump of the clock (N28), which the node does itself on the
+  `/clock` message that shows the jump, because it has no clock thread
+  ("Command event"). Tested on the node by the scenarios `tf-*` and
+  `shift-*`.
+- T7. *The distance between the shim's points and upstream's* (for the
+  comparison only). That the point and the vertices upstream computes by
+  N25 are within 0.04 mm per axis of those the shim computes, for
+  coordinates below 1000 m. The estimate is 10⁻⁸ mm (SPEC_NAV2.md, section
+  5): two evaluations of one expression in `double`, one of them possibly
+  with fused multiply-add. It enters no theorem about this node as a fact;
+  it is the hypothesis `δ` of `contains_of_shim`, `contains_of_shim_fixed`
+  and `circle_safe_shim`, on which "a point upstream counts is always
+  counted" rests.
+- T8. *Display.* The names in state messages (the shim's table from zone
+  index to name) and the polygons published for `visualize` (N16): a fixed
+  polygon's vertices as read, the 16 points of a circle, the last message
+  taken as a topic zone's shape, an empty polygon before the first such
+  message and after a message with an unusable vertex (ND6). A mistake here
+  misinforms an observer; it changes no velocity.
 - T9. *The clock's validity* (D15). Under simulated time the node decides
   in C++ whether it has a valid clock reading: it has none while the
   `/clock` message received last has `sec < 0`
@@ -430,7 +1021,44 @@ What remains trusted, i.e. is not covered by a theorem about `step`:
   else is read from its source (Jazzy, `rclcpp/src/rclcpp/time.cpp`) and
   seen on the binary for `sec` of −5, −1 and −2³¹ (`fault_injection.py`,
   case `clock-negative`). What the node answers without a clock reading is
-  the model's (`stepNoClock`); when it has none is the shim's.
+  the model's (`stepNoClock`); when it has none is the shim's. The handling is in the
+  stand-alone executable's `main`: **D15 is promised for the executable
+  only.** Loaded as a component the node ends with its container on such a
+  message, as upstream's component does (ND10).
+- T10. *The Lean runtime in the node's threads* (review CM5, finding 5).
+  The Lean runtime requires `lean_initialize_thread()` in every thread that
+  runs Lean code and that Lean did not create, and `lean_finalize_thread()`
+  before such a thread ends. `roslean::initialize()` (`runtime.hpp`) does
+  both, once per thread, and every member of the C++ wrapper that calls
+  into Lean calls it first (`test_cm_ffi`: a monitor built in one thread,
+  used in two others and destroyed in a third; the number of
+  initialisations is counted). The stand-alone node runs Lean in one thread
+  only; as a component it runs in the threads of its container's executor
+  (tests `smoke_component`, `smoke_component_single`, `smoke_component_mt`).
+  What was checked in the toolchain this repository pins (Lean 4.37.0-rc1,
+  built with mimalloc, macOS arm64, by disassembling `libleanrt.a`):
+  `lean_initialize_thread` reads an environment variable and does nothing
+  else, `lean_finalize_thread` is empty, and neither is declared in
+  `lean.h`. A toolchain built with Lean's own small-object allocator sets
+  up the thread's heap there. Trusted, and not checked by any test: that
+  Lean objects, whose reference counts are not atomic, are never used by
+  two threads at once. The node guarantees it by running every callback
+  that reaches the core in one mutually exclusive callback group.
+
+What the theorems say: for every sequence of lifecycle transitions, scans,
+shape messages and commands, with whatever coordinates the shim handed over
+or failed to hand over, which velocity action and which report the node
+gives, including that it gives none unless active, that a missing transform
+stops under the stated hypotheses, that the number of points is the number
+of valid readings of the stored scan, and that every point is the
+coordinate pair it was given, truncated toward the origin.
+
+What they do not say: that a coordinate pair is the image of its reading
+(T2), under the right transform (T6); that the scan-frame point is the
+right one (T2); anything about time spent waiting, about the order in which
+the middleware delivers messages, about the bond or the lifecycle manager;
+that a topic zone has a shape, or a current one (N32, N34); that the base
+stops when the node is silent (A3).
 
 T1 could be removed later by multiplying in the core on bit patterns (a
 correctly rounded binary64 product in integer arithmetic, about fifty lines)
@@ -457,8 +1085,12 @@ said here and corrected there.
 - `Scan` is `stamp`, `rangeMin`, `rangeMax` and `beams`; a `Beam` is a range
   pattern. The coordinates of the readings are not stored with the scan:
   they arrive with each command. `Twist` is six patterns.
-- `TopicShape`: `foreign` (the message's frame is not the base frame),
-  `current` (the vertices in the base frame, in millimetres).
+- `TopicShape`, what the state holds for a topic zone after a message
+  that counted: `foreign` (the message's frame is not the base frame),
+  `current` (the vertices in the base frame, in millimetres), and
+  `unusable`: the message had a vertex the node cannot use, the zone has no
+  vertices and demands its action (ND6; `TopicShape.unusableMark` is
+  `foreign := false`, `current := []`, `unusable := true`).
 - `Phase`: `unconfigured`, `inactive`, `active`, `finalized`.
   `Report`: `normal`, `stop zone`, `slowdown zone`, `source`.
 - `State`: `phase`, `scan : Option Scan` (R5), `shapes : List (Option
@@ -496,15 +1128,18 @@ said here and corrected there.
 | `cleanup` | inactive | phase := unconfigured, `scan := none`, every shape := `none` | `silent` |
 | `shutdown` | any | phase := finalized; from there nothing changes any more | `silent` |
 | `scan now s` | inactive, active | `scan := some s` | `silent` |
-| `shape k verts foreign` | inactive, active | if accepted (`acceptShape`), entry `k` of the shapes := the new shape | `silent` |
+| `shape k verts foreign` | inactive, active | if accepted (`acceptShape`), entry `k` of the shapes := the new shape, or the mark of an unusable message (ND6) | `silent` |
 | `cmd …` | active, and `v` finite | below | `answer velocity report` |
 
 In every other phase the event changes nothing and the output is `silent`.
 
 A shape message is accepted iff zone `k` exists and is a topic zone, `verts
-= some vs`, `vs` has at least three entries, and every vertex
-`vertexPointMm v` is within `coordLimit − 3` of both axes, which a
-coordinate that is not finite never is (N33, ND6).
+= some vs` and `vs` has at least three entries (N33). What it installs: if
+every vertex `vertexPointMm v` is within `coordLimit − 3` of both axes,
+which a coordinate that is not finite never is, the shape `{ foreign,
+current := vs.map vertexPointMm, unusable := false }`; otherwise the mark
+`TopicShape.unusableMark`, in place of whatever the zone had (ND6). A
+message that is not accepted is ignored: the zone keeps what it had.
 
 `step` on a processed command is built from named parts, so that properties
 can be stated on each:
@@ -516,7 +1151,7 @@ can be stated on each:
 | `Scan.fits s c`, `Scan.points s c` | `c` has one pair per reading of `s`; the points of the valid readings: reading `i` with pair `i`, the pairs of readings that are not valid dropped | R4, N25 |
 | `sourcePoints cfg st now scanPts` | `some pts`: the points to test; `none`: invalid source. Coordinates that do not fit the stored scan count as none | R5–R8, N22, N27 |
 | `refreshShapes cfg shapes zoneVerts`, `TopicShape.refresh` | every enabled topic zone's shape, if it is in another frame, takes the vertices the command carries for it, when they are as many as it has and all within the limit | N34, ND3 |
-| `liveConfig cfg st zoneVerts` | the zones as tested: the configuration with each topic zone given its refreshed shape as a polygon, or left without shape | N32, N34 |
+| `liveConfig cfg st zoneVerts` | the zones as tested: the configuration with each topic zone given its refreshed shape as a polygon, or left without shape; a topic zone whose entry is the mark of an unusable message is tested with the threshold 0, so that it is triggered whenever it is enabled (`Zone.withShape`) | N32, N34, ND6 |
 | `Shape.contains`, `Zone.count`, `Zone.triggered` | zone tests; a zone without shape is never triggered | R9–R11, D3, D4, N32 |
 | `firstStop`, `bestSlowdown`, `zonesAction cfg pts` | action for given points | R12–R14 |
 | `evaluate cfg st now scanPts zoneVerts` | action for a command; independent of its velocity: `stopSource` if the source is invalid, else `zonesAction (liveConfig …) pts` | R8, R12–R14 |
@@ -656,7 +1291,7 @@ a valid reading, converted: for finite coordinates the value handed over, in
 millimetres, truncated toward zero and saturated at ±`coordLimit`; unless
 saturated, less than 1 mm from it on each axis. That a pair is the image of
 its reading under the right transform is not a property of the model: the
-shim computes it (SPEC_NAV2, T2, T6).
+shim computes it (T2, T6).
 
 **No amplification.** If the velocity of the output of any event is `some
 a`, then `a` is `.pass`, `.stopZone _`, `.stopSource`, or `.slowdown k r`
@@ -704,13 +1339,35 @@ estimated at 10⁻⁸ mm and trusted (SPEC_NAV2, section 5, T7).
 
 **Shape accepted.** A `shape k verts foreign` event is accepted iff the
 conditions of "The model" hold. If it is not accepted the state is
-unchanged. If it is, entry `k` of the shapes becomes the new shape (whether
-the frame is foreign, the rounded vertices) and nothing else changes: not
+unchanged. If it is, entry `k` of the shapes becomes what the message
+installs (the shape: whether the frame is foreign, the rounded vertices; or
+the mark of an unusable message) and nothing else changes: not
 the other entries, not `scan`, `prevZero`, `stopStamp`, `prevReport`,
 `phase`. So the state changes only if the message is accepted. (Not "iff":
 an accepted message that carries the shape the zone already has changes
 nothing.) At a command a refresh changes the positions of a foreign shape's
 vertices and nothing else, not their number.
+
+**Unusable message (ND6; review CM5, finding 1).** A message installs the
+mark iff it is accepted and one of its vertices, rounded to the millimetre,
+is not within the coordinate limit (iff). A topic zone with an entry in the
+state is triggered iff it is enabled and either the entry is the mark or at
+least `minPoints` points are inside the polygon of its vertices (iff); with
+the mark, exactly when it is enabled, whatever the points. Hence: *never
+less restrictive for that zone*: if the zone is triggered with whatever
+else the state could hold for it (no shape, or any shape, in particular the
+one it had before the message), it is triggered with the mark. If zone `k`
+is an enabled stop zone fed by a topic and the state holds the mark for it,
+the action for every command is a stop (by zone `k` or an earlier triggered
+stop zone, or for an invalid source), with no hypothesis on the scan, the
+coordinates, the clock or `source_timeout`; so every velocity published is
+zero. The mark is neither set nor removed by any event other than a polygon
+message for that zone and a cleanup. On runs from `State.init cfg`: after a
+message that installed the mark, and any events that follow among which
+there is no polygon message for zone `k` and no cleanup, whatever velocity
+is published for the next event is a stop. For the only-if direction of
+"Only if (stop zone)" and "Only if (slowdown)" this adds a case: the zone
+has `minPoints` points inside, **or** it is a topic zone with the mark.
 
 **No shape.** If zone `k` is a topic zone and the state holds no shape for
 it, zone `k` is not triggered by any points, and no output names it, as a
@@ -887,7 +1544,8 @@ into 0, which would mean "check disabled" (review finding 7a).
 | --- | --- |
 | `roslean_cm_on_scan` | monitor, `now_ns : uint64`, `stamp_ns : int64`, `range_min_bits : uint32`, `range_max_bits : uint32`, `ranges : ByteArray` → monitor |
 | `roslean_cm_on_shape` | monitor, `zone : uint32`, `foreign : uint8`, `has_verts : uint8`, `verts : ByteArray` → monitor |
-| `roslean_cm_shape_accepted` | monitor → `uint8`: the shape call made last was accepted (E7) |
+| `roslean_cm_shape_accepted` | monitor → `uint8`: the shape call made last was accepted (E7): it installed a shape or the mark of an unusable message |
+| `roslean_cm_shape_unusable` | monitor, `zone : uint32` → `uint8`: the state holds the mark of an unusable message for that zone (ND6). A query |
 
 - `now_ns`: the node clock, read once in the callback.
 - `stamp_ns = (int64_t)header.stamp.sec * 1000000000 + header.stamp.nanosec`
@@ -907,10 +1565,17 @@ into 0, which would mean "check disabled" (review finding 7a).
   transform of N33 (`polygon_vertices` in `transforms.hpp`); `has_verts` is 0
   if that lookup failed; `foreign` is 0 iff the message's `frame_id` equals
   `base_frame_id`. The lookup is made only for a message with at least three
-  points; a shorter one is handed over at once and refused by Lean. If
-  `roslean_cm_shape_accepted` returns 1 the shim keeps the message for the
-  lookups of later commands (N34) and for display (N16); otherwise it logs
-  an error and keeps the previous one.
+  points; a shorter one is handed over at once and ignored by Lean. What
+  the shim keeps follows Lean's answer: if `roslean_cm_shape_accepted`
+  returns 0 the message is ignored, an error is logged and the shim keeps
+  what it had; if it returns 1 and `roslean_cm_shape_unusable` for the zone
+  returns 0, the shim keeps the message for the lookups of later commands
+  (N34) and for display (N16); if both return 1 (ND6) the shim drops the
+  message it had kept for the zone, shows an empty polygon and logs an
+  error: there is nothing to look up for a zone without vertices. The
+  wrapper returns the three cases as `ShapeResult` (`Ignored`, `Shape`,
+  `Unusable`); that the second query after an accepted call says what the
+  call installed is `cmShapeUnusable_after`.
 
 The cost, measured on an Apple M5 core: the scan call with the shim's
 encoding is a copy of the ranges and a decoding into a list, a few
@@ -1008,11 +1673,20 @@ The sequence for one command is SPEC_NAV2.md, 8.3, as implemented:
   upstream's wait (N26): if the transform cannot be had at once, the callback
   sleeps 10 ms of wall time at a time while the node clock is before the
   time the lookup began plus `transform_tolerance`, trying again each time,
-  and tries once more at the end. The loop is the node's own
-  (`wait_for`), not `tf2_ros::Buffer::lookupTransform` with a timeout:
-  under simulated time rclcpp's clock cannot advance inside a callback of
-  this node, which has no clock thread (D15), so while it waits the node
-  takes the `/clock` messages of its own subscription by hand. If the
+  and tries once more at the end; and the wait ends at once when the clock
+  is more than 3 s before the time the lookup began (tf2's second
+  condition, N26: `wait_goes_on` in `transforms.hpp`). The loop is the
+  node's own (`wait_for`), not `tf2_ros::Buffer::lookupTransform` with a
+  timeout: under simulated time rclcpp's clock cannot advance inside a
+  callback of this node, which has no clock thread (D15), so while it waits
+  the node takes the `/clock` messages of its own subscription by hand, and
+  the clock of the wait is the time of the newest of them (it can go
+  backwards). For the same reason the node clears the TF buffer itself when
+  a `/clock` message carries an earlier time than the one before it (N28):
+  tf2's own hook would run only after the callback, and would then also
+  forget transforms that arrived after the jump, which upstream keeps; so
+  the buffer is created with a clock of its own, which never jumps, and
+  `on_clock` calls `clear()` (T6 c). If the
   scan's lookup fails and the source timeout is not 0, the zones' lookups
   are not made (upstream does not reach its zone loop; the core leaves the
   shapes as they are).
@@ -1134,7 +1808,7 @@ created; the node stays unconfigured and the process stays up (N3).
 | Footprint subscription | only with `approach` | Refused with it |
 | Zone bound to a subset of sources | `<zone>.sources_names` other than the one source | Refused |
 | Deprecated `max_points` | `<zone>.max_points` set | Refused (D10) |
-| Component | loading the node into a component container | Provided as `roslean_collision_monitor::CollisionMonitorNode` (library `collision_monitor_component`; test `smoke_component`), without the handling of D15, which lives in the stand-alone executable's `main` (ND10) |
+| Component | loading the node into a component container | Provided as `roslean_collision_monitor::CollisionMonitorNode` (library `collision_monitor_component`; tests `smoke_component`, `smoke_component_single`, `smoke_component_mt`), without the handling of D15, which lives in the stand-alone executable's `main` (ND10) |
 | Toggle and run-time parameters | `~/toggle`; setting a parameter while the node runs | Not provided; a change is rejected (ND8) |
 | The removed sensor pose | `<source>.roslean_sensor_pose` | Refused, with a message that points to TF |
 | Zone names the state topic cannot report | two zones of one name, a zone named `invalid source`, an empty name | Refused (ND5) |
@@ -1160,11 +1834,42 @@ created; the node stays unconfigured and the process stays up (N3).
 | D12 | Coordinates unbounded | Coordinates saturate at ±1000 m; zones must lie inside | Bounded integers at the boundary; see "Safe direction". |
 | D13 | Publishes zone shapes, collision point markers and, if `state_topic` is set, the current action | The state topic and the zone polygons are provided (N12–N16). Only the point markers are not (ND9) | Display only. |
 | D14 | A configuration error fails the lifecycle transition; the process stays up, unconfigured | (Replaced by task T06.) As upstream: `configure` fails, the node stays unconfigured, the process stays up | — |
-| D15 | Under `use_sim_time`, a `/clock` message with a negative time (`sec < 0`) ends the process: rclcpp's time source throws "cannot store a negative time point in rclcpp::Time" in its clock thread, where nothing catches it (seen on the binary, 1.3.12, signal 6) | The node goes on. It runs without rclcpp's clock thread (`use_clock_thread(false)`), so the message is taken in by the executor that spins the node and the exception arrives in `main`, which spins again. While the `/clock` message received last is such a one the node has no valid clock reading (T9), and every command goes to the core as "without a clock reading" (`roslean_cm_on_cmd_no_clock`, the model's `stepNoClock`): a finite command is answered with **zero velocity** (the stop for an invalid source), whatever the configuration, the scan and the zones, also with `source_timeout: 0` and with the source disabled, and the zero is not withheld after `stop_pub_timeout`. A command that is not finite is ignored (R2). With the next usable `/clock` message commands are evaluated as before; the period of R15 starts anew. Scans keep being stored meanwhile | No topic content may end the node (as D8). Without a clock neither the age of a scan nor the period of R15 can be judged, so the answer is the stop, for every configuration. Not a lifecycle matter and not an `Event` of the model: `stepNoClock` is a transition beside `step` (THEOREMS.md, "A command without a clock reading"). The difference is observable only after a message that kills upstream. Test: `roslean_fault_clock_negative`. |
+| D15 | Under `use_sim_time`, a `/clock` message with a negative time (`sec < 0`) ends the process: rclcpp's time source throws "cannot store a negative time point in rclcpp::Time" in its clock thread, where nothing catches it (seen on the binary, 1.3.12, signal 6) | The node goes on. It runs without rclcpp's clock thread (`use_clock_thread(false)`), so the message is taken in by the executor that spins the node and the exception arrives in `main`, which spins again. While the `/clock` message received last is such a one the node has no valid clock reading (T9), and every command goes to the core as "without a clock reading" (`roslean_cm_on_cmd_no_clock`, the model's `stepNoClock`): a finite command is answered with **zero velocity** (the stop for an invalid source), whatever the configuration, the scan and the zones, also with `source_timeout: 0` and with the source disabled, and the zero is not withheld after `stop_pub_timeout`. A command that is not finite is ignored (R2). With the next usable `/clock` message commands are evaluated as before; the period of R15 starts anew. Scans keep being stored meanwhile | No topic content may end the node (as D8). Without a clock neither the age of a scan nor the period of R15 can be judged, so the answer is the stop, for every configuration. Not a lifecycle matter and not an `Event` of the model: `stepNoClock` is a transition beside `step` (THEOREMS.md, "A command without a clock reading"). The difference is observable only after a message that kills upstream. Test: `roslean_fault_clock_negative`. **Promised for the stand-alone executable only**: the handling is in its `main`; loaded as a component the node ends with its container on such a message, as upstream's component does (ND10; decided: "as upstream" for the component). |
+| ND1 | The transform is applied in `double`, with or without fused multiply-add depending on the build (N25); the arm64 binary fuses | Applied in `double` by the shim, by the same formula, **never fused** (`-ffp-contract=off`, decided by the user); then truncated to millimetres in Lean (`coordMm`) | SPEC_NAV2.md, section 5. Before truncation the two are equal where upstream's build does not fuse, and differ by an estimated 10⁻⁸ mm at most where it does; after it, as D3 and D4 already say. |
+| ND2 | The clock is read at the start of `process` and again in `publishVelocity`, after any wait for a transform (N28) | One reading per command, taken before the lookups | Extends D7. The two readings can now differ by up to `transform_tolerance` per lookup that waits, instead of by the run time of the callback. Affects only the boundary of `stop_pub_timeout`, and only for commands that waited. |
+| ND3 | The transform of a topic zone's shape in another frame is looked up when the zone loop reaches the zone (N34) | The shim looks up the transforms of all such zones before the command is evaluated, and the model refreshes all enabled ones | The lookups cannot be interleaved with a decision taken in Lean in one call. Differences: lookups, and their waits, for zones behind a triggered stop zone, so that **a stop by an earlier zone is published later than upstream publishes it, by up to `transform_tolerance` for each such lookup that fails** (review CM5, finding 3d; from source, not run); and the vertices of such a zone are refreshed where upstream leaves them until the zone is next reached. No command is decided differently unless a later lookup for that zone fails. |
+| ND4 | Shut down from the active state, the node keeps answering commands (N8) | After `shutdown` nothing is published (E5) | A finalized node that drives the robot is a defect. Nav2's manager never takes that path (N8). |
+| ND5 | A state message is published when the acting zone's **name** changes (N13, N15) | When the report changes, which identifies a zone by its position. A configuration in which two zones have the same name, or a zone is named `invalid source` or has an empty name, is refused | Only then can the two rules differ. |
+| ND6 | A shape message is taken whatever its coordinates. With a NaN in a vertex the zone catches some points and misses others, by accident of the arithmetic (N33) | A message with at least three vertices of which one, in the base frame, is not finite or lies beyond the coordinate limit of D12 (999.997 m from an axis) is not stored as a shape. It leaves a mark in the model's state (`TopicShape.unusable`): the zone has no vertices and **demands its action for every command while it is enabled** (a stop zone stops, a slowdown zone slows down), whatever the points and whatever `min_points`, until a usable message for the zone arrives or the node is cleaned up. Deactivation does not lift the mark, and neither does a message that is ignored (fewer than three points, no transform). The zone's published polygon is empty meanwhile | Integers cannot hold such a vertex, and what upstream's zone does with it is not a rule that could be reproduced on purpose. Never less restrictive than upstream for that zone: with the mark the zone is triggered whenever it is enabled (`triggered_of_unusable`), hence whenever it would be with any shape (`triggered_unusable_of_triggered`); an enabled stop zone with the mark stops every command (`evaluate_isStop_of_unusable`, `run_stop_after_unusable`); when the mark is set: `acceptShape_unusable_iff`. More restrictive than upstream, which may pass where this node stops (scenarios `polygon-topic`, `polygon-topic-nan`). Until the review CM5 (finding 1) the node ignored such a message and kept the zone as it was, and passed where upstream stopped. **Default chosen by the orchestrator; the user has not confirmed it** (tasks/PLAN.md, "Decisions") |
+| ND7 | tf2 does not return a non-finite or all-zero quaternion, by N25 [S] | Such a transform counts as a failed lookup: the **shim** checks the seven numbers before it uses them and hands over "none" (T6; trusted and tested there, since the model no longer sees the transform) | Totality; fail closed. Not reachable through tf2 as read. Without the check a NaN would become a saturated point, which lies in no zone. |
+| ND8 | `~/toggle`; `enabled` of a zone or source changeable at run time (R19) | Not provided; an attempt to change a parameter at run time is refused | Scope. Was part of D2. |
+| ND9 | `~/collision_points_marker` (N17) | Not provided | Display only. Under option A the shim has the base-frame points and could publish them; still out of scope. |
+| ND10 | Loadable as the component `nav2_collision_monitor::CollisionMonitor` (N18) | Loadable as the component `roslean_collision_monitor::CollisionMonitorNode` (library `collision_monitor_component`), and as the stand-alone executable `collision_monitor`. Observed (test `smoke_component`, macOS): in `component_container_isolated`, in one process with upstream's monitor and Nav2's lifecycle manager, the node is configured, activated and bonded by the manager and answers commands. The same in `component_container` (one thread for all nodes) and `component_container_mt` (tests `smoke_component_single`, `smoke_component_mt`, T09); every thread that calls into Lean is prepared for it (T10). **In a container the handling of D15 is not there: D15 is promised for the stand-alone executable only** (decided: "as upstream" for the component): an exception that leaves a callback (a `/clock` message with a negative time) is the container's to catch, and Nav2's containers do not | See SPEC_NAV2.md, 8.5. The stand-alone executable is the form that has every property claimed. |
+| ND11 | A zone without `points` and with an action other than `approach` and no `polygon_sub_topic` fails configuration with a message about `polygon_sub_topic` (N29) | The same failure, and if `footprint_topic` is set the message says that `footprint_topic` is read for `approach` only and names the two ways out. If the zone has `points` that cannot be used and no `polygon_sub_topic`, upstream gives the same message about `polygon_sub_topic`; this node names `points` and says what is wrong with them. `configure` fails in both | The edit users will try first (N29). |
+| ND12 | A circle's radius can arrive on a topic (N36) | Refused | Scope. |
+| ND13 | At a command, the vertices of a topic zone whose message is in another frame are recomputed under the newest transform whatever the result (N34) | If one of the recomputed vertices is not finite or lies beyond the coordinate limit (999.997 m from an axis), or their number is not the shape's, the zone stays where it was for that command (`refresh_of_refused`) | Integers, D12. tf2 holds no transform with a NaN (N25), so this needs the zone's frame to be about a kilometre from the base. Upstream's zone is then a kilometre away; this node's is where it last was, which catches the points near the robot that it caught before and misses points a kilometre away that upstream's would catch. Unlike ND6 the zone does not demand its action. Recorded by the review CM5 (finding 3e), not changed |
+
+ND1 to ND13 are the differences of the Nav2 extension (written by T04 as
+section 6 of SPEC_NAV2.md; ND3, ND6, ND10 and ND11 amended and ND13 added by
+T09 after the review CM5).
 
 Everything else is reproduced, including R1 (no output without commands),
 R4 (an invalid scan is free space), R7 (age by header stamp), R8 with
-timeout 0, R11 with `min_points <= 0`, R15 and R16.
+timeout 0, R11 with `min_points <= 0`, R15 and R16; and of the extension:
+the lifecycle transitions and what each creates and destroys (N2–N7); the
+bond (N9); that commands are dropped while inactive and scans and shapes
+are stored; the state topic's contents and timing (N12–N14) apart from ND5;
+the polygon publishers (N16), including that a disabled zone is not
+published; which transform is looked up, at which times, with which
+timeout, and the wait with both its conditions (N23, N24, N26); that a
+backward jump of the clock clears the TF buffer when it happens (N28); the
+projection (N25); that a failed lookup stops only with a non-zero
+`source_timeout` (N27); which parameter a polygon's shape comes from,
+including the fall-back from unusable `points` to the topic (N29); that a
+topic zone without shape takes no action (N32); the three-point minimum and
+the handling of a message whose transform fails (N33); that a shape in
+another frame follows the newest transform and is left behind when its
+publisher stops (N34).
 
 ## Model assumptions
 
@@ -1179,7 +1884,7 @@ timeout 0, R11 with `min_points <= 0`, R15 and R16.
   finite (R2), and once zero has been published for `stop_pub_timeout` (R15).
   A base that keeps executing its last command needs a watchdog (PLAN, lesson
   16).
-- A4. The TF tree is right and timely (SPEC_NAV2.md, T6), and the sensor's
+- A4. The TF tree is right and timely (T6), and the sensor's
   clock agrees with the node's well enough for R7 to be meaningful.
 
 ## Open decisions

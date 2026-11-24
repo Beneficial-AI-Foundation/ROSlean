@@ -613,6 +613,46 @@ theorem run_output_of_no_shape (cfg : Config) (pre mid : List Event) (e : Event)
   apply run_no_shape _ _ _ _ _ hmid
   exact no_shape_of_unconfigured cfg _ k (reachable_inv cfg pre) (by rw [run_phase]; exact hpre)
 
+/-! ## After a message with an unusable vertex, over a run (ND6) -/
+
+/-- The mark of an unusable message for zone `k` is neither set nor removed
+by events among which there is no polygon message for zone `k` and no
+cleanup. -/
+theorem run_keeps_unusable (cfg : Config) (st : State) (es : List Event) (k : Nat)
+    (he : ∀ e ∈ es, (∀ verts foreign, e ≠ .shape k verts foreign) ∧ e ≠ .cleanup) :
+    shapeUnusable (run cfg st es).1.shapes k = shapeUnusable st.shapes k := by
+  induction es generalizing st with
+  | nil => rfl
+  | cons e es ih =>
+    rw [run_cons, ih _ (fun e' he' => he e' (List.mem_cons_of_mem _ he'))]
+    exact step_keeps_unusable cfg st e k (he e List.mem_cons_self).1 (he e List.mem_cons_self).2
+
+/-- **After an unusable message, over a run (review CM5, finding 1).** Let
+zone `k` be an enabled stop zone fed by a topic. After any events since
+start-up (`pre`), let a polygon message for zone `k` install the mark of an
+unusable message (exactly when: `acceptShape_unusable_iff`), and let any
+events follow among which there is no polygon message for zone `k` and no
+cleanup (`mid`). Then whatever velocity the node publishes for the next
+event is a stop: until a later message for the zone is taken or the node is
+cleaned up, no command passes and none is merely slowed. (Deactivation and
+activation in `mid` change nothing about it.) -/
+theorem run_stop_after_unusable (cfg : Config) (pre mid : List Event) (e : Event) (k : Nat)
+    (z0 : Zone) (h0 : cfg.zones[k]? = some z0) (ht : z0.shape = .topic) (ha : z0.action = .stop)
+    (hen : z0.enabled = true) (verts : Option (List Coords)) (foreign : Bool) (sh : TopicShape)
+    (hacc : acceptShape cfg (run cfg (State.init cfg) pre).1 k verts foreign = some sh)
+    (hu : sh.unusable = true)
+    (hmid : ∀ e' ∈ mid, (∀ verts foreign, e' ≠ .shape k verts foreign) ∧ e' ≠ .cleanup)
+    (a : Action)
+    (h : (step cfg (run cfg (State.init cfg) (pre ++ .shape k verts foreign :: mid)).1 e).2.velocity
+      = some a) : a.isStop = true := by
+  apply output_of_unusable cfg _ e k z0 h0 ht ha hen _ a h
+  rw [run_append, run_cons, run_keeps_unusable _ _ _ _ hmid]
+  have hk : k < (run cfg (State.init cfg) pre).1.shapes.length := by
+    rw [(reachable_inv cfg pre).len]
+    exact (List.getElem?_eq_some_iff.mp h0).1
+  rw [step_shape_unusable _ _ _ _ _ sh hacc hk]
+  exact hu
+
 /-! ## After activation, over a run (N6) -/
 
 /-- **After activation, over a run.** After any events since start-up that
@@ -846,8 +886,8 @@ start-up, over events of all kinds, if a command is processed and gets no
 velocity (the output is `answer none _`), then the velocity published last
 before it was a zero: an earlier command was answered with an action that
 yields zero for it (a stop, a zero command passed on, or a zero ratio), and
-no velocity has been published since, nor has the node been deactivated
-since.
+no velocity has been published since (`ZeroPublishedLast`, which says
+nothing about lifecycle transitions in between).
 
 This is what the robot's base has received when the node withholds under
 R15, also when the cause of the zero changes in between: after a zero

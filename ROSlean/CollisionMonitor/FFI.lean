@@ -76,7 +76,7 @@ the node executes.
 What remains outside Lean is the C++ shim: reading the parameters and the
 clock, looking transforms up and applying them (the points and vertices a
 call carries are the shim's word), the floating-point work listed in
-SPEC_NAV2.md, section 7, and acting on the returned decision.
+SPEC.md (T1–T10), and acting on the returned decision.
 -/
 
 namespace ROSlean.CollisionMonitor.FFI
@@ -1105,6 +1105,34 @@ theorem cmShapeAccepted_iff (m : Monitor) (zone : UInt32) (foreign hasVerts : UI
       m.ok = true ∧ ∃ sh, acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts)
         (foreign != 0) = some sh := by
   simp [cmShapeAccepted, cmOnShape, Option.isSome_iff_exists]
+
+/-- **What the query about the mark returns**: whether the model's state
+holds the mark of an unusable message for that zone (`shapeUnusable`). -/
+theorem cmShapeUnusable_eq (m : Monitor) (zone : UInt32) :
+    cmShapeUnusable m zone = shapeUnusable m.st.shapes zone.toNat := rfl
+
+/-- **The query after an accepted shape call** (the one the shim makes): it
+is true iff what the call installed is the mark of an unusable message (when
+that is: `acceptShape_unusable_iff`), provided the state has an entry for
+the zone (as every reachable state has, `Inv.len`). -/
+theorem cmShapeUnusable_after (m : Monitor) (zone : UInt32) (foreign hasVerts : UInt8)
+    (verts : ByteArray) (h : cmShapeAccepted (cmOnShape m zone foreign hasVerts verts) = true)
+    (hk : zone.toNat < m.st.shapes.length) :
+    cmShapeUnusable (cmOnShape m zone foreign hasVerts verts) zone = true ↔
+      ∃ sh, acceptShape m.cfg m.st zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0) = some sh ∧
+        sh.unusable = true := by
+  obtain ⟨hok, sh, hsh⟩ := (cmShapeAccepted_iff m zone foreign hasVerts verts).mp h
+  have hst : (cmOnShape m zone foreign hasVerts verts).st =
+      (step m.cfg m.st (.shape zone.toNat (vertsOfRaw hasVerts verts) (foreign != 0))).1 := by
+    change (m.apply (shapeEvent zone foreign hasVerts verts)).st = _
+    rw [(apply_of_ok m _ hok).1, shapeEvent]
+  rw [cmShapeUnusable_eq, hst, step_shape_unusable _ _ _ _ _ sh hsh hk]
+  constructor
+  · intro hu; exact ⟨sh, hsh, hu⟩
+  · rintro ⟨sh', hsh', hu⟩
+    rw [hsh] at hsh'
+    cases hsh'
+    exact hu
 
 /-- An accepted shape call installs the shape in its zone, and nothing else
 changes. -/

@@ -246,6 +246,17 @@ inline bool parse_points(
   return true;
 }
 
+/// T3, N29. Whether upstream takes parsed `points` as a fixed polygon
+/// (Polygon::getPolygonFromString: more than three points); if it does not,
+/// upstream falls back to `polygon_sub_topic`, and so does the node. This
+/// selects which parameter the zone's shape comes from, nothing else: a
+/// fixed polygon is still checked by the core (four vertices at least, all
+/// within the coordinate limit).
+inline bool fixed_points_usable(const std::vector<std::array<float, 2>> & vertices)
+{
+  return vertices.size() > 3;
+}
+
 }  // namespace roslean_collision_monitor
 
 #endif  // ROSLEAN_COLLISION_MONITOR__CONVERSIONS_HPP_

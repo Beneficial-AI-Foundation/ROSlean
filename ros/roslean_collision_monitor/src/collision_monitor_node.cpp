@@ -33,8 +33,9 @@
 // through the parameter service is rejected (ND8), and a name that was not
 // given at start-up cannot be set at all.
 //
-// Rule (R..., N...) and difference (D..., ND...) numbers refer to SPEC.md and
-// SPEC_NAV2.md in docs/collision_monitor.
+// Rule (R..., N...) and difference (D..., ND...) numbers refer to
+// docs/collision_monitor/SPEC.md; section numbers (8.3) to SPEC_NAV2.md beside
+// it, the design record of the Nav2 extension.
 
 #include <algorithm>
 #include <array>
@@ -153,7 +154,7 @@ public:
         result.successful = false;
         result.reason = "parameters of this node are read once, when it is configured, from "
         "the values given at start-up, and cannot be changed while it runs "
-        "(docs/collision_monitor/SPEC_NAV2.md, ND8)";
+        "(docs/collision_monitor/SPEC.md, ND8)";
         if (!changes.empty()) {
           result.reason += "; to change '" + changes.front().get_name() +
           "', restart the node with the new value";
@@ -185,10 +186,18 @@ protected:
   /// stays unconfigured and the process stays up, as upstream.
   CallbackReturn on_configure(const rclcpp_lifecycle::State &) override
   {
-    configuring_ = true;
-    const auto result = configure();
-    configuring_ = false;
-    return result;
+    // The flag is taken back also when an exception leaves configure() (an
+    // invalid topic name makes rclcpp throw, for one): otherwise every later
+    // change of a parameter would be accepted without effect (review CM5,
+    // finding 3f).
+    struct Configuring
+    {
+      explicit Configuring(bool & flag)
+      : flag_(flag) {flag_ = true;}
+      ~Configuring() {flag_ = false;}
+      bool & flag_;
+    } configuring(configuring_);
+    return configure();
   }
 
   CallbackReturn configure()
@@ -235,7 +244,18 @@ protected:
     // The TF buffer and its listener, as upstream creates them (N1, N3): the
     // listener has a thread of its own, so transforms arrive while a
     // callback waits for one.
-    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+    //
+    // The buffer gets a clock of its own, not the node's. tf2 uses the clock
+    // it is given for two things: for its own waiting loop, which this node
+    // does not call (wait_for), and to clear itself when that clock jumps
+    // back. With the node's clock the clearing would run when rclcpp handles
+    // the /clock message, which in this node is after the current callback,
+    // not during it (there is no clock thread, D15); a transform that
+    // arrived between the jump and the end of a waiting callback would be
+    // forgotten where upstream keeps it. The node clears the buffer itself,
+    // on the /clock message that shows the jump (on_clock; N28). Without
+    // simulated time neither clock ever jumps.
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(std::make_shared<rclcpp::Clock>(RCL_ROS_TIME));
     tf_buffer_->setCreateTimerInterface(
       std::make_shared<tf2_ros::CreateTimerROS>(
         get_node_base_interface(), get_node_timers_interface()));
@@ -280,7 +300,7 @@ protected:
       [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(msg);});
     for (uint32_t k = 0; k < zones_.size(); ++k) {
       auto & zone = zones_[k];
-      if (zone.topic) {
+      if (zone.topic && !zone.sub_topic.empty()) {
         // N31: upstream's QoS.
         rclcpp::QoS polygon_qos = rclcpp::SystemDefaultsQoS();
         if (zone.transient_local) {
@@ -303,7 +323,7 @@ protected:
     if (sim_time_) {
       clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
         "/clock", rclcpp::ClockQoS(),
-        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {on_clock(*msg);});
+        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {(void)on_clock(*msg);});
     }
 
     monitor_->on_lifecycle(CollisionMonitor::Transition::Configure);
@@ -314,8 +334,8 @@ protected:
     return CallbackReturn::SUCCESS;
   }
 
-  /// N5. The publishers are activated, every visualised zone is published
-  /// once, and the bond is created. The transition itself publishes no
+  /// N5. The publishers are activated, every visualised zone that is enabled
+  /// is published once, and the bond is created. The transition itself publishes no
   /// velocity and no state message.
   CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
   {
@@ -408,13 +428,31 @@ private:
     }
   }
 
-  void on_clock(const rosgraph_msgs::msg::Clock & msg)
+  /// A /clock message, taken by the executor or, while a callback waits for
+  /// a transform, by hand (clock_while_waiting). Returns whether it is one
+  /// rclcpp can use (D15).
+  ///
+  /// N28: a message with an earlier time than the one before it is a
+  /// backward jump of the clock, and the TF buffer is cleared, as tf2 does
+  /// (tf2_ros::Buffer::onTimeJump: every backward jump). Upstream's buffer
+  /// is cleared by rclcpp's clock thread the moment the message arrives,
+  /// also while a callback waits. This node has no clock thread (D15), and
+  /// rclcpp's own handling of the message runs only after the callback has
+  /// returned, so the buffer is not attached to the node clock (see where it
+  /// is created) and is cleared here.
+  bool on_clock(const rosgraph_msgs::msg::Clock & msg)
   {
     const bool usable = clock_message_usable(msg.clock.sec);
     set_clock_valid(usable);
     if (usable) {
-      sim_clock_ns_ = static_cast<int64_t>(msg.clock.sec) * 1000000000 + msg.clock.nanosec;
+      const int64_t t = static_cast<int64_t>(msg.clock.sec) * 1000000000 + msg.clock.nanosec;
+      if (t < sim_clock_ns_ && tf_buffer_) {
+        RCLCPP_WARN(get_logger(), "Detected jump back in time. Clearing TF buffer.");
+        tf_buffer_->clear();
+      }
+      sim_clock_ns_ = t;
     }
+    return usable;
   }
 
   // One clock reading per event (D7, ND2). The core takes unsigned
@@ -427,8 +465,12 @@ private:
   /// The node clock as far as it can be known inside a callback. Under
   /// simulated time rclcpp's clock stands still while a callback runs
   /// (there is no clock thread, D15), so the node takes the /clock messages
-  /// of its own subscription by hand while it waits.
-  int64_t clock_while_waiting(int64_t at_least)
+  /// of its own subscription by hand while it waits. The reading is the time
+  /// of the newest usable message taken by hand in this callback, and
+  /// `callback_start` (rclcpp's reading when the callback began) as long as
+  /// there is none. It can go backwards: that is how a reset of the
+  /// simulation shows (wait_for).
+  int64_t clock_while_waiting(int64_t callback_start)
   {
     if (!sim_time_) {
       return now().nanoseconds();
@@ -437,29 +479,44 @@ private:
       rosgraph_msgs::msg::Clock msg;
       rclcpp::MessageInfo info;
       while (clock_sub_->take(msg, info)) {
-        on_clock(msg);
+        if (on_clock(msg)) {
+          callback_clock_ns_ = sim_clock_ns_;
+        }
       }
     }
-    return std::max(sim_clock_ns_, at_least);
+    return callback_clock_ns_.value_or(callback_start);
   }
 
   // ---- transforms (T6) ----------------------------------------------------
 
-  /// N26: the lookup, with upstream's wait. If the transform cannot be had
-  /// at once, the callback sleeps 10 ms of wall time at a time while the
-  /// node clock is before `start + transform_tolerance`, trying again each
-  /// time, and tries once more at the end (tf2_ros::Buffer::lookupTransform
-  /// with a timeout does the same; it is not called, because it reads a
-  /// clock that cannot advance here under simulated time). Nothing else is
-  /// handled meanwhile, as upstream. The wait ends early if the clock stops
-  /// being valid (D15).
+  /// N26: the lookup, with upstream's wait, which is tf2's
+  /// (tf2_ros::Buffer::canTransform with a timeout; it is not called,
+  /// because it reads a clock that cannot advance here under simulated
+  /// time). If the transform cannot be had at once, the callback sleeps
+  /// 10 ms of wall time at a time, trying again each time, while
+  ///   - the node clock is before `start + transform_tolerance`, and
+  ///   - the node clock is not more than 3 s before `start` (tf2: "don't
+  ///     wait, bag loop detected"): after a backward jump of the clock by
+  ///     more than 3 s the wait ends at once (review CM5, finding 2; without
+  ///     this the node waited until the clock was back at `start +
+  ///     transform_tolerance`, handling nothing meanwhile),
+  /// and tries once more at the end. Nothing else is handled meanwhile, as
+  /// upstream. The wait also ends if the clock stops being valid (D15).
+  static constexpr int64_t kBagLoopNs = 3000000000;  // tf2's rclcpp::Duration(3, 0)
+
+  /// tf2's two conditions on the clock for going on waiting.
+  bool keep_waiting(int64_t clock_ns, int64_t start_ns) const
+  {
+    return wait_goes_on(clock_ns, start_ns, tolerance_ns_, kBagLoopNs);
+  }
+
   std::optional<tf2::Transform> wait_for(const Request & request, int64_t start_ns)
   {
     std::string why;
     auto tf = try_lookup(*tf_buffer_, request, &why);
     bool slept = false;
     while (!tf && rclcpp::ok() && clock_valid_ &&
-      clock_while_waiting(start_ns) < start_ns + tolerance_ns_)
+      keep_waiting(clock_while_waiting(start_ns), start_ns))
     {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
       slept = true;
@@ -502,11 +559,14 @@ private:
     scan_stamp_ns_ = stamp_ns;
   }
 
-  /// N33. A polygon message for zone `k`. With at least three points its
+  /// N33, ND6. A polygon message for zone `k`. With at least three points its
   /// transform is looked up (with the wait of N26) and its vertices are
   /// handed over in the base frame; with fewer the core is given the short
-  /// list at once and refuses it. The message is kept only if the core
-  /// accepted it.
+  /// list at once and ignores it. What the shim keeps follows the core's
+  /// answer: the message, if it is the zone's shape now; nothing, if the
+  /// core found a vertex it cannot use (the zone then has no shape and
+  /// demands its action until a usable message arrives, ND6); what it had,
+  /// if the core ignored the message.
   void on_shape(uint32_t k, geometry_msgs::msg::PolygonStamped::ConstSharedPtr msg)
   {
     if (!monitor_ || k >= zones_.size()) {
@@ -515,22 +575,40 @@ private:
     const auto & points = msg->polygon.points;
     const Request request = shape_request(base_frame_id_, msg->header.frame_id);
     std::optional<tf2::Transform> tf = identity_transform();
+    callback_clock_ns_.reset();
     if (points.size() >= 3) {
       tf = wait_for(request, static_cast<int64_t>(now_ns()));
     }
+    // Nothing is published for a shape message: the clock its wait ended
+    // with is not a stamp for anything later.
+    waited_until_ns_.reset();
     const auto verts = tf ? polygon_vertices(*tf, points) : std::vector<uint8_t>();
-    const bool accepted =
-      monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size());
-    if (accepted) {
-      zones_[k].shape = msg;
-      zones_[k].display = *msg;
-    } else {
-      RCLCPP_ERROR(
-        get_logger(), "[%s]: polygon message with %zu point(s) in frame '%s' is ignored: it needs "
-        "at least three points, a transform to '%s', and finite coordinates within 999.997 m "
-        "(N33, ND6); the zone keeps the shape it had",
-        zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
-        base_frame_id_.c_str());
+    switch (monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size())) {
+      case CollisionMonitor::ShapeResult::Shape:
+        zones_[k].shape = msg;
+        zones_[k].display = *msg;
+        break;
+      case CollisionMonitor::ShapeResult::Unusable:
+        // Nothing to look up for later commands and nothing to display: an
+        // empty polygon in the base frame, as before the first message.
+        zones_[k].shape.reset();
+        zones_[k].display = geometry_msgs::msg::PolygonStamped();
+        zones_[k].display.header.frame_id = base_frame_id_;
+        RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 5000,
+          "[%s]: polygon message with %zu point(s) in frame '%s' has a coordinate that is not "
+          "finite or is not within 999.997 m in the base frame. The zone has no shape now and "
+          "%s every command until a usable polygon message arrives (ND6)",
+          zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
+          zones_[k].slowdown ? "slows down" : "stops");
+        break;
+      case CollisionMonitor::ShapeResult::Ignored:
+        RCLCPP_ERROR(
+          get_logger(), "[%s]: polygon message with %zu point(s) in frame '%s' is ignored: it "
+          "needs at least three points and a transform to '%s' (N33); the zone keeps what it had",
+          zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
+          base_frame_id_.c_str());
+        break;
     }
   }
 
@@ -552,6 +630,7 @@ private:
       az = bits_of(cmd.angular.z);
     const uint64_t t = now_ns();
     waited_until_ns_.reset();
+    callback_clock_ns_.reset();
     std::optional<std::vector<uint8_t>> points;
     std::vector<uint8_t> zone_verts;
     if (clock_valid_) {
@@ -699,7 +778,8 @@ private:
     state_pub_->publish(state);
   }
 
-  /// N16 (T8): every visualised zone, with the node clock as the stamp.
+  /// N16 (T8): every visualised zone that is enabled (upstream's
+  /// publishPolygons skips a disabled one), with the node clock as the stamp.
   /// Under simulated time, after a callback that waited for a transform,
   /// rclcpp's clock still shows the time before the wait; the stamp is then
   /// the clock reading the wait ended with, which is what upstream's clock
@@ -707,12 +787,14 @@ private:
   void publish_polygons()
   {
     rclcpp::Time stamp = now();
-    if (sim_time_ && waited_until_ns_ && *waited_until_ns_ > stamp.nanoseconds()) {
+    if (sim_time_ && waited_until_ns_) {
+      // Later than rclcpp's reading after an ordinary wait; earlier after a
+      // wait in which the clock jumped back.
       stamp = rclcpp::Time(*waited_until_ns_, stamp.get_clock_type());
     }
     waited_until_ns_.reset();
     for (auto & zone : zones_) {
-      if (zone.pub) {
+      if (zone.pub && zone.enabled) {
         zone.display.header.stamp = stamp;
         zone.pub->publish(zone.display);
       }
@@ -984,9 +1066,11 @@ private:
     ZoneParams zone;
     zone.name = z;
     zone.min_points = get_or<int64_t>(z + ".min_points", 4);
-    zone.ratio = get_or<double>(z + ".slowdown_ratio", 0.5);
     zone.enabled = get_or<bool>(z + ".enabled", true);
     zone.slowdown = action_type.has_value() && *action_type == "slowdown";
+    // Read for a slowdown zone only, as upstream: on a stop zone the
+    // parameter may hold anything (review CM5, finding 3c).
+    zone.ratio = zone.slowdown ? get_or<double>(z + ".slowdown_ratio", 0.5) : 0.5;
     zone.visualize = get_or<bool>(z + ".visualize", false);
     zone.pub_topic = get_or<std::string>(z + ".polygon_pub_topic", z);
     zone.display.header.frame_id = base_frame_id_;
@@ -1014,15 +1098,38 @@ private:
       }
       builder.add_circle(*radius, action, zone.ratio, zone.min_points, zone.enabled);
     } else if (type.has_value() && *type == "polygon") {
+      // N29. With usable `points` the shape is fixed; `polygon_sub_topic` and
+      // `footprint_topic` are not read. `points` that upstream cannot use (it
+      // does not parse, a point is not a pair, or there are fewer than four
+      // points: fixed_points_usable) leave upstream with the topic, and this
+      // node too, if `polygon_sub_topic` is set; if it is not, upstream fails
+      // and so does this node, naming `points`.
       const auto points = get_opt<std::string>(z + ".points");
-      if (points.has_value()) {
-        // N29: with `points` the shape is fixed; `polygon_sub_topic` and
-        // `footprint_topic` are not read.
-        std::string error;
-        if (!parse_points(*points, zone.vertices, error)) {
+      std::string error;
+      bool fixed = points.has_value() && parse_points(*points, zone.vertices, error) &&
+        fixed_points_usable(zone.vertices);
+      // Read only when the shape does not come from `points`, as upstream.
+      std::optional<std::string> sub_topic;
+      if (!fixed) {
+        sub_topic = get_opt<std::string>(z + ".polygon_sub_topic");
+      }
+      if (points.has_value() && !fixed) {
+        if (sub_topic.has_value()) {
+          RCLCPP_ERROR(
+            get_logger(), "[%s]: 'points' cannot be used (%s); the zone takes its shape from "
+            "'polygon_sub_topic' instead, as nav2_collision_monitor does (N29)", z.c_str(),
+            error.empty() ? "a polygon needs at least four points" : error.c_str());
+          zone.vertices.clear();
+        } else if (!error.empty()) {
           refuse(z + ".points", error);
           return;
+        } else if (!refused(z + ".polygon_sub_topic")) {
+          // Too few points and no topic: the core is given the polygon and
+          // refuses it (R10), with its own message.
+          fixed = true;
         }
+      }
+      if (fixed) {
         if (!complete) {
           return;
         }
@@ -1035,8 +1142,10 @@ private:
           zone.display.polygon.points.push_back(p);
         }
       } else {
-        const auto sub_topic = get_opt<std::string>(z + ".polygon_sub_topic");
-        if (!sub_topic.has_value() || sub_topic->empty()) {
+        if (refused(z + ".polygon_sub_topic")) {
+          return;  // of the wrong type
+        }
+        if (!sub_topic.has_value()) {
           // N29, ND11: upstream fails here too.
           std::string why =
             "is not initialized, and the zone has no 'points': static points and sub topic both "
@@ -1052,6 +1161,9 @@ private:
         if (!complete) {
           return;
         }
+        // An empty `polygon_sub_topic` configures, as upstream: a topic zone
+        // without a subscription. It never has a shape and never acts (N32);
+        // warn_about_what_protects_nothing says so.
         zone.topic = true;
         zone.sub_topic = *sub_topic;
         zone.transient_local = get_or<bool>(z + ".polygon_subscribe_transient_local", false);
@@ -1158,7 +1270,11 @@ private:
       if (zone.circle && zone.radius == 0.0) {
         warn(z + "'radius' is 0: the zone is a disc of 1 mm around the origin of the base frame.");
       }
-      if (zone.topic) {
+      if (zone.topic && zone.sub_topic.empty()) {
+        warn(
+          z + "it has no usable 'points' and its 'polygon_sub_topic' is empty: the zone has no "
+          "shape, can never receive one, and never takes any action (N29, N32).");
+      } else if (zone.topic) {
         warn(
           z + "its shape comes from the topic '" + zone.sub_topic + "': until the first message "
           "with at least three points is accepted the zone takes no action, and a shape given in "
@@ -1212,6 +1328,9 @@ private:
   // The clock reading at which the last wait of the current callback ended,
   // if it waited: for the stamp of the polygons only.
   std::optional<int64_t> waited_until_ns_;
+  // The newest usable /clock message taken by hand in the current callback
+  // (clock_while_waiting), if any: the clock of its waits.
+  std::optional<int64_t> callback_clock_ns_;
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
   // Transforms (T6).

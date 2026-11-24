@@ -341,6 +341,8 @@ BAD_CONFIGS = [
      {**POLYGON, 'Z.points': '"[[1000, 1], [1, -1], [-1, -1], [-1, 1]]"'}, 'Z.points'),
     ('negative slowdown ratio (D5)',
      {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': '-0.5'}, 'Z.slowdown_ratio'),
+    ('a slowdown_ratio that is not a number on a slowdown zone',
+     {'Z.action_type': 'slowdown', 'Z.slowdown_ratio': 'half'}, 'Z.slowdown_ratio'),
     ('max_points (D10)', {'Z.max_points': '3'}, 'Z.max_points'),
     ('min_points beyond 32 bits (D10)', {'Z.min_points': '4294967297'}, 'Z.min_points'),
     ('NaN radius', {'Z.radius': '.nan'}, 'Z.radius'),
@@ -447,6 +449,17 @@ GOOD_CONFIGS = [
      {**POLYGON, 'Z.points': '"[[0, 0], [1, 1], [0, 0], [1, 1]]"'},
      ["zone 'Z': the polygon of 'points' has no area"]),
     ('a proper square', {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1], [-1, 1]]"'}, []),
+    # Review CM5, findings 3b and 3c: as upstream.
+    ('three points beside polygon_sub_topic: the topic is used (N29)',
+     {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1]]"', 'Z.polygon_sub_topic': 'zone_shape'},
+     ["its shape comes from the topic 'zone_shape'"]),
+    ('a malformed point beside polygon_sub_topic: the topic is used (N29)',
+     {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1], [-1]]"',
+      'Z.polygon_sub_topic': 'zone_shape'}, ["its shape comes from the topic 'zone_shape'"]),
+    ('an empty polygon_sub_topic and no points: a zone that never acts',
+     {**POLYGON, 'Z.polygon_sub_topic': '""'}, ["its 'polygon_sub_topic' is empty"]),
+    ('a slowdown_ratio that is not a number on a stop zone, where it is not read',
+     {'Z.slowdown_ratio': 'half'}, []),
     # The Nav2 extension: accepted now.
     ('state topic, base shift correction, a visualised zone',
      {'state_topic': 'collision_monitor_state', 'base_shift_correction': 'true',
@@ -820,6 +833,55 @@ def run_good_configs(exe):
     return bad
 
 
+def run_configure_exception(exe):
+    """Review CM5, finding 3f. An exception leaves `configure` (a topic name
+    rclcpp does not accept): the transition fails, the node is unconfigured
+    and the process is up; and a parameter change is still refused afterwards
+    (ND8), not accepted without effect."""
+    import rclpy.node
+    from lifecycle_msgs.msg import Transition
+    from lifecycle_msgs.srv import ChangeState, GetState
+    from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+    args = [exe] + param_args({'cmd_vel_in_topic': 'two words', 'autostart_node': 'false'})
+    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    node = rclpy.node.Node('smoke_configure_exception')
+    results = []
+
+    def call(srv_type, name, request):
+        client = node.create_client(srv_type, '/collision_monitor/' + name)
+        if not client.wait_for_service(timeout_sec=20.0):
+            return None
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=20.0)
+        return future.result()
+
+    try:
+        res = call(ChangeState, 'change_state',
+                   ChangeState.Request(transition=Transition(id=Transition.TRANSITION_CONFIGURE)))
+        results.append(('configure with a topic name rclcpp refuses: the transition fails',
+                        res is not None and res.success is False, repr(res)))
+        res = call(GetState, 'get_state', GetState.Request())
+        results.append(('the node is unconfigured and its process is up',
+                        res is not None and res.current_state.label == 'unconfigured'
+                        and proc.poll() is None, repr(res)))
+        change = Parameter(name='Z.radius', value=ParameterValue(
+            type=ParameterType.PARAMETER_DOUBLE, double_value=9.0))
+        res = call(SetParameters, 'set_parameters', SetParameters.Request(parameters=[change]))
+        results.append(('a parameter change afterwards is refused (ND8), not accepted without '
+                        'effect', res is not None and len(res.results) == 1
+                        and res.results[0].successful is False and 'ND8' in res.results[0].reason,
+                        repr(res)))
+    finally:
+        stop(proc)
+        node.destroy_node()
+    print('--- an exception in configure (review CM5, finding 3f)')
+    bad = 0
+    for label, ok, what in results:
+        bad += not ok
+        print(f"{'ok  ' if ok else 'FAIL'}  {label}" + ('' if ok else f'  [{what}]'))
+    return bad
+
+
 def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -839,6 +901,7 @@ def main():
         bad += run_scenario(exe, 'a scan of 720 readings', FULL_STEPS)
         bad += run_scenario(exe, 'parameter changes at run time', DYNAMIC_STEPS, params=DYNAMIC_PARAMS)
         bad += run_scenario(exe, 'log of action changes', ACTION_LOG_STEPS)
+        bad += run_configure_exception(exe)
     finally:
         rclpy.shutdown()
     with tempfile.TemporaryDirectory() as tmp:

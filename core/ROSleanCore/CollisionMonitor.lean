@@ -6,9 +6,9 @@ import ROSleanCore.CollisionMonitorPoint
 Executable model of the core of Nav2's `nav2_collision_monitor` for one laser
 scan source, one velocity input, circle and polygon zones and the `stop` and
 `slowdown` actions, as specified in `docs/collision_monitor/SPEC.md` (rule
-numbers `R…`, differences `D…` and assumptions `A…` refer to that file), with
-the Nav2 extension of `docs/collision_monitor/SPEC_NAV2.md` (rules `N…`,
-differences `ND…`, events `E1`–`E8`): the lifecycle, scan points and zone
+numbers `R…` and `N…`, differences `D…` and `ND…` and assumptions `A…` refer
+to that file), with the Nav2 extension (events `E1`–`E8`, numbered in
+`docs/collision_monitor/SPEC_NAV2.md`, section 3.2): the lifecycle, scan points and zone
 vertices that arrive with each command already in the base frame, zones whose
 shape arrives on a topic, and the report for the state topic.
 
@@ -189,14 +189,22 @@ def Twist.planarZero (v : Twist) : Bool :=
 base frame**, as binary64 bit patterns. -/
 abbrev Coords := Nat × Nat
 
-/-- The shape of a topic zone, as last accepted (N33, N34). The message
-itself is kept by the shim, which recomputes the vertices for each command
-if the message's frame is not the base frame. -/
+/-- What the last polygon message that counted says about a topic zone (N33,
+N34, ND6): its shape, or that the message had a vertex the node cannot use.
+The message itself is kept by the shim, which recomputes the vertices for
+each command if the message's frame is not the base frame. -/
 structure TopicShape where
   /-- The message's frame is not the base frame. -/
   foreign : Bool
   /-- The vertices in the base frame, in millimetres (upstream's `poly_`). -/
   current : List Point
+  /-- ND6: the message had at least three vertices and one of them was not
+  finite or lay beyond the coordinate limit. The zone then has no vertices
+  (`current = []`) and **demands its action for every command** while it is
+  enabled, whatever the points and whatever `minPoints`
+  (`Zone.withShape`), until a usable message replaces this entry or a
+  cleanup discards it. -/
+  unusable : Bool
   deriving Repr, DecidableEq
 
 /-- The lifecycle state of the node (N2–N8). -/
@@ -372,11 +380,25 @@ def Zone.triggered (z : Zone) (pts : List Point) : Bool :=
 
 /-- The zone with the shape it has in the state: a topic zone with an
 accepted shape is the polygon of that shape's current vertices, with the
-margin of D4 like every polygon; any other zone is unchanged. -/
+margin of D4 like every polygon; any other zone is unchanged.
+
+ND6: a topic zone whose last message had an unusable vertex
+(`TopicShape.unusable`) is tested with the threshold 0, so that it is
+triggered by any points, also by none, while it is enabled (R11:
+`Zone.triggered`). -/
 def Zone.withShape (z : Zone) (sh : Option TopicShape) : Zone :=
   match z.shape, sh with
-  | .topic, some t => { z with shape := .fixed (.polygon t.current) }
+  | .topic, some t =>
+    { z with shape := .fixed (.polygon t.current),
+             minPoints := if t.unusable then 0 else z.minPoints }
   | _, _ => z
+
+/-- The shapes hold, for zone `k`, the mark of a message with an unusable
+vertex (ND6). -/
+def shapeUnusable (shapes : List (Option TopicShape)) (k : Nat) : Bool :=
+  match shapes.getD k none with
+  | some t => t.unusable
+  | none => false
 
 /-- The configuration with every topic zone given the shape it has in
 `shapes` (entry `k` for zone `k`; a missing entry is "no shape"). Zone
@@ -386,19 +408,33 @@ def Config.withShapes (cfg : Config) (shapes : List (Option TopicShape)) : Confi
 
 /-- The base-frame vertices `verts` in millimetres (`vertexPointMm`), if
 every one of them is within the coordinate limit of `Shape.ok`. A coordinate
-that is not finite, or is 1024 m or more, is never within it (ND6). -/
+that is not finite, or is 1024 m or more, is never within it (ND6, ND13). -/
 def placeVerts (verts : List Coords) : Option (List Point) :=
   let vs := verts.map vertexPointMm
   if vs.all (·.inRange (coordLimit - 3)) then some vs else none
 
-/-- N33, ND6: the shape a polygon message denotes, or `none` if the message
-is ignored: the transform from its frame could not be looked up (`verts` is
-`none`), it has fewer than three vertices, or a vertex is not finite or
-beyond the coordinate limit. -/
+/-- ND6: what a zone holds after a polygon message with a vertex that is not
+finite or lies beyond the coordinate limit: no vertices, and the mark that
+makes the zone demand its action (`Zone.withShape`). It is never refreshed
+(`foreign` is false). -/
+def TopicShape.unusableMark : TopicShape := ⟨false, [], true⟩
+
+/-- N33, ND6: what a polygon message installs for its zone, or `none` if the
+message is ignored: the transform from its frame could not be looked up
+(`verts` is `none`), or it has fewer than three vertices. A message with at
+least three vertices of which one is not finite or beyond the coordinate
+limit is **not** ignored: it installs `TopicShape.unusableMark`, in place of
+whatever shape the zone had. Upstream takes such a message as it is and its
+zone can still be triggered (review CM5, finding 1); the zone here is then
+triggered always, which is never less. -/
 def TopicShape.ofMessage (verts : Option (List Coords)) (foreign : Bool) : Option TopicShape :=
   match verts with
   | some vs =>
-    if 3 ≤ vs.length then (placeVerts vs).map (fun ps => ⟨foreign, ps⟩) else none
+    if 3 ≤ vs.length then
+      match placeVerts vs with
+      | some ps => some ⟨foreign, ps, false⟩
+      | none => some TopicShape.unusableMark
+    else none
   | none => none
 
 /-- N34: a shape given in another frame follows that frame: when a command
@@ -579,10 +615,10 @@ def Output.processed : Output → Bool
   | .silent => false
   | .answer _ _ => true
 
-/-- E7: the shape that a polygon message for zone `k` installs, or `none` if
-the message is ignored: the node is unconfigured or finalized, there is no
-zone `k`, zone `k` is not a topic zone, or `TopicShape.ofMessage` refuses
-the message. -/
+/-- E7: what a polygon message for zone `k` installs (a shape, or the mark
+of an unusable message, ND6), or `none` if the message is ignored: the node
+is unconfigured or finalized, there is no zone `k`, zone `k` is not a topic
+zone, or `TopicShape.ofMessage` ignores the message. -/
 def acceptShape (cfg : Config) (st : State) (k : Nat) (verts : Option (List Coords))
     (foreign : Bool) : Option TopicShape :=
   if st.phase = .inactive ∨ st.phase = .active then

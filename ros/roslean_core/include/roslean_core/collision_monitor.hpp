@@ -143,7 +143,7 @@ public:
       initialize();
       obj_ = roslean_cm_builder_new(roslean_core_unit());
     }
-    ~Builder() {if (obj_) {roslean_core_dec(obj_);}}
+    ~Builder() {release(obj_);}
     Builder(const Builder &) = delete;
     Builder & operator=(const Builder &) = delete;
 
@@ -151,6 +151,7 @@ public:
     /// @param own_timeout_s the source's own `source_timeout`, if it is set.
     void set_source(bool enabled, double node_timeout_s, std::optional<double> own_timeout_s)
     {
+      initialize();
       obj_ = roslean_cm_builder_set_source(
         obj_, enabled ? 1 : 0, bits_of(node_timeout_s), own_timeout_s.has_value() ? 1 : 0,
         bits_of(own_timeout_s.value_or(0.0)));
@@ -159,6 +160,7 @@ public:
     /// @param timeout_s the `stop_pub_timeout` parameter, seconds.
     void set_stop_pub_timeout(double timeout_s)
     {
+      initialize();
       obj_ = roslean_cm_builder_set_stop_pub_timeout(obj_, bits_of(timeout_s));
     }
 
@@ -169,6 +171,7 @@ public:
     uint32_t add_circle(
       double radius_m, ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_circle(
         obj_, bits_of(radius_m), static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -179,6 +182,7 @@ public:
     /// @return the index of the new zone.
     uint32_t add_polygon(ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_polygon(
         obj_, static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -191,6 +195,7 @@ public:
     uint32_t add_topic_polygon(
       ZoneAction action, double slowdown_ratio, int64_t min_points, bool enabled)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_topic_polygon(
         obj_, static_cast<uint8_t>(action), bits_of(slowdown_ratio),
         static_cast<uint64_t>(min_points), enabled ? 1 : 0);
@@ -202,6 +207,7 @@ public:
     /// will not be ok (ConfigError::StrayVertex).
     void add_vertex(float x_m, float y_m)
     {
+      initialize();
       obj_ = roslean_cm_builder_add_vertex(obj_, bits_of(x_m), bits_of(y_m));
     }
 
@@ -211,6 +217,7 @@ public:
     /// every command once it is active.
     CollisionMonitor build()
     {
+      initialize();
       lean_object * monitor = roslean_cm_new(obj_);
       obj_ = roslean_cm_builder_new(roslean_core_unit());
       num_zones_ = 0;
@@ -222,13 +229,13 @@ private:
     uint32_t num_zones_{0};
   };
 
-  ~CollisionMonitor() {if (obj_) {roslean_core_dec(obj_);}}
+  ~CollisionMonitor() {release(obj_);}
   CollisionMonitor(CollisionMonitor && other) noexcept
   : obj_(std::exchange(other.obj_, nullptr)) {}
   CollisionMonitor & operator=(CollisionMonitor && other) noexcept
   {
     if (this != &other) {
-      if (obj_) {roslean_core_dec(obj_);}
+      release(obj_);
       obj_ = std::exchange(other.obj_, nullptr);
     }
     return *this;
@@ -298,14 +305,34 @@ private:
   ///   not be looked up; `verts` is then not looked at.
   /// @param verts `size` bytes: 16 per vertex, the binary64 patterns of x and
   ///   y in the base frame, little-endian.
-  /// @return whether the core accepted the message (E7).
-  bool on_shape(uint32_t zone, bool foreign, bool has_verts, const uint8_t * verts, size_t size)
+  /// @return what the core did with the message (E7, ND6).
+  enum class ShapeResult : uint8_t
+  {
+    Ignored = 0,   ///< nothing changed: the zone keeps what it had
+    Shape = 1,     ///< the message is the zone's shape from now on
+    Unusable = 2,  ///< a vertex is not finite or out of range: the zone has no
+                   ///< shape and demands its action until a usable message
+  };
+  ShapeResult on_shape(
+    uint32_t zone, bool foreign, bool has_verts, const uint8_t * verts, size_t size)
   {
     require_valid();
     obj_ = roslean_cm_on_shape(
       obj_, zone, foreign ? 1 : 0, has_verts ? 1 : 0, roslean_core_byte_array(verts, size));
     roslean_core_inc(obj_);
-    return roslean_cm_shape_accepted(obj_) != 0;
+    if (roslean_cm_shape_accepted(obj_) == 0) {
+      return ShapeResult::Ignored;
+    }
+    return shape_unusable(zone) ? ShapeResult::Unusable : ShapeResult::Shape;
+  }
+
+  /// The core holds, for topic zone `zone`, the mark of a polygon message
+  /// with an unusable vertex (ND6).
+  bool shape_unusable(uint32_t zone) const
+  {
+    require_valid();
+    roslean_core_inc(obj_);  // the query consumes one reference
+    return roslean_cm_shape_unusable(obj_, zone) != 0;
   }
 
   /// Which transforms to look up before delivering this command. Changes
@@ -455,10 +482,24 @@ private:
     return out;
   }
 
+  /// Every member that calls into Lean begins with this: the object is
+  /// there, and the calling thread is prepared for Lean code (initialize).
   void require_valid() const
   {
     if (!obj_) {
       throw std::logic_error("use of a moved-from roslean::CollisionMonitor");
+    }
+    initialize();
+  }
+
+  /// Gives up a reference, which may run Lean's deallocation in this thread.
+  /// An object exists only after a successful initialize(), which therefore
+  /// does not throw here.
+  static void release(lean_object * obj) noexcept
+  {
+    if (obj) {
+      initialize();
+      roslean_core_dec(obj);
     }
   }
 

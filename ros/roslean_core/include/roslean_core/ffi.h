@@ -32,6 +32,15 @@ extern "C" {
 /* Initialises the Lean runtime and the ROSleanCore library; call once, before
  * anything else. Returns non-zero on success. */
 int roslean_core_initialize(void);
+/* Lean's `lean_initialize_thread` and `lean_finalize_thread`. The Lean
+ * runtime requires the first, before any Lean code runs, in every thread
+ * that Lean did not create itself, other than the one that called
+ * roslean_core_initialize; and the second before such a thread ends.
+ * roslean::initialize() (runtime.hpp) does both. */
+void roslean_core_initialize_thread(void);
+void roslean_core_finalize_thread(void);
+/* The number of calls of roslean_core_initialize_thread so far (for tests). */
+int roslean_core_thread_inits(void);
 /* Lean's `()`: the argument of functions that take `Unit`. */
 lean_object * roslean_core_unit(void);
 /* Take or release one reference to an object. */
@@ -107,8 +116,12 @@ lean_object * roslean_cm_on_scan(
  * only if `has_verts` is not 0 (0: the transform could not be looked up). */
 lean_object * roslean_cm_on_shape(
   lean_object * m, uint32_t zone, uint8_t foreign, uint8_t has_verts, lean_object * verts);
-/* The shape call made last was accepted. */
+/* The shape call made last was accepted: it installed a shape, or the mark
+ * of a message with an unusable vertex. */
 uint8_t roslean_cm_shape_accepted(lean_object * m);
+/* The state holds, for zone `zone`, the mark of a polygon message with an
+ * unusable vertex (ND6). A query. */
+uint8_t roslean_cm_shape_unusable(lean_object * m, uint32_t zone);
 /* Which transforms to look up for this command: 0 none, 1 those of the topic
  * zones, 3 the scan's and the zones'. A query. */
 uint8_t roslean_cm_cmd_plan(

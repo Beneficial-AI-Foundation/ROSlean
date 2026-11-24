@@ -1,8 +1,8 @@
 // Transforms: the only file of the shim that calls tf2, and the only one
 // that computes with a transform.
 //
-// Everything here is *trusted* (docs/collision_monitor/SPEC_NAV2.md, section
-// 7: T2 and T6). The Lean core receives points in the base frame and does
+// Everything here is *trusted* (docs/collision_monitor/SPEC.md, "Where the
+// velocity is computed": T2 and T6). The Lean core receives points in the base frame and does
 // not see the transform; that the points handed over are the images of the
 // stored readings under the right transform is this file's work, and no
 // theorem covers it. It is kept free of the node, so that it can be read in
@@ -241,6 +241,17 @@ inline std::optional<tf2::Transform> try_lookup(
     }
     return std::nullopt;
   }
+}
+
+/// N26: whether a wait for a transform that began at node-clock time
+/// `start_ns` goes on at node-clock time `clock_ns` (the transform not being
+/// there yet). tf2's rule (tf2_ros/src/buffer.cpp, Buffer::canTransform with
+/// a timeout): the clock is before `start + tolerance`, and it has not
+/// jumped back to more than `bag_loop_ns` (3 s in tf2) before `start`.
+inline bool wait_goes_on(
+  int64_t clock_ns, int64_t start_ns, int64_t tolerance_ns, int64_t bag_loop_ns)
+{
+  return clock_ns < start_ns + tolerance_ns && clock_ns + bag_loop_ns >= start_ns;
 }
 
 }  // namespace roslean_collision_monitor

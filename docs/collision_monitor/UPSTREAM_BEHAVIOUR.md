@@ -489,7 +489,8 @@ its radius starting at angle 0. The publishers are reliable and transient
 local. A zone fed by a topic is published as an empty polygon until its
 first shape, and afterwards as the last accepted message with its own frame
 name, including a NaN coordinate. Scenarios `polygon-pub`,
-`lifecycle-states`, `polygon-topic`. (N16.)
+`lifecycle-states`, `polygon-topic`. A zone with `enabled: false` is not
+published at all (scenario `polygon-pub-disabled`, added by T09). (N16.)
 
 ### 30. The bond and Nav2's lifecycle manager
 
@@ -605,9 +606,22 @@ these files and switches the bond off; nothing else is changed.
   published in the odom frame stays where it was in odom. The base moved
   1 m with no new message: points 0.125 m ahead of it passed, and points
   1.125 m behind it, where the footprint had been, stopped it.
-- A message with a NaN coordinate is accepted, and a point well inside the
-  box then passes: the zone is blind until the next message. (The ROSlean
-  node is to ignore such a message, ND6.)
+- A message with a NaN coordinate is accepted, and in the arrangement of
+  `polygon-topic` a point well inside the box then passes. **The zone is not
+  blind in general** (corrected by task T09 after the review CM5; the
+  sentence here said "blind until the next message"): the crossing test
+  skips the two edges at the NaN vertex and counts the others. A 2 m square
+  with a NaN in its 4th vertex stops for a reading inside it and for one
+  5 m behind the base; with the NaN in the 1st vertex the reading inside
+  passes and the one behind stops. Scenario `polygon-topic-nan`. (The
+  ROSlean node's zone demands its action after such a message until a
+  usable one arrives, ND6.)
+- `points` that cannot be used (three points; a point that is not a pair)
+  do not fail the configuration when `polygon_sub_topic` is set: the zone
+  is fed by the topic. An empty `polygon_sub_topic` configures a zone
+  without subscription. A `slowdown_ratio` that is not a number is not read
+  on a stop zone. Scenarios `points-short-topic`, `points-malformed-topic`,
+  `sub-topic-empty`, `stop-zone-ratio-type` (added by T09).
 - The subscription is best effort and volatile; with
   `polygon_subscribe_transient_local` it is transient local, and a message
   published reliable and transient local before `configure` was still not
@@ -631,6 +645,18 @@ held and then stopped until odometry stamped at or after the new clock
 arrives (inferred from this finding and finding 34, not run as a scenario).
 Scenario `tf-clock-jump-back`. (N28, which has the clearing from the source
 and does not say that static transforms survive.)
+
+Added by task T09: the buffer is cleared when the jump happens, also while
+a command waits for a transform. A transform that arrives after the jump is
+used by the waiting command and is still there for the next one. And the
+wait itself ends at once when the clock has jumped back by more than 3 s
+(tf2's "bag loop" rule), while a jump of 3 s or less leaves it running
+until the clock is back at the start of the wait plus
+`transform_tolerance`. With base shift correction and a reset of the
+simulation during a wait for odometry: the stop for `invalid source` at
+once, and normal answers as soon as odometry with the new clock arrives.
+Scenarios `tf-wait-clock-reset`, `tf-wait-clock-back`, `shift-wait-reset`.
+(N26, N28.)
 
 ### 38. A model of the extension agrees with upstream on random cases
 

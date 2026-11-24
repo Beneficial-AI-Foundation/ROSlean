@@ -23,8 +23,7 @@ configuration with the shapes of the topic zones filled in
 (`Config.withShapes`, `liveConfig`); the lemmas at the end of this file say
 what that configuration is, zone by zone.
 
-Rule numbers refer to `docs/collision_monitor/SPEC.md` (`R…`) and
-`docs/collision_monitor/SPEC_NAV2.md` (`N…`).
+Rule numbers (`R…`, `N…`) refer to `docs/collision_monitor/SPEC.md`.
 -/
 
 namespace ROSlean.CollisionMonitor
@@ -544,12 +543,23 @@ theorem zonesAction_congr (cfg : Config) (pts pts' : List Point)
 
 /-! ## The zones with their shapes filled in (N32, N34) -/
 
-/-- Filling in a shape changes nothing but the shape. -/
+/-- Filling in a shape changes neither the action nor the flag. The
+threshold is the configured one, except for a topic zone whose entry is the
+mark of an unusable message (ND6), where it is 0. -/
 theorem withShape_fields (z : Zone) (sh : Option TopicShape) :
-    (z.withShape sh).action = z.action ∧ (z.withShape sh).minPoints = z.minPoints ∧
+    (z.withShape sh).action = z.action ∧
+      ((z.withShape sh).minPoints = z.minPoints ∨
+        (z.shape = .topic ∧ (∃ t, sh = some t ∧ t.unusable = true) ∧
+          (z.withShape sh).minPoints = 0)) ∧
       (z.withShape sh).enabled = z.enabled := by
   unfold Zone.withShape
-  split <;> exact ⟨rfl, rfl, rfl⟩
+  split
+  · rename_i t hz
+    refine ⟨rfl, ?_, rfl⟩
+    cases hu : t.unusable
+    · left; simp
+    · right; exact ⟨hz, ⟨t, rfl, hu⟩, by simp⟩
+  · exact ⟨rfl, Or.inl rfl, rfl⟩
 
 /-- A fixed zone is not affected by the state. -/
 theorem withShape_of_fixed (z : Zone) (sh : Option TopicShape) (s : Shape)
@@ -566,10 +576,13 @@ theorem withShape_none (z : Zone) : z.withShape none = z := by
   · rename_i h; cases h
   · rfl
 
-/-- A topic zone with an accepted shape is the polygon of its current
-vertices. -/
+/-- A topic zone with an entry is the polygon of the entry's current
+vertices; its threshold is the configured one, or 0 if the entry is the mark
+of an unusable message (ND6). -/
 theorem withShape_of_topic (z : Zone) (sh : TopicShape) (h : z.shape = .topic) :
-    z.withShape (some sh) = { z with shape := .fixed (.polygon sh.current) } := by
+    z.withShape (some sh) =
+      { z with shape := .fixed (.polygon sh.current),
+               minPoints := if sh.unusable then 0 else z.minPoints } := by
   simp [Zone.withShape, h]
 
 theorem withShapes_length (cfg : Config) (shapes : List (Option TopicShape)) :
@@ -594,14 +607,19 @@ shapes. -/
 theorem withShapes_action (cfg : Config) (shapes : List (Option TopicShape)) (k : Nat) (z : Zone)
     (h : (cfg.withShapes shapes).zones[k]? = some z) :
     ∃ z0, cfg.zones[k]? = some z0 ∧ z = z0.withShape (shapes.getD k none) ∧
-      z.action = z0.action ∧ z.minPoints = z0.minPoints ∧ z.enabled = z0.enabled := by
+      z.action = z0.action ∧
+      (z.minPoints = z0.minPoints ∨
+        (z0.shape = .topic ∧ shapeUnusable shapes k = true ∧ z.minPoints = 0)) ∧
+      z.enabled = z0.enabled := by
   rw [withShapes_getElem?] at h
   cases h0 : cfg.zones[k]? with
   | none => simp [h0] at h
   | some z0 =>
     simp only [h0, Option.map_some, Option.some.injEq] at h
     subst h
-    exact ⟨z0, rfl, rfl, (withShape_fields z0 _).1, (withShape_fields z0 _).2.1,
-      (withShape_fields z0 _).2.2⟩
+    refine ⟨z0, rfl, rfl, (withShape_fields z0 _).1, ?_, (withShape_fields z0 _).2.2⟩
+    rcases (withShape_fields z0 (shapes.getD k none)).2.1 with h | ⟨h1, ⟨t, ht, hu⟩, h2⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨h1, by unfold shapeUnusable; rw [ht]; exact hu, h2⟩
 
 end ROSlean.CollisionMonitor

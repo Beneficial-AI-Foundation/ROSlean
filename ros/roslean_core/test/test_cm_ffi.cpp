@@ -20,6 +20,7 @@
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -478,10 +479,16 @@ int main()
           b.add_topic_polygon(RawCM::ZoneAction::Slowdown, 0.25, 1, true);
           return b.build();
         };
-      const auto shape = [&](
+      const auto shape_result = [&](
         RawCM & m, uint32_t zone, bool foreign, const std::vector<std::pair<double, double>> * vs) {
           const auto b = vs ? pairs(*vs) : std::vector<uint8_t>();
           return m.on_shape(zone, foreign, vs != nullptr, b.data(), b.size());
+        };
+      using SR = RawCM::ShapeResult;
+      // "Taken": the message changed what the zone holds.
+      const auto shape = [&](
+        RawCM & m, uint32_t zone, bool foreign, const std::vector<std::pair<double, double>> * vs) {
+          return shape_result(m, zone, foreign, vs) != SR::Ignored;
         };
       const std::vector<std::pair<double, double>> box =
       {{0.4, 0.2}, {0.4, -0.2}, {0.2, -0.2}, {0.2, 0.2}};
@@ -506,9 +513,53 @@ int main()
       nan_box[2].first = kNaN;
       auto far_box = box;
       far_box[1].second = 999.9976;
-      check(!shape(m, 1, false, &nan_box) && !shape(m, 1, false, &far_box),
-        "a vertex that is not finite or beyond the limit: refused (ND6)");
-      check(cmd(m, 2, &p, none).kind == Kind::Slowdown, "after the refusals the zone still has no shape");
+      const std::vector<std::pair<double, double>> moved_away =
+      {{9.4, 0.2}, {9.4, -0.2}, {9.2, 0.0}};
+      check(cmd(m, 2, &p, none).kind == Kind::Slowdown && !m.shape_unusable(1),
+        "after the ignored messages the zone still has no shape");
+      // ND6 (review CM5, finding 1): a vertex that is not finite or beyond
+      // the limit. The zone has no shape and demands its action, whatever
+      // the points, until a usable message arrives.
+      const auto far_away = pairs({{-7.0, 3.0}});
+      check(shape_result(m, 1, false, &nan_box) == SR::Unusable && m.shape_unusable(1) &&
+        !m.shape_unusable(2) && !m.shape_unusable(0) && !m.shape_unusable(7),
+        "a vertex that is not finite: the zone is marked (ND6)");
+      o = cmd(m, 2, &p, none);
+      check(o.kind == Kind::StopZone && o.zone == 1 && o.report == Rep::Stop && o.report_zone == 1,
+        "the marked stop zone stops, and is named");
+      check(cmd(m, 2, &far_away, none).kind == Kind::StopZone &&
+        cmd(m, 2, nullptr, none).kind == Kind::StopZone,
+        "also with a point far away, and without coordinates (source_timeout is 0)");
+      check(!shape(m, 1, false, &two) && m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, none).kind == Kind::StopZone,
+        "an ignored message does not lift the mark");
+      check(shape_result(m, 1, false, &box) == SR::Shape && !m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, none).kind == Kind::Pass,
+        "a usable message lifts it");
+      check(shape_result(m, 1, true, &far_box) == SR::Unusable && m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, zone_verts({std::nullopt, ZV(box)})).kind == Kind::StopZone,
+        "a vertex beyond the limit marks the zone too, and replaces the shape it had; vertices "
+        "handed over with a command are not taken for it");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Activate);
+      check(m.shape_unusable(1) && cmd(m, 2, &far_away, none).kind == Kind::StopZone,
+        "the mark survives deactivation and activation");
+      check(shape_result(m, 2, false, &nan_box) == SR::Unusable &&
+        shape_result(m, 1, false, &moved_away) == SR::Shape,
+        "the slowdown zone marked, the stop zone with a shape far away");
+      o = cmd(m, 2, &far_away, none);
+      check(o.kind == Kind::Slowdown && o.zone == 2 && o.ratio_bits == d(0.25),
+        "a marked slowdown zone slows every command down");
+      check(shape_result(m, 2, false, &box) == SR::Shape && cmd(m, 2, &p, none).kind == Kind::Slowdown,
+        "back to the box");
+      // The zone without a shape again, for what follows: only cleanup does that.
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      m.on_lifecycle(Tr::Configure);
+      check(!m.shape_unusable(1) && !m.shape_unusable(2), "cleanup discards the mark");
+      check(shape(m, 2, false, &box), "the slowdown zone gets its box again");
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 1, {1.0f});
       check(shape(m, 1, true, &tri), "three points are accepted (N33)");
       check(cmd(m, 3, &p, none).kind == Kind::StopZone && cmd(m, 3, &p, none).zone == 1,
         "the topic stop zone now stops");
@@ -622,10 +673,10 @@ int main()
             const uint32_t zone = static_cast<uint32_t>(next() % 4);
             const bool foreign = next() % 2;
             const bool has = next() % 6 != 0;
-            const bool a1 = fast.on_shape(zone, foreign, has, b.data(), b.size());
-            const bool a2 = ref.on_shape(zone, foreign, has, b.data(), b.size());
+            const auto a1 = fast.on_shape(zone, foreign, has, b.data(), b.size());
+            const auto a2 = ref.on_shape(zone, foreign, has, b.data(), b.size());
             ++shapes;
-            accepted += a1;
+            accepted += a1 != RawCM::ShapeResult::Ignored;
             if (a1 != a2) {++differ;}
           }
           if (next() % 40 == 0) {
@@ -1700,6 +1751,67 @@ int main()
     check(CM::source_timeout_ns(2.094, 2.094) == 2093999999, "set on the source itself: 2,093,999,999 ns");
     check(CM::source_timeout_ns(5.0, 0.25) == 250000000 && !CM::source_timeout_ns(-1.0, 0.25) &&
       !CM::source_timeout_ns(5.0, kNaN), "own value used; either value can be refused");
+  }
+
+  {
+    // Review CM5, finding 5: the wrapper prepares every thread that calls into
+    // Lean (`lean_initialize_thread`), once, and not the thread that
+    // initialised the runtime. A monitor built in one thread is used in two
+    // others, one after the other, and destroyed in a third: what a node
+    // loaded as a component does in its container's executor threads.
+    const auto build = []() {
+        RawCM::Builder b;
+        b.set_source(true, 2.0, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(0.5, RawCM::ZoneAction::Stop, 0.0, 1, true);
+        auto m = b.build();
+        m.on_lifecycle(RawCM::Transition::Configure);
+        m.on_lifecycle(RawCM::Transition::Activate);
+        return m;
+      };
+    const auto use = [](RawCM & m, uint64_t now, double x) {
+        const float r = 1.0f;
+        uint8_t ranges[4];
+        std::memcpy(ranges, &r, 4);
+        m.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), ranges, 4);
+        std::vector<uint8_t> p;
+        put(p, d(x), 8);
+        put(p, d(0.0), 8);
+        return m.on_cmd(
+          now, d(0.5), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), true, p.data(), p.size(), nullptr,
+          0).kind;
+      };
+    const int before = roslean_core_thread_inits();
+    auto m = std::make_optional(build());
+    const Kind here = use(*m, 1000, 0.25);
+    check(roslean_core_thread_inits() == before && here == Kind::StopZone,
+      "the thread that initialised the runtime is not initialised a second time");
+    Kind first = Kind::Silent, second = Kind::Silent, third = Kind::Silent;
+    int inits_first = 0;
+    std::thread t1([&]() {
+        first = use(*m, 2000, 2.0);
+        second = use(*m, 3000, 0.25);
+        inits_first = roslean_core_thread_inits();
+      });
+    t1.join();
+    check(first == Kind::Pass && second == Kind::StopZone,
+      "a monitor built in one thread answers in another");
+    check(inits_first == before + 1,
+      "the other thread was prepared for Lean code, once for all its calls");
+    std::thread t2([&]() {
+        third = use(*m, 4000, 2.0);
+        m.reset();  // the last reference is given up here
+      });
+    t2.join();
+    check(third == Kind::Pass && roslean_core_thread_inits() == before + 2,
+      "and in a third, which also destroys it: prepared too");
+    std::thread t3([&]() {
+        auto local = build();
+        third = use(local, 1000, 0.25);
+      });
+    t3.join();
+    check(third == Kind::StopZone && roslean_core_thread_inits() == before + 3,
+      "a monitor built, used and destroyed in a thread of its own");
   }
 
   std::printf("%d failure(s)\n", failures);

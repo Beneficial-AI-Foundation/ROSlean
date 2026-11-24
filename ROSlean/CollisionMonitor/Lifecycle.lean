@@ -188,26 +188,33 @@ theorem placeVerts_eq_some_iff (verts : List Coords) (ps : List Point) :
     exact fun h' => absurd h' h
 
 /-- **Shape accepted (iff), the decision.** A polygon message for zone `k`
-installs the shape `sh` iff
+installs the entry `sh` iff
 
 * the node is inactive or active (N4, N35);
 * zone `k` exists and is a topic zone;
 * the shim handed over the vertices in the base frame: `verts = some vs`
   (if the message is in another frame, its transform was found, N33);
 * there are at least three of them (N33);
-* every vertex, rounded to the millimetre, lies within the coordinate limit
-  of `Shape.ok`, which a coordinate that is not finite never does (ND6;
-  `vertexCoordMm_finite_of_lt` in `Margin.lean`);
 
-and `sh` holds whether the frame is foreign, and the rounded vertices. -/
+and `sh` is
+
+* the shape (whether the frame is foreign, and the rounded vertices), if
+  every vertex, rounded to the millimetre, lies within the coordinate limit
+  of `Shape.ok`, which a coordinate that is not finite never does
+  (`vertexCoordMm_finite_of_lt` in `Margin.lean`);
+* the mark of an unusable message otherwise (ND6, `TopicShape.unusableMark`:
+  no vertices; the zone then demands its action,
+  `triggered_of_unusable`). -/
 theorem acceptShape_eq_some_iff (cfg : Config) (st : State) (k : Nat)
     (verts : Option (List Coords)) (foreign : Bool) (sh : TopicShape) :
     acceptShape cfg st k verts foreign = some sh ↔
       (st.phase = .inactive ∨ st.phase = .active) ∧
       (∃ z, cfg.zones[k]? = some z ∧ z.shape = .topic) ∧
       ∃ vs, verts = some vs ∧ 3 ≤ vs.length ∧
-        (∀ v ∈ vs, (vertexPointMm v).inRange (coordLimit - 3) = true) ∧
-        sh = ⟨foreign, vs.map vertexPointMm⟩ := by
+        (((∀ v ∈ vs, (vertexPointMm v).inRange (coordLimit - 3) = true) ∧
+            sh = ⟨foreign, vs.map vertexPointMm, false⟩) ∨
+          ((¬ ∀ v ∈ vs, (vertexPointMm v).inRange (coordLimit - 3) = true) ∧
+            sh = TopicShape.unusableMark)) := by
   unfold acceptShape
   by_cases hp : st.phase = .inactive ∨ st.phase = .active
   swap
@@ -229,15 +236,25 @@ theorem acceptShape_eq_some_iff (cfg : Config) (st : State) (k : Nat)
         · rw [if_pos hl]
           cases hpv : placeVerts vs with
           | none =>
-            simp only [Option.map_none, reduceCtorEq, false_iff]
-            rintro ⟨-, h1, -⟩
-            have := (placeVerts_eq_some_iff vs _).mpr ⟨h1, rfl⟩
-            rw [hpv] at this
-            cases this
+            have hn : ¬ ∀ v ∈ vs, (vertexPointMm v).inRange (coordLimit - 3) = true := by
+              intro h1
+              have := (placeVerts_eq_some_iff vs _).mpr ⟨h1, rfl⟩
+              rw [hpv] at this
+              cases this
+            simp only [Option.some.injEq]
+            constructor
+            · intro h; exact ⟨hl, Or.inr ⟨hn, h.symm⟩⟩
+            · rintro ⟨-, ⟨h1, -⟩ | ⟨-, h⟩⟩
+              · exact absurd h1 hn
+              · exact h.symm
           | some ps =>
             obtain ⟨h1, rfl⟩ := (placeVerts_eq_some_iff vs ps).mp hpv
-            simp only [Option.map_some, Option.some.injEq]
-            exact ⟨fun h => ⟨hl, h1, h.symm⟩, fun h => h.2.2.symm⟩
+            simp only [Option.some.injEq]
+            constructor
+            · intro h; exact ⟨hl, Or.inl ⟨h1, h.symm⟩⟩
+            · rintro ⟨-, ⟨-, h⟩ | ⟨hn, -⟩⟩
+              · exact h.symm
+              · exact absurd h1 hn
         · rw [if_neg hl]
           simp only [reduceCtorEq, false_iff]
           rintro ⟨h, -⟩
@@ -471,6 +488,187 @@ theorem output_of_no_shape (cfg : Config) (st : State) (e : Event) (k : Nat) (z0
       obtain ⟨r, hr⟩ := (report_names _ v k).2 ((report_eq_some_iff _ _ _ _ _ _ _).mp h).2.2.1
       exact h2 r hr
 
+/-! ## A message with an unusable vertex (ND6)
+
+Review CM5, finding 1. Upstream stores a polygon message whatever its
+coordinates, and its crossing test still counts the edges that do not touch
+a NaN vertex, so its zone can be triggered. Before this section's rule the
+node ignored such a message and kept what the zone had, which could let a
+command pass where upstream stops. Now the message installs a mark, and a
+zone with the mark is triggered by every command while it is enabled. -/
+
+/-- **Unusable message (iff).** A polygon message for zone `k` installs the
+mark of an unusable message iff the node is inactive or active, zone `k`
+exists and is a topic zone, the shim handed over the vertices, there are at
+least three of them, and one of them, rounded to the millimetre, is not
+within the coordinate limit of `Shape.ok` (as every coordinate that is not
+finite, `vertexCoordMm_finite_of_lt`). The entry installed is then
+`TopicShape.unusableMark`. -/
+theorem acceptShape_unusable_iff (cfg : Config) (st : State) (k : Nat)
+    (verts : Option (List Coords)) (foreign : Bool) :
+    (∃ sh, acceptShape cfg st k verts foreign = some sh ∧ sh.unusable = true) ↔
+      (st.phase = .inactive ∨ st.phase = .active) ∧
+      (∃ z, cfg.zones[k]? = some z ∧ z.shape = .topic) ∧
+      ∃ vs, verts = some vs ∧ 3 ≤ vs.length ∧
+        ∃ v ∈ vs, (vertexPointMm v).inRange (coordLimit - 3) = false := by
+  constructor
+  · rintro ⟨sh, h, hu⟩
+    obtain ⟨hp, hz, vs, hv, hl, ⟨-, rfl⟩ | ⟨hn, -⟩⟩ :=
+      (acceptShape_eq_some_iff cfg st k verts foreign sh).mp h
+    · cases hu
+    · refine ⟨hp, hz, vs, hv, hl, ?_⟩
+      by_contra hc
+      apply hn
+      intro v hv'
+      by_contra hf
+      exact hc ⟨v, hv', by simpa using hf⟩
+  · rintro ⟨hp, hz, vs, hv, hl, v, hv', hf⟩
+    refine ⟨TopicShape.unusableMark, ?_, rfl⟩
+    refine (acceptShape_eq_some_iff cfg st k verts foreign _).mpr
+      ⟨hp, hz, vs, hv, hl, Or.inr ⟨fun hall => ?_, rfl⟩⟩
+    rw [hall v hv'] at hf
+    cases hf
+
+/-- After a message that installed the mark, the state holds it for zone `k`
+(if the state has an entry for zone `k`, as every reachable state has:
+`Inv.len`). -/
+theorem step_shape_unusable (cfg : Config) (st : State) (k : Nat) (verts : Option (List Coords))
+    (foreign : Bool) (sh : TopicShape) (h : acceptShape cfg st k verts foreign = some sh)
+    (hk : k < st.shapes.length) :
+    shapeUnusable (step cfg st (.shape k verts foreign)).1.shapes k = sh.unusable := by
+  rw [step_shape_of_accepted _ _ _ _ _ _ h]
+  simp only [shapeUnusable, List.getD_eq_getElem?_getD, List.getElem?_set_self hk,
+    Option.getD_some]
+
+/-- **What a topic zone with an entry does (iff).** It is triggered iff it
+is enabled and either the entry is the mark of an unusable message, or at
+least `minPoints` of the points are inside the polygon of the entry's
+vertices (with the margin of D4). -/
+theorem triggered_withShape_iff (z0 : Zone) (t : TopicShape) (pts : List Point)
+    (h : z0.shape = .topic) :
+    (z0.withShape (some t)).triggered pts = true ↔
+      z0.enabled = true ∧
+        (t.unusable = true ∨ z0.minPoints ≤ pts.countP (Shape.polygon t.current).contains) := by
+  rw [withShape_of_topic z0 t h, triggered_iff]
+  have hc : (ZoneShape.fixed (Shape.polygon t.current)).contains =
+      (Shape.polygon t.current).contains := rfl
+  cases hu : t.unusable <;> simp [ZoneShape.isSet, hc]
+
+/-- **A zone with the mark is triggered exactly while it is enabled**,
+whatever the points (also with none) and whatever `minPoints`. -/
+theorem triggered_of_unusable (z0 : Zone) (t : TopicShape) (pts : List Point)
+    (h : z0.shape = .topic) (hu : t.unusable = true) :
+    (z0.withShape (some t)).triggered pts = z0.enabled := by
+  cases he : z0.enabled
+  · exact not_triggered_of_disabled _ pts (by rw [(withShape_fields z0 _).2.2, he])
+  · exact (triggered_withShape_iff z0 t pts h).mpr ⟨he, Or.inl hu⟩
+
+/-- **Never less restrictive for that zone.** Whatever else the state could
+hold for a topic zone (no shape, or any shape, in particular the one the
+zone had before the unusable message, which is what the node kept before
+this rule): if the zone is triggered by some points with that, it is
+triggered by them with the mark. -/
+theorem triggered_unusable_of_triggered (z0 : Zone) (o : Option TopicShape) (t : TopicShape)
+    (pts : List Point) (h : z0.shape = .topic) (hu : t.unusable = true)
+    (ht : (z0.withShape o).triggered pts = true) :
+    (z0.withShape (some t)).triggered pts = true := by
+  rw [triggered_of_unusable z0 t pts h hu, ← (withShape_fields z0 o).2.2]
+  exact ((triggered_iff _ pts).mp ht).1
+
+/-- The zone in force for a topic zone whose entry in the state is the mark:
+triggered exactly while the zone is enabled. The refresh at a command does
+not change this (`shapeUnusable_refreshShapes`). -/
+theorem liveZone_triggered_of_unusable (cfg : Config) (st : State)
+    (zoneVerts : List (Option (List Coords))) (k : Nat) (z0 z : Zone)
+    (h0 : cfg.zones[k]? = some z0) (ht : z0.shape = .topic)
+    (hu : shapeUnusable st.shapes k = true)
+    (hz : (liveConfig cfg st zoneVerts).zones[k]? = some z) (pts : List Point) :
+    z.triggered pts = z0.enabled := by
+  unfold liveConfig at hz
+  rw [withShapes_getElem?, h0] at hz
+  simp only [Option.map_some, Option.some.injEq] at hz
+  have hu' := hu
+  rw [← shapeUnusable_refreshShapes cfg st.shapes zoneVerts k] at hu'
+  unfold shapeUnusable at hu'
+  cases hg : (refreshShapes cfg st.shapes zoneVerts).getD k none with
+  | none => rw [hg] at hu'; cases hu'
+  | some t =>
+    rw [hg] at hu' hz
+    subst hz
+    exact triggered_of_unusable z0 t pts ht hu'
+
+/-- **An enabled stop zone with the mark stops every command.** If zone `k`
+is an enabled stop zone fed by a topic and the state holds the mark of an
+unusable message for it, the action demanded for any command is a stop: by
+a stop zone (zone `k` or an earlier triggered one, R12), or for an invalid
+source. No hypothesis on the scan, the coordinates, the clock or
+`source_timeout`. -/
+theorem evaluate_isStop_of_unusable (cfg : Config) (st : State) (now : Nat)
+    (scanPts : Option (List Coords)) (zoneVerts : List (Option (List Coords))) (k : Nat)
+    (z0 : Zone) (h0 : cfg.zones[k]? = some z0) (ht : z0.shape = .topic)
+    (ha : z0.action = .stop) (he : z0.enabled = true)
+    (hu : shapeUnusable st.shapes k = true) :
+    (evaluate cfg st now scanPts zoneVerts).isStop = true := by
+  rw [evaluate_isStop_iff]
+  cases hsp : sourcePoints cfg st now scanPts with
+  | none => exact Or.inl rfl
+  | some pts =>
+    right
+    have hz : (liveConfig cfg st zoneVerts).zones[k]? =
+        some (z0.withShape ((refreshShapes cfg st.shapes zoneVerts).getD k none)) := by
+      unfold liveConfig
+      rw [withShapes_getElem?, h0]
+      rfl
+    refine ⟨pts, rfl, _, List.mem_of_getElem? hz, ?_, ?_⟩
+    · rw [(withShape_fields z0 _).1]; exact ha
+    · rw [liveZone_triggered_of_unusable cfg st zoneVerts k z0 _ h0 ht hu hz pts]; exact he
+
+/-- **… and every velocity published is zero.** Under the same hypotheses,
+whatever event comes next: if a velocity is published for it, it is a
+stop. (A zero may be withheld by R15, as any stop.) -/
+theorem output_of_unusable (cfg : Config) (st : State) (e : Event) (k : Nat) (z0 : Zone)
+    (h0 : cfg.zones[k]? = some z0) (ht : z0.shape = .topic) (ha : z0.action = .stop)
+    (he : z0.enabled = true) (hu : shapeUnusable st.shapes k = true) (a : Action)
+    (h : (step cfg st e).2.velocity = some a) : a.isStop = true := by
+  by_cases hproc : (step cfg st e).2 = .silent
+  · rw [hproc] at h
+    simp [Output.velocity] at h
+  · obtain ⟨now, v, scanPts, zoneVerts, rfl, -, -⟩ := (processed_iff cfg st e).mp hproc
+    rw [← ((velocity_eq_some_iff _ _ _ _ _ _ _).mp h).2.2.1]
+    exact evaluate_isStop_of_unusable cfg st now scanPts zoneVerts k z0 h0 ht ha he hu
+
+/-- **The mark stays** until a polygon message for that zone or a cleanup:
+no other event sets or removes it. (A message for zone `k` that is ignored,
+for instance one with two points, leaves it too: `step_shape_of_refused`.) -/
+theorem step_keeps_unusable (cfg : Config) (st : State) (e : Event) (k : Nat)
+    (hs : ∀ verts foreign, e ≠ .shape k verts foreign) (hc : e ≠ .cleanup) :
+    shapeUnusable (step cfg st e).1.shapes k = shapeUnusable st.shapes k := by
+  cases e with
+  | configure => rw [step_configure]; split <;> rfl
+  | activate => rw [step_activate]; split <;> rfl
+  | deactivate => rw [step_deactivate]; split <;> rfl
+  | cleanup => exact absurd rfl hc
+  | shutdown => rw [step_shutdown]
+  | scan now s => rw [step_scan]; split <;> rfl
+  | shape j verts foreign =>
+    have hjk : j ≠ k := fun hjk => hs verts foreign (by rw [hjk])
+    cases ha : acceptShape cfg st j verts foreign with
+    | none => rw [step_shape_of_refused _ _ _ _ _ ha]
+    | some sh =>
+      rw [step_shape_of_accepted _ _ _ _ _ _ ha]
+      simp only [shapeUnusable, List.getD_eq_getElem?_getD, List.getElem?_set_ne hjk]
+  | cmd now v scanPts zoneVerts =>
+    by_cases hp : st.phase = .active
+    · cases hf : v.finite
+      · rw [step_cmd_of_not_finite _ _ _ _ _ _ hf]
+      · rw [step_cmd _ _ _ _ _ _ hp hf]
+        simp only
+        unfold shapesAfter
+        split
+        · rfl
+        · exact shapeUnusable_refreshShapes cfg st.shapes zoneVerts k
+    · rw [step_cmd_of_not_active _ _ _ _ _ _ hp]
+
 /-! ## Replacing a shape affects that zone only -/
 
 /-- A zone as it stands depends on the shapes only through its own entry. -/
@@ -509,10 +707,12 @@ theorem zonesAction_withShapes_congr (cfg : Config) (shapes shapes' : List (Opti
 
 /-! ## Invariants of reachable states -/
 
-/-- What every stored shape satisfies: at least three vertices, all within
-the coordinate limit of `Shape.ok`. -/
+/-- What every stored entry satisfies: at least three vertices, unless it is
+the mark of an unusable message (ND6), and all vertices within the
+coordinate limit of `Shape.ok`. -/
 def ShapeOk (sh : TopicShape) : Prop :=
-  3 ≤ sh.current.length ∧ sh.current.all (·.inRange (coordLimit - 3)) = true
+  (sh.unusable = false → 3 ≤ sh.current.length) ∧
+    sh.current.all (·.inRange (coordLimit - 3)) = true
 
 /-- **Lifecycle invariants.** What holds in every state reachable from
 `State.init cfg` (`inv_init`, `inv_step`; over runs: `run_inv` in
@@ -551,9 +751,11 @@ theorem inv_init (cfg : Config) : Inv cfg (State.init cfg) where
 theorem shapeOk_of_accept (cfg : Config) (st : State) (k : Nat) (verts : Option (List Coords))
     (foreign : Bool) (sh : TopicShape) (h : acceptShape cfg st k verts foreign = some sh) :
     ShapeOk sh := by
-  obtain ⟨-, -, vs, -, hlen, h1, rfl⟩ := (acceptShape_eq_some_iff cfg st k verts foreign sh).mp h
-  refine ⟨by simpa using hlen, ?_⟩
-  simpa [List.all_eq_true] using h1
+  obtain ⟨-, -, vs, -, hlen, ⟨h1, rfl⟩ | ⟨-, rfl⟩⟩ :=
+    (acceptShape_eq_some_iff cfg st k verts foreign sh).mp h
+  · refine ⟨fun _ => by simpa using hlen, ?_⟩
+    simpa [List.all_eq_true] using h1
+  · exact ⟨fun h => by simp [TopicShape.unusableMark] at h, by simp [TopicShape.unusableMark]⟩
 
 theorem shapeOk_refresh (sh : TopicShape) (verts : Option (List Coords)) (h : ShapeOk sh) :
     ShapeOk (sh.refresh verts) := by
@@ -570,7 +772,9 @@ theorem shapeOk_refresh (sh : TopicShape) (verts : Option (List Coords)) (h : Sh
       by_cases hlen : vs.length = sh.current.length
       · have hc := refresh_of_foreign sh vs hf hlen h1
         refine ⟨?_, ?_⟩
-        · rw [hc]; simpa [hlen] using h.1
+        · intro hu
+          rw [refresh_unusable] at hu
+          rw [hc]; simpa [hlen] using h.1 hu
         · rw [hc]; simpa [List.all_eq_true] using h1
       · rw [refresh_of_refused sh vs (Or.inr hlen)]; exact h
 
