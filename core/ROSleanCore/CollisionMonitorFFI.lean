@@ -32,24 +32,24 @@ wants to keep using a monitor after a query must `lean_inc` it first.
 
 Theorems about this file are in `ROSlean/CollisionMonitor/FFI.lean`.
 
-**State of this file after task T05.** The model now has the lifecycle, the
-transforms and the topic zones of `docs/collision_monitor/SPEC_NAV2.md`; this
-interface does not yet (task T06 writes the calls of that document's section
-8). Until then the exported functions keep their signatures and their
-behaviour, as the node of SPEC.md uses them, by the following reading of the
-old calls in the new model:
+**State of this file after tasks T05 and T05b.** The model now has the
+lifecycle, the base-frame coordinates that arrive with each command, and the
+topic zones of `docs/collision_monitor/SPEC_NAV2.md`; this interface does not
+yet (task T06 writes the calls of that document's section 8). Until then the
+exported functions keep their signatures and their behaviour, as the node of
+SPEC.md uses them, by the following reading of the old calls in the new
+model:
 
 * `cmNew` delivers `configure` and `activate`: the monitor starts in the
   active phase, since the old node has no lifecycle;
-* a scan call always stores the scan (event `scan`); `usable` is remembered
-  in `Monitor.placed` and stands for the transform lookup: every command
-  carries the identity transform if the scan stored last was usable, and no
-  transform if it was not, which is the model's "the lookup failed" (the
-  stop of R8 follows, as it did for the removed event `scanUnusable`);
-* the beams are in the base frame, as the old shim hands them over, and the
-  identity transform leaves them there (`Xform.identity.pointMm` is
-  `coordMm` on finite coordinates);
-* no zone is a topic zone, and no command carries zone transforms;
+* a scan call always stores the scan (event `scan`). The coordinates in its
+  records are in the base frame already, as the old shim hands them over;
+  they are remembered in `Monitor.coords` and every command carries them, as
+  the model's "coordinates of the stored scan for this command". If the call
+  says the scan is not `usable`, `none` is remembered instead, which is the
+  model's "the lookup failed" (the stop of R8 follows, as it did for the
+  removed event `scanUnusable`);
+* no zone is a topic zone, and no command carries zone vertices;
 * `roslean_cm_out_kind` returns 0 both for `silent` and for a processed
   command whose velocity is withheld; the report is not exposed.
 -/
@@ -122,9 +122,10 @@ structure Monitor where
   zoneErrs : List UInt8
   st : State
   out : Output
-  /-- The scan stored last was reported as usable (see the head of this
-  file): commands carry the identity transform for it; otherwise none. -/
-  placed : Bool
+  /-- The base-frame coordinates of the readings of the scan stored last, as
+  that scan call handed them over; `none` if it was reported as not usable
+  (see the head of this file). Every command carries them. -/
+  coords : Option (List Coords)
 
 /-- No zones, source enabled, both timeouts 0, nothing refused, and the
 source not set: the monitor of a new builder is not accepted
@@ -240,7 +241,7 @@ set, no raw value was refused, no vertex was added to no polygon, and
 @[export roslean_cm_new]
 def cmNew (b : Builder) : Monitor :=
   { cfg := b.cfg, ok := b.error == 0, err := b.error, zoneErrs := b.zones.map entryError,
-    st := startState b.cfg, out := .silent, placed := true }
+    st := startState b.cfg, out := .silent, coords := none }
 
 /-- The configuration was accepted. The node must refuse to start if this is
 `false`. -/
@@ -275,17 +276,23 @@ the `x` and `y` coordinates of its point in metres as binary64 patterns (8
 bytes each), all little-endian. -/
 def recordSize : Nat := 20
 
-/-- Record `i` of the array: the reading's range pattern and the patterns of
-its two coordinates, unconverted. -/
+/-- Record `i` of the array: the reading's range pattern. -/
 def beamAt (a : ByteArray) (i : Nat) : Beam :=
-  { range := u32At a (recordSize * i)
-    x := u64At a (recordSize * i + 4)
-    y := u64At a (recordSize * i + 12) }
+  { range := u32At a (recordSize * i) }
+
+/-- Record `i` of the array: the patterns of the two coordinates of the
+reading's point, unconverted. -/
+def coordsAt (a : ByteArray) (i : Nat) : Coords :=
+  (u64At a (recordSize * i + 4), u64At a (recordSize * i + 12))
 
 /-- The beams of a scan array: `size / 20` records in order; a remainder of
 fewer than 20 bytes is ignored. Total for an array of any length. -/
 def decodeBeams (a : ByteArray) : List Beam :=
   (List.range (a.size / recordSize)).map (beamAt a)
+
+/-- The coordinates of a scan array: one pair per record, in order. -/
+def decodeCoords (a : ByteArray) : List Coords :=
+  (List.range (a.size / recordSize)).map (coordsAt a)
 
 /-- The scan the model sees for the arguments of `cmOnScan`. A negative stamp
 becomes 0 (D8). -/
@@ -312,29 +319,30 @@ def Monitor.apply (m : Monitor) (e : Event) : Monitor :=
       { m with st := (step m.cfg m.st e).1, out := .silent }
 
 /-- A scan arrived at node-clock time `nowNs`: one `step` of the model on a
-`scan` event, which stores the scan. `usable` is 0 if the scan's frame is not
-the base frame and no sensor pose was configured (D11); it is recorded, and
-decides what transform the following commands carry (`cmdEvent`): for an
-unusable scan none, so that the source has no data until a usable scan
-arrives (R8). -/
+`scan` event, which stores the scan, and the coordinates of its records are
+remembered for the following commands (`cmdEvent`). `usable` is 0 if the
+scan's frame is not the base frame and no sensor pose was configured (D11):
+then no coordinates are remembered, so that the source has no data until a
+usable scan arrives (R8). -/
 @[export roslean_cm_on_scan]
 def cmOnScan (m : Monitor) (nowNs : UInt64) (stampNs : Int64) (usable : UInt8)
     (rangeMinBits rangeMaxBits : UInt32) (beams : ByteArray) : Monitor :=
   { m.apply (.scan nowNs.toNat (scanOfRaw stampNs rangeMinBits rangeMaxBits beams)) with
-    placed := usable != 0 }
+    coords := if usable != 0 then some (decodeCoords beams) else none }
 
-/-- The event of the model that a command call delivers: the scan's
-transform is the identity if the scan stored last was usable, and missing if
-it was not; there are no zone transforms. -/
-def cmdEvent (placed : Bool) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Event :=
+/-- The event of the model that a command call delivers: it carries the
+coordinates remembered from the scan stored last (none if that scan was not
+usable); there are no zone vertices. -/
+def cmdEvent (coords : Option (List Coords)) (nowNs : UInt64)
+    (linX linY linZ angX angY angZ : UInt64) : Event :=
   .cmd nowNs.toNat ⟨linX.toNat, linY.toNat, linZ.toNat, angX.toNat, angY.toNat, angZ.toNat⟩
-    (if placed then some Xform.identity else none) []
+    coords []
 
 /-- A velocity command arrived at node-clock time `nowNs`; the six components
 are binary64 bit patterns. -/
 @[export roslean_cm_on_cmd]
 def cmOnCmd (m : Monitor) (nowNs : UInt64) (linX linY linZ angX angY angZ : UInt64) : Monitor :=
-  m.apply (cmdEvent m.placed nowNs linX linY linZ angX angY angZ)
+  m.apply (cmdEvent m.coords nowNs linX linY linZ angX angY angZ)
 
 /-! ## Output queries -/
 
