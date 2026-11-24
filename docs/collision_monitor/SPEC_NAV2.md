@@ -15,11 +15,20 @@ section 11 the plan for tasks T05 to T07, section 12 what will still be
 missing afterwards.
 
 **What is implemented.** Task T05 has implemented sections 3 and 4: the
-model (`core/ROSleanCore/CollisionMonitor.lean`,
-`core/ROSleanCore/CollisionMonitorXform.lean`) and the theorems
+model (`core/ROSleanCore/CollisionMonitor.lean`) and the theorems
 ([THEOREMS.md](THEOREMS.md)). Where the model or a theorem differs from what
 T04 wrote in those sections, the text below is corrected and marked
 "(T05)". The C interface and the node (section 8) are not implemented yet.
+
+**The transform is applied in C++ (option A).** T04 recommended applying the
+sensor-to-base transform in Lean in exact arithmetic (option B of section
+5), and T05 built and proved that. On 2026-11-24 the user decided for option
+A: the shim applies the transform in `double`, as upstream does, and Lean
+receives points. Task T05b reworked the model, the proofs and this document
+accordingly; its changes are marked "(T05b)". Sections 3, 4, 5, 6 (ND1,
+ND7, ND9), 7 and 8.2 to 8.4 are the ones that changed. The lowest layer of
+the model is now `core/ROSleanCore/CollisionMonitorPoint.lean` (it was
+`CollisionMonitorXform.lean`).
 
 Rules are numbered N1, N2, …, differences from upstream ND1, …, in addition
 to the R…, D…, A… and T… of SPEC.md.
@@ -505,50 +514,45 @@ Additions to `core/ROSleanCore/CollisionMonitor.lean`. Names are proposals;
 T05 may choose others but not other meanings. Everything stays `Nat`, `Int`,
 `Bool` and lists; no `Float`; `step` stays total.
 
-(T05) The names chosen: a zone's shape is `ZoneShape.fixed s` or
-`ZoneShape.topic`; `place` is a `Placement` (`base` or `foreign tf`);
-`State.init cfg` takes the configuration; the zones with their shapes are
-`liveConfig cfg st zoneTfs`; the shapes after a command are `shapesAfter`;
-the acceptance of a shape message is `acceptShape`; the report of an action
-is `Action.report`; `Output.velocity` and `Output.report` read an output.
-`Xform`, the points and the bit-pattern reading are in
-`core/ROSleanCore/CollisionMonitorXform.lean`.
+(T05, T05b) The names chosen: a zone's shape is `ZoneShape.fixed s` or
+`ZoneShape.topic`; a coordinate pair as the shim hands it over is `Coords`
+(two binary64 patterns, metres, base frame); `State.init cfg` takes the
+configuration; the zones with their shapes are `liveConfig cfg st
+zoneVerts`; the shapes after a command are `shapesAfter`; the acceptance of
+a shape message is `acceptShape`; the report of an action is
+`Action.report`; `Output.velocity` and `Output.report` read an output. The
+points, the two conversions the model applies (`scanPointMm`,
+`vertexPointMm`) and the bit-pattern reading are in
+`core/ROSleanCore/CollisionMonitorPoint.lean`.
 
 ### 3.1 Data
 
-- **`Xform`**: six binary64 bit patterns `qx qy qz qw ox oy`, the quaternion
-  and the x and y of the translation of a looked-up transform. `oz` is not
-  needed (N25).
-  `Xform.usable`: all six are finite and `qx² + qy² + qz² + qw² ≠ 0` as
-  exact numbers.
-  `Xform.identity`: the patterns of (0, 0, 0, 1, 0, 0).
-- **`Beam`** carries the range pattern and the **scan-frame** coordinates
-  as two binary64 patterns, as the shim hands them over today, instead of a
-  point in millimetres.
-- **`Xform.pointMm t x y : Point`** (N25, ND1): for a usable `t` and finite
-  `x`, `y`, with `n00 = d − 2(qy² + qz²)`, `n01 = 2(qx·qy − qw·qz)`,
-  `n10 = 2(qx·qy + qw·qz)`, `n11 = d − 2(qx² + qz²)` as exact rationals:
-  the point `((n00·x + n01·y)/d + ox, (n10·x + n11·y)/d + oy)` in metres,
-  each coordinate times 1000, truncated toward zero and saturated at
-  `±coordLimit`. If `x` or `y` is not finite: `(coordLimit, coordLimit)`,
-  which lies in no accepted zone. **`Xform.vertexMm`**: the same with
-  rounding to the nearest integer, a half away from zero, for zone vertices
-  (as `vertexMm` today).
-  (T05) `pointMm` gives `(coordLimit, coordLimit)` (`Point.far`) also when
-  `t` is not usable. `vertexMm` takes binary32 coordinates, as a polygon
-  message has them, and is **not saturated**: a vertex beyond the limit is
-  refused by E7 and by step 4 of E8, so saturation would never be observed,
-  and without it "within 1/2 mm of the exact image" holds without
-  exception. The computation is on dyadic numbers `m · 2^e`; a zero term is
-  never aligned with another, so a zero component of a quaternion costs
-  nothing.
-- **`Scan.points s t`**: the valid readings (R4) mapped by `t.pointMm`.
+- (T05b) **There is no transform in the model.** `Xform`, `Xform.usable`,
+  `Xform.pointMm` and `Xform.vertexMm` of T04 and T05 are gone (section 5).
+- **`Coords`**: a pair of binary64 bit patterns, the `x` and `y` in metres
+  of a point **in the base frame**, as the shim computed them (N25).
+- **`Beam`** carries the range pattern only. Where a reading's point lies
+  is not stored with the scan: it depends on the transform at the time of
+  each command (N22, N24) and arrives with the command.
+- **`scanPointMm c : Point`**: each coordinate of `c` in millimetres,
+  truncated toward zero and saturated at `±coordLimit` (`coordMm`, as before
+  the extension; a NaN is `+coordLimit`). **`vertexPointMm c : Point`**:
+  each coordinate rounded to the nearest millimetre, a half away from zero
+  (`vertexCoordMm`), for the vertices of a topic zone; a coordinate that is
+  not finite or is 1024 m or more becomes `±coordLimit`, which no shape may
+  reach, so such a vertex is always refused (E7, ND6).
+- **`Scan.fits s c`**: the list `c` has exactly one pair per reading of
+  `s`. **`Scan.points s c`**: reading `i` is paired with pair `i` of `c`;
+  the pairs of the readings that are not valid (R4) are dropped; the others
+  become points by `scanPointMm`, in scan order. Which readings count is
+  decided here, from the stored ranges and limits, not by the shim.
 - **Zones.** A zone's shape is `fixed (s : Shape)` or `topic`. A topic zone
   has no shape in the configuration.
-- **`TopicShape`**: `raw : List (Nat × Nat)` (the vertices as binary32
-  patterns, as received), `foreign : Bool` (the message's frame is not the
-  base frame), `current : List Point` (the vertices in the base frame, in
-  millimetres: upstream's `poly_`).
+- **`TopicShape`**: `foreign : Bool` (the message's frame is not the base
+  frame), `current : List Point` (the vertices in the base frame, in
+  millimetres: upstream's `poly_`). (T05b) The vertices as received are no
+  longer kept in the state: the shim keeps the message and recomputes the
+  base-frame vertices for each command (N34).
 - **`Report`**: `normal`, `stop (zone)`, `slowdown (zone)`, `source`: what a
   state message says (N13).
 - **`Phase`**: `unconfigured`, `inactive`, `active`, `finalized`.
@@ -580,30 +584,38 @@ Each rule names what upstream does (N…) and where the model differs (ND…).
   (ND4).
 - **E6 `scan now s`.** In `inactive` and `active`: `scan := some s`. In
   `unconfigured` and `finalized`: no change. `silent`. (N4, R5)
-- **E7 `shape k verts place`**, with `place` either `base` or `foreign (tf
-  : Option Xform)`. The message is **accepted** iff the phase is `inactive`
-  or `active`, zone `k` exists and is a topic zone, `verts` has at least
-  three entries, every pattern in `verts` is finite, `place` is `base` or
-  `foreign (some t)` with `t.usable`, and every resulting vertex lies within
-  the coordinate limit of `Shape.ok`. If accepted: `shapes[k] := some
-  { raw := verts, foreign := (place ≠ base), current := verts.map (t.vertexMm) }`
-  with `t` the identity for `base`. Otherwise no change. `silent` in both
-  cases. (N33, ND6, ND7)
-- **E8 `cmd now v scanTf zoneTfs`**, with `scanTf : Option Xform` (the
-  transform for the stored scan, `none` if the lookup failed or was not
-  made) and `zoneTfs : List (Option Xform)` (one entry per zone).
+- **E7 `shape k verts foreign`** (T05b), with `verts : Option (List
+  Coords)` the vertices of the message **in the base frame**, as the shim
+  computed them (N33, step 3), or `none` if the transform from the message's
+  frame could not be looked up, and `foreign` saying that the message's
+  frame is not the base frame. The message is **accepted** iff the phase is
+  `inactive` or `active`, zone `k` exists and is a topic zone, `verts = some
+  vs`, `vs` has at least three entries, and every vertex of `vs.map
+  vertexPointMm` lies within the coordinate limit of `Shape.ok` (which
+  excludes every coordinate that is not finite). If accepted: `shapes[k] :=
+  some { foreign, current := vs.map vertexPointMm }`. Otherwise no change.
+  `silent` in both cases. (N33, ND6)
+- **E8 `cmd now v scanPts zoneVerts`** (T05b), with `scanPts : Option (List
+  Coords)` (the base-frame coordinates of the readings of the stored scan,
+  one pair per reading in scan order, as the shim computed them under the
+  transform it looked up for this command; `none` if the lookup failed or
+  was not made) and `zoneVerts : List (Option (List Coords))` (one entry per
+  zone: the base-frame vertices of that zone's stored message under the
+  transform looked up for this command, or `none`).
   1. Phase not `active`: no change, `silent`. (N4)
   2. `v` not finite: no change, `silent`. (R2)
   3. **Source** (`sourcePoints`, R6–R8 with N22 and N27): `some []` if the
      source is disabled; if no scan is stored, `some []` when the timeout is
      0 and `none` otherwise; if the scan is too old (timeout not 0), `none`;
-     otherwise, if `scanTf = some t` with `t.usable`, `some (s.points t)`;
-     otherwise `some []` when the timeout is 0 and `none` when it is not.
+     otherwise, if `scanPts = some c` and `s.fits c`, `some (s.points c)`;
+     otherwise (no coordinates, or not one pair per reading) `some []` when
+     the timeout is 0 and `none` when it is not.
   4. **Shapes** (N34, ND3): if the source is `none`, unchanged. Otherwise,
      for every enabled topic zone `k` with `shapes[k] = some sh` and
-     `sh.foreign`: if `zoneTfs[k] = some t`, `t.usable` and every vertex of
-     `sh.raw.map t.vertexMm` is within the coordinate limit, `current` is
-     replaced by that list; otherwise it stays.
+     `sh.foreign`: if `zoneVerts[k] = some vs`, `vs` has as many entries as
+     `sh.current`, and every vertex of `vs.map vertexPointMm` is within the
+     coordinate limit, `current` is replaced by that list; otherwise it
+     stays.
   5. **Action** (`evaluate`): `stopSource` if the source is `none`; else
      `zonesAction` (R12, R13) over the zones, where a zone is triggered iff
      it is enabled, **has a shape** (a fixed one, or `shapes[k] = some _`
@@ -620,26 +632,35 @@ Each rule names what upstream does (N…) and where the model differs (ND…).
   8. New state: `prevZero`, `stopStamp` as today; `prevReport := r`;
      `shapes` from step 4. Output `answer velocity report`.
 
+  (T05b) Two checks in steps 3 and 4 are there because the coordinates now
+  come from the shim: a list of scan coordinates that is not one pair per
+  reading counts as a failed lookup, and zone vertices that are not as many
+  as the shape has are not taken. A shim that works as specified produces
+  neither; the model does not rely on it.
+
 `step` for a monitor that is not ok stays as it is ("Fail closed" in
 SPEC.md): every command in the `active` phase is answered `stopSource`,
 whatever else; in other phases `silent`.
 
 ### 3.3 What the model does not contain
 
-The wait of N26 (the event carries only its outcome), frame names (the shim
-resolves them into a transform or `none`), the bond, publishers and QoS,
+The wait of N26 (the event carries only its outcome), frame names and (T05b)
+the transform itself (the shim resolves a frame into a transform, applies it
+and hands over points, or `none`), the scan's angles and the scan-frame
+points (R3), the bond, publishers and QoS,
 the polygons shown for `visualize`, zone names (the shim maps a zone index
 to its name).
 
 ## 4. Properties
 
-To be proved by T05 about `step` and lifted to `run`, in the manner of
-SPEC.md, "Properties". `cfg`, `st`, `now`, `v`, the transforms are arbitrary
-unless restricted; no property needs `Config.ok` unless it says so. "The
-output of the command" is `(step cfg st (.cmd now v scanTf zoneTfs)).2`.
-*Source invalid* means: `cfg.sourceEnabled`, `0 < cfg.sourceTimeout`, and
-either `st.scan = none`, or `st.scan = some s` with `s.stamp +
-cfg.sourceTimeout < now`, or `scanTf` is `none` or not usable.
+Proved by T05 about `step` and lifted to `run`, in the manner of SPEC.md,
+"Properties", and reworked by T05b for option A. `cfg`, `st`, `now`, `v`,
+the coordinates are arbitrary unless restricted; no property needs
+`Config.ok` unless it says so. "The output of the command" is `(step cfg st
+(.cmd now v scanPts zoneVerts)).2`. *Source invalid* means:
+`cfg.sourceEnabled`, `0 < cfg.sourceTimeout`, and either `st.scan = none`,
+or `st.scan = some s` with `s.stamp + cfg.sourceTimeout < now`, or `scanPts`
+is `none` or does not fit the stored scan.
 
 **Processed (iff).** The output of an event is not `silent` iff the event is
 a command, `st.phase = active` and `v.finite`; it is then `answer vel rep`
@@ -668,40 +689,55 @@ k` iff the source is not invalid and `k` is the first triggered stop zone;
 either kind is triggered. "Triggered" as in E8 step 5.
 
 **No transform.** If `cfg.sourceEnabled`, `0 < cfg.sourceTimeout`,
-`st.phase = active`, `v.finite` and `scanTf` is `none` or not usable, then
-`evaluate = stopSource` and the output is `answer (some stopSource) _` or
-`answer none _`, the latter exactly in the case of **Velocity**. It is
-**false without the two hypotheses on the configuration**, as "Stale data"
-is: with `source_timeout: 0` a missing transform means "no obstacle" (N27;
-example to be added).
+`st.phase = active`, `v.finite` and `scanPts` is `none` (or does not fit the
+stored scan), then `evaluate = stopSource` and the output is `answer (some
+stopSource) _` or `answer none _`, the latter exactly in the case of
+**Velocity**. It is **false without the two hypotheses on the
+configuration**, as "Stale data" is: with `source_timeout: 0` a missing
+transform means "no obstacle" (N27; example in `Examples.lean`).
 
 **Stale data, Stop, Bad data, No amplification, Slowdown bound,
 Pass-through, Monotonicity** of SPEC.md hold with these changes: the
 hypothesis `st.phase = active` is added; "the output is `publish a`"
 becomes "`answer (some a) _`" and "`silent`" in their conclusions becomes
-"`answer none _`"; the points are `s.points t` for the `scanTf = some t`
-of the command. Stale data keeps its conclusion whatever `scanTf` is.
-Pass-through needs a usable `scanTf` among its hypotheses when a scan is
-stored (it is part of "`sourcePoints = some pts`").
+"`answer none _`"; the points are `s.points c` for the `scanPts = some c`
+of the command. Stale data keeps its conclusion whatever `scanPts` is.
+Pass-through needs coordinates that fit among its hypotheses when a scan is
+stored (it is part of "`sourcePoints = some pts`"). (T05b) Bad data (a) and
+Monotonicity are stated on the stored scan **and** the command's
+coordinates together: removing the readings that are not valid, with their
+pairs, changes no output (`output_filter_validBeam`); adding readings, each
+with its pair, never lifts a stop (`evaluate_isStop_mono`).
 
-**Transform.** For usable `t` and finite `x`, `y`, writing `(X, Y)` for the
-exact image in millimetres: `|(t.pointMm x y).x| ≤ |X|` and `|X| −
-|(t.pointMm x y).x| < 1` unless saturated, and the same for `y`
-(truncation toward zero, as `coordMm_abs_le` and `coordMm_abs_gt` today);
-`|(t.vertexMm x y).x − X| ≤ 1/2`, likewise `y`; and
-`Xform.identity.pointMm x y = (coordMm x, coordMm y)`, so that a scan in the
-base frame without correction is treated exactly as today.
-(T05) Proved, in the stronger form "each coordinate **is** the exact one
-truncated toward zero and saturated" (`pointMm_x_eq`, `pointMm_y_eq`). The
-identity statement holds for finite `x`, `y`, as the sentence's opening
-says; for a coordinate that is not finite it does not: `pointMm` gives
-`(coordLimit, coordLimit)` by 3.1, `coordMm` gives `±coordLimit` on that
-axis alone (example: `x = −∞`, `y = 0`: `(coordLimit, coordLimit)` against
-`(−coordLimit, 0)`). Both points lie in no accepted zone. For a quaternion
-of unit length the exact image is the rotation it denotes followed by the
-translation; for any usable quaternion it is that of its normalisation.
+**Scan points (T05b; replaces "Transform").** What is still a function of
+the stored scan, and what is not:
 
-**Shape accepted (iff).** A `shape k verts place` event changes the state
+- *Of the stored scan alone:* whether it is too old (R7); which readings
+  are valid (R4); **how many points there are**: if `s.fits c`, `(s.points
+  c).length` is the number of valid readings of `s`, whatever `c` is
+  (`points_length`), and never more than that for any `c`
+  (`points_length_le`); so no points iff no reading is valid
+  (`points_eq_nil_iff`). The shim can neither add a point nor drop one.
+- *Of the command's coordinates:* **where** each counted reading lies. Point
+  `j` is `scanPointMm` of the pair at the position of the `j`-th valid
+  reading (`points_eq`, `mem_points_iff`): for finite coordinates, the value
+  the shim handed over, in millimetres, truncated toward zero and saturated
+  (`coordMm_eq_truncReal`), less than 1 mm from it unless saturated
+  (`coordMm_sub_lt`).
+- *Trusted (T2, T6):* that pair `i` is the image of reading `i` of the scan
+  the model has stored, under the transform N23 or N24 prescribes for this
+  command. The model checks the number of pairs and nothing else about
+  them.
+
+T04's property **Transform** ("`Xform.pointMm` is the exact image,
+truncated"; `Xform.vertexMm` within 1/2 mm of the exact image; the identity
+gives `coordMm`) was proved by T05 and cannot be stated any more: the model
+has no transform. What replaces each theorem is listed in THEOREMS.md, "What
+T05 proved and option A does not have". For topic-zone vertices:
+`vertexPointMm` is within 1/2 mm of the vertex the shim handed over, per
+axis, for every accepted vertex (`vertexPointMm_sub_le`).
+
+**Shape accepted (iff).** A `shape k verts foreign` event changes the state
 iff it is accepted (E7); then `shapes[k]` is as E7 says and nothing else
 changes: not the other entries of `shapes`, not `scan`, `prevZero`,
 `stopStamp`, `prevReport`, `phase`.
@@ -712,6 +748,10 @@ equivalent to "the message installs a shape" (`acceptShape_eq_some_iff`); a
 message that is not accepted changes nothing; an accepted one sets
 `shapes[k]` as E7 says and changes nothing else; hence the state changes
 **only if** the message is accepted.
+(T05b) At a command, a refresh moves the vertices of a foreign shape and
+does nothing else: the frame flag and the number of vertices stay
+(`refresh_foreign`); vertices that are refused leave the shape as it was
+(`refresh_of_refused`).
 
 **No shape.** If zone `k` is a topic zone and `st.shapes[k] = none`, zone
 `k` is not triggered by any points, and no output for a command names it.
@@ -751,8 +791,9 @@ then for the next finite command: if the velocity is zero it **is
 published** (`vel = some _`), and the report is `some r` unless `r =
 normal`. (N6: a stop is never withheld right after an activation.)
 
-**Totality.** As before; the new conversions (`Xform.pointMm`, decoding of
-transforms and vertices from byte arrays of any length) are total.
+**Totality.** As before; the conversions (`scanPointMm`, `vertexPointMm`,
+and with T06 the decoding of coordinates and vertices from byte arrays of
+any length) are total.
 
 Trace theorems (`Trace.lean`): each of the above lifted to `run` from
 `State.init` over arbitrary event lists, including lists with lifecycle
@@ -768,65 +809,123 @@ metres as now. For every command it must hand over the whole point list
 again, because the transform depends on the command's time (N22, N24).
 
 **Option B.** The shim passes the looked-up transform as six bit patterns
-with the command; Lean computes `Xform.pointMm` exactly.
+with the command; Lean computes the image exactly.
 
-| | A | B |
+**Decision (the user, 2026-11-24; tasks/PLAN.md, "Decisions"): option A.**
+T04 recommended B, and T05 built and proved B. The reasons for A: B costs
+1.2 to 1.9 µs per reading and command (below); through the node, task T02
+measured about 20 times upstream's time per command, and commands left
+unanswered at 10,000 readings. With A the node does what upstream does, in
+the arithmetic upstream uses. **Also decided:** the shim is compiled with
+`-ffp-contract=off` on every platform, as the node is today (the test of
+task T01 that enforces the flag stands): no fused multiply-add. T05b
+reworked the model and the proofs; T06 writes the shim.
+
+| | A (decided) | B (built by T05, removed by T05b) |
 | --- | --- | --- |
-| Trusted, beyond tf2 and R3 | The matrix and the two sums of N25 in C++, about 15 lines, **and how they are compiled** | Nothing more |
-| Agreement with upstream before the millimetre | Bit for bit only if the shim's sums are fused exactly where upstream's are. Upstream's arm64 binary fuses them (N25); a baseline x86-64 build cannot. The flag `-ffp-contract=off` the node is built with today would be wrong on arm64. The same kind of defect as CM3/CM4 finding 5 | Not bit for bit. Lean's point is the exact image; upstream's is that image computed in `double` |
-| Model | The command event carries the point list; the stored scan no longer determines the points. "The points belong to the stored scan" is trusted | The command event carries six numbers or `none`; points are a function of the stored scan and the transform, inside the theorems |
-| Cost per reading and command | The shim's arithmetic, a few ns (estimated), plus the decoding and conversion of today, 41 ns, now per command instead of per scan | Measured below: 1.2 to 1.9 µs exact; 0.45 µs in a fixed-point form |
+| Trusted, beyond tf2 and R3 | The matrix and the two sums of N25 in C++, about 15 lines, **and how they are compiled**; that the points handed over are those of the stored scan | Nothing more |
+| Agreement with upstream before the millimetre | Bit for bit where upstream's build does not fuse either (baseline x86-64 cannot; inference from the instruction set, the Linux binaries were not examined). Upstream's arm64 binary fuses the two sums (N25), so there the last bits of a coordinate can differ | Not bit for bit. Lean's point is the exact image; upstream's is that image computed in `double` |
+| Model | The command event carries the coordinates; the stored scan decides which readings count and how many points there are, the command where they lie | The command event carries six numbers or `none`; points are a function of the stored scan and the transform, inside the theorems |
+| Cost per reading and command | The shim's arithmetic, a few ns (estimated), plus decoding and conversion in Lean, now per command instead of per scan: 41 ns per reading was the figure before the extension, 0.19 µs is what the model costs now (below). Not measured through a node (T06) | Measured below: 1.2 to 1.9 µs exact; 0.45 µs in a fixed-point form |
 
-**Cost of B, measured.** `review/collision_monitor/nav2/TransformCost.lean`
-is a Mathlib-free prototype of `Xform.pointMm` on unbounded integers,
-compiled with `leanc -O3`; `run_transform_cost.sh` runs it; output in
+**What the model receives (T05b).** With every command: one pair of
+binary64 patterns per reading of the stored scan, the reading's point in
+the base frame in metres, in scan order; or "none". Bit patterns, converted
+in Lean by the existing `coordMm`, and not millimetres computed in C++,
+because the conversion (truncation toward zero, saturation, what a NaN
+becomes) is part of what the theorems are about and is proved; the shim
+still "converts nothing". One pair per reading, and not only the valid
+readings' points, because then the validity of a reading (R4) and the
+number of points stay decisions of the model, taken from the stored scan:
+the shim cannot drop or add a point (section 4, "Scan points"). The price
+is 16 bytes per reading and command also for readings that do not count.
+For a topic zone in another frame: the base-frame vertices of the stored
+message, as binary64 pairs, or "none", per zone.
+
+**Cost of A in the model, measured (T05b).** With the present interface
+(a scan call remembers the coordinates, every command carries them),
+`ros/roslean_collision_monitor/test/cmd_cost` (task T02's program: 1080
+readings, nothing near, median of 400 commands back to back, macOS arm64,
+machine in use by other tests):
+
+| | Two circles | Two 4-vertex polygons |
+| --- | --- | --- |
+| Before the extension (`91c21f9`, T02's COMPARISON.md) | 18 µs | 0.41 ms |
+| After T05 (option B; T02) | 2.5 µs per reading, about 2.7 ms | 2.9 µs per reading, about 3.1 ms |
+| After T05b (option A) | **0.21 ms**, 0.19 µs per reading | **0.63 ms** |
+
+So a command is 13 and 5 times cheaper than under B, and for circle zones
+still 12 times dearer than before the extension. The difference to "before"
+is the conversion to millimetres, which was made once per scan and under
+option A is made for every command, because the points arrive with the
+command. Of the 0.21 ms, about 0.14 ms is `coordMm` on 2160 coordinates
+(measured by replacing the conversion with a constant, then restored),
+0.05 ms the lists (`zip`, `filter`, `map`), 0.02 ms the zone tests. The
+conversion is slow here because a coordinate is kept as a `Nat` pattern and
+a pattern with the sign bit set is a big number for Lean's runtime; before
+the extension the decoder took sign and magnitude apart
+(`coordMmOfParts`, 41 ns per reading). T06's decoder can do that again, with
+a proof that it computes `Scan.points`; this is an open item for T06, not
+done here. `test_cm_ffi` is back to 47 s (169 s after T05, 39 to 42 s
+before).
+
+**Cost of B, measured (history).**
+`review/collision_monitor/nav2/TransformCost.lean` is a Mathlib-free
+prototype of the exact transform on unbounded integers, compiled with
+`leanc -O3`; `run_transform_cost.sh` runs it; output in
 `results/macos-arm64-transform.txt`. On an Apple M-series core, while
 another job used the machine, over eight runs: **1.2 to 1.5 µs per point**
 for a quaternion with four non-zero components, **1.6 to 1.9 µs** for a
-pure yaw (the zero components make the prototype align numbers of very
-different exponents; a real implementation treats zero separately). That is
-0.4 to 0.7 ms for a scan of 360 readings and 1.2 to 1.9 ms for 1000
-readings, **per command**; at the 20 Hz of `controller_frequency` in
-`nav2_params.yaml`, 1000 readings cost under 4 % of one core. Today's
-figure for comparison: 41 ns per reading, once per scan. One of the eight
-runs reported 177 µs per point in its first loop and normal figures in the
-three others; it was not reproduced and is unexplained (that run sat in the
-background for three minutes).
+pure yaw. A fixed-point variant in the same file costs **0.43 to 0.50 µs
+per point**. T05's implementation in the model measured the same: the leak
+test of `test_cm_ffi` took 169 s, about 1.3 µs per reading and command.
 
-A fixed-point variant in the same file (matrix rounded once per command to
-30 fractional bits, coordinates in units of 2⁻²⁰ m) costs **0.43 to 0.50 µs
-per point**, still on unbounded integers, and differed from the exact result by
-at most 1 mm on the 2000 test points, as two truncations of nearly equal
-numbers do. With 64-bit machine integers it would be far cheaper, at the
-price of overflow proofs. It is an optimisation T05 or T06 may add **only**
-with a proof that it stays within the bound below; the specification is the
-exact `Xform.pointMm`.
+**How far the model's points are from upstream's (option A).** For one
+reading let `e` be the exact image of its scan-frame point under the
+transform tf2 returned, `u` the point upstream computes, `s` the point the
+shim computes, `m` the model's point. Per axis:
 
-**How far B's points are from upstream's.** Let `e` be the exact image of a
-scan-frame point, `u` the point upstream computes for it, `m` the model's
-point.
-- `|m − e| < 1 mm` on each axis, toward the origin (**Transform**, proved in
-  Lean): less than √2 mm ≈ 1.4143 mm in distance.
-- `|u − e|` is the rounding error of about fourteen `double` operations on
-  numbers below 1000 m: of the order of 10⁻⁹ mm, and below 10⁻⁶ mm with a
-  wide allowance, with or without fused multiply-add. This is an estimate
-  from the error bounds of IEEE-754 operations; it is not proved in Lean
-  and would need a model of binary64 arithmetic (trusted item T7).
+- `|m − s| < 1 mm`, toward the origin, unless saturated: **proved**
+  (`coordMm_sub_lt`). For a topic-zone vertex `|m − s| ≤ 1/2 mm`: **proved**
+  (`vertexPointMm_sub_le`).
+- `|u − s| ≤ δ`: **not proved; estimated and trusted (T7).** Both are
+  evaluations in `double` of the same expression (N25) on the same seven
+  numbers from tf2: the matrix entries, about six operations each on values
+  of magnitude at most 2, then three products and three sums on values
+  below `|p| + |o|`. Each IEEE-754 operation is within half a unit in the
+  last place of its exact result, 1.1·10⁻¹⁶ relative; with coordinates and
+  translations below 1000 m that gives each evaluation a distance of at
+  most about 5·10⁻⁹ mm from `e`, fused or not, hence `δ` of the order of
+  **10⁻⁸ mm**. This document allows **10⁻⁶ mm**. Where neither build fuses,
+  and the shim uses tf2's own inline code for the matrix and the product
+  (8.4), `s = u` bit for bit (inference; not checked on a Linux binary).
+  Errors inside tf2 (interpolation, the product of N24 with its large odom
+  coordinates) do not enter `δ`: both programs receive the same numbers.
 
 **Does the polygon margin of √5 mm still guarantee "a point upstream counts
-is always counted"?** Yes, with the same argument and the same gap as
-SPEC.md ("Safe direction"). A vertex moves by at most √2/2 mm ≈ 0.7072 mm
-when rounded (for a topic zone in another frame: from its exact image,
-which upstream's vertex approximates within 10⁻⁶ mm); a point moves by less
-than 1.4143 mm from `e`, hence by less than 1.4143 mm + 10⁻⁶ mm from `u`.
-The sum is below 2.1216 mm < √5 mm ≈ 2.2360 mm. The budget left over is
-0.114 mm: any implementation whose point is within 0.1 mm of
-`Xform.pointMm`'s exact image before truncation keeps the guarantee. For
-circles nothing changes: truncation moves a point toward the origin and the
-radius is rounded up with 1 mm to spare. What is proved and what is prose
-stays as THEOREMS.md says: the quantitative half in Lean, the step "the
-boundary passed over the point" in prose, and now also the estimate of
-`|u − e|`.
+is always counted"?** Yes, with room to spare, under the same split into a
+proved and a prose half as SPEC.md ("Safe direction"). The proved half is
+per axis: if every vertex of the model is within `dv` of upstream's and the
+model's point within `dp` of upstream's point `u` on the boundary, with
+`2·(dv + dp)² ≤ 5`, that is `dv + dp ≤ 1.5811 mm`, the point is counted
+(`contains_of_close`). The budget:
+
+| Zone | `dv` | `dp` | Room for `δ` | Theorem |
+| --- | --- | --- | --- | --- |
+| Fixed polygon | 1/2 (rounding of the parameter) | 1 + δ | **δ ≤ 0.08 mm** | `contains_of_shim_fixed` |
+| Topic zone | 1/2 + δ (rounding of the shim's vertex, which is within δ of upstream's) | 1 + δ | **δ ≤ 0.04 mm** | `contains_of_shim` |
+| Circle | radius rounded up, plus 1 mm | truncation toward the origin, δ | **δ ≤ 0.5 mm** | `circle_safe_shim` |
+
+So the guarantee holds if the shim's coordinates are within 0.04 mm of
+upstream's; the allowance of 10⁻⁶ mm is 40,000 times smaller. **Proved:**
+the three theorems, with `δ` as a hypothesis. **Prose:** that the boundary
+passes over the point (THEOREMS.md, "Geometry"). **Trusted:** the bound on
+`δ` (T7), the shim's arithmetic and flags (T2). The same budget is what any
+later change of the shim's arithmetic has to respect: a shim whose point is
+within 0.04 mm of upstream's keeps the guarantee, whatever its flags.
+
+For the differential tests nothing changes: they exclude points within
+5 mm of a boundary (SPEC.md, "Note on testing"), far more than `δ`.
 
 **Base shift correction.** The same in both options: it is one transform,
 composed inside tf2 (N24), and reaches the shim as the same seven numbers.
@@ -834,20 +933,14 @@ Its precision is tf2's: two interpolations, one product of transforms and
 one conversion from matrix to quaternion, in `double`, none of it in the
 shim under either option. Its order of operations is N24 followed by N25.
 
-**Recommendation: B.** It removes floating-point arithmetic from the shim
-instead of adding some; it makes the points a function of what the model
-stores, so the theorems about scans keep their meaning; it does not depend
-on compiler flags; it serves zone vertices in another frame with the same
-function; and it also lifts the restriction of D11 to upright sensors,
-because the projection is computed from the full quaternion. Its price is
-about a millisecond per command for a large scan, and that agreement with
-upstream is "within 10⁻⁶ mm before truncation" instead of "bit for bit on
-platforms where the flags happen to match". The differential tests already
-exclude points within 5 mm of a boundary (SPEC.md, "Note on testing"), so
-they lose nothing.
-
-The decision is the user's (PLAN.md, "Decisions"). Until it is taken, T05
-and T06 follow B.
+**What option A gives up, for the record.** The points are no longer a
+function of what the model stores; "every point is the exact image of its
+reading, truncated" is no longer a theorem but "every point is the shim's
+point, truncated"; about 15 lines of floating-point arithmetic and the
+compiler's treatment of them join the trusted base; and the restriction to
+correctly compiled flags is of the kind of CM3/CM4 finding 5. What it
+gains: upstream's cost per command, upstream's arithmetic, and on builds
+that do not fuse, upstream's points.
 
 ## 6. Differences from upstream
 
@@ -855,15 +948,15 @@ In addition to D1–D14 of SPEC.md, which stay unless section 9 changes them.
 
 | # | Upstream | ROSlean | Why |
 | --- | --- | --- | --- |
-| ND1 | The transform is applied in `double`, with or without fused multiply-add depending on the build (N25) | Applied exactly to the numbers the patterns denote, then truncated to millimetres (`Xform.pointMm`) | Section 5. Before truncation the two differ by an estimated 10⁻⁶ mm at most; after it, as D3 and D4 already say. |
+| ND1 | The transform is applied in `double`, with or without fused multiply-add depending on the build (N25); the arm64 binary fuses | (T05b) Applied in `double` by the shim, by the same formula, **never fused** (`-ffp-contract=off`, decided by the user); then truncated to millimetres in Lean (`coordMm`) | Section 5. Before truncation the two are equal where upstream's build does not fuse, and differ by an estimated 10⁻⁸ mm at most where it does; after it, as D3 and D4 already say. |
 | ND2 | The clock is read at the start of `process` and again in `publishVelocity`, after any wait for a transform (N28) | One reading per command, taken before the lookups | Extends D7. The two readings can now differ by up to `transform_tolerance` per lookup that waits, instead of by the run time of the callback. Affects only the boundary of `stop_pub_timeout`, and only for commands that waited. |
 | ND3 | The transform of a topic zone's shape in another frame is looked up when the zone loop reaches the zone (N34) | The shim looks up the transforms of all such zones before the command is evaluated, and the model refreshes all enabled ones | The lookups cannot be interleaved with a decision taken in Lean in one call. Differences: lookups, and their waits, for zones behind a triggered stop zone; and the vertices of such a zone are refreshed where upstream leaves them until the zone is next reached. No command is decided differently unless a later lookup for that zone fails. |
 | ND4 | Shut down from the active state, the node keeps answering commands (N8) | After `shutdown` nothing is published (E5) | A finalized node that drives the robot is a defect. Nav2's manager never takes that path (N8). |
 | ND5 | A state message is published when the acting zone's **name** changes (N13, N15) | When the report changes, which identifies a zone by its position. A configuration in which two zones have the same name, or a zone is named `invalid source` or has an empty name, is refused | Only then can the two rules differ. |
 | ND6 | A shape message is accepted whatever its coordinates; a NaN blinds the zone (N33) | A message with a non-finite coordinate, or a vertex beyond the coordinate limit of D12, is ignored and the previous shape stays (E7) | Integers cannot hold it, and the previous shape protects more than a blind one. If there is no previous shape the zone stays without one (question 1). |
-| ND7 | tf2 does not return a non-finite or all-zero quaternion, by N25 [S] | Such a transform counts as a failed lookup (E8 step 3, E7) | Totality; fail closed. Not reachable through tf2 as read. |
+| ND7 | tf2 does not return a non-finite or all-zero quaternion, by N25 [S] | (T05b) Such a transform counts as a failed lookup: the **shim** checks the seven numbers before it uses them and hands over "none" (8.4; trusted and tested there, since the model no longer sees the transform) | Totality; fail closed. Not reachable through tf2 as read. Without the check a NaN would become a saturated point, which lies in no zone. |
 | ND8 | `~/toggle`; `enabled` of a zone or source changeable at run time (R19) | Not provided; an attempt to change a parameter at run time is refused | Scope. Was part of D2. |
-| ND9 | `~/collision_points_marker` (N17) | Not provided | Display only; under option B the base-frame points exist only inside Lean. |
+| ND9 | `~/collision_points_marker` (N17) | Not provided | Display only. (T05b) Under option A the shim has the base-frame points and could publish them; still out of scope. |
 | ND10 | Loadable as the component `nav2_collision_monitor::CollisionMonitor` (N18) | A stand-alone executable only, unless T06 finds the Lean runtime can be loaded into Nav2's container | See section 8.5. |
 | ND11 | A zone without `points` and with an action other than `approach` and no `polygon_sub_topic` fails configuration with a message about `polygon_sub_topic` (N29) | The same failure, and if `footprint_topic` is set the message says that `footprint_topic` is read for `approach` only and names the two ways out | The edit users will try first (N29). |
 | ND12 | A circle's radius can arrive on a topic (N36) | Refused | Scope. |
@@ -884,14 +977,26 @@ is left behind when its publisher stops (N34).
 Replaces T1–T5 of SPEC.md.
 
 - **T1. The slowdown multiplication.** Unchanged.
-- **T2. The scan-frame points.** The computation of R3 in `float`: the
-  angle accumulation, `cos`, `sin`, the product, widened to `double`. The
-  sensor pose arithmetic of D11 is gone. Everything after it (transform,
-  millimetres, saturation) is in Lean.
+- **T2. The scan's points in the base frame (T05b: larger than under
+  option B).** (a) The computation of R3 in `float`: the angle
+  accumulation, `cos`, `sin`, the product, widened to `double`. (b) **The
+  transform arithmetic of N25 in `double`**: the matrix from the
+  quaternion, the two sums, the projection; for a topic zone's vertices the
+  same. (c) **How (a) and (b) are compiled**: with `-ffp-contract=off`, so
+  that no multiply-add is fused (decided by the user; enforced by the
+  build's test from task T01), and which library entries `cos` and `sin`
+  resolve to. (d) **That the coordinates handed over with a command are
+  those of the scan last handed to Lean**, one pair per reading, in order,
+  under the transform looked up for that command; and likewise that the
+  vertices handed over for a zone are those of the message Lean last
+  accepted for it. Lean checks the number of pairs and of vertices, and
+  nothing else about them. The sensor pose arithmetic of D11 is gone.
+  Everything after the base-frame coordinates (which readings count,
+  millimetres, saturation, the zones) is in Lean.
 - **T3. The configuration.** As before, plus that the shim tells Lean
   truthfully which zones are topic zones.
 - **T4. The bit-pattern definitions** and the formula for the number a
-  pattern denotes, now also the basis of `Xform.pointMm`.
+  pattern denotes.
 - **T5. The shim's delivery.** Every message is one event with one clock
   reading; every lifecycle transition that `rclcpp_lifecycle` performs is
   delivered as its event, in order, and no other; the fields named in
@@ -902,30 +1007,37 @@ Replaces T1–T5 of SPEC.md.
   interpolation, its product, its conversion to a quaternion). (b) The
   shim's lookup: that it asks tf2 for what N23, N24, N33 and N34 say, for
   the frame and stamp of the scan it last handed to Lean and the frame of
-  the shape message Lean last accepted for that zone; that it passes the
-  seven numbers unaltered; and that a failed lookup is passed as "none".
-  This code sits in one file with its own tests (section 8.4).
-- **T7. Upstream's rounding (new, for the comparison only).** That
-  upstream's own computation of N25 is within 10⁻⁶ mm of the exact image
-  for coordinates below 1000 m. It enters no theorem about this node; it is
-  what "a point upstream counts is always counted" rests on (section 5).
+  the shape message Lean last accepted for that zone; that it uses the
+  seven numbers unaltered (T2 b); that a failed lookup, and a transform
+  with a number that is not finite or with a zero quaternion (ND7), is
+  passed as "none". This code sits in one file with its own tests (8.4).
+- **T7. The distance between the shim's points and upstream's (new, for
+  the comparison only; T05b).** That the point and the vertices upstream
+  computes by N25 are within 0.04 mm per axis of those the shim computes,
+  for coordinates below 1000 m. The estimate is 10⁻⁸ mm (section 5): two
+  evaluations of one expression in `double`, one of them possibly with
+  fused multiply-add. It enters no theorem about this node as a fact; it is
+  the hypothesis `δ` of `contains_of_shim`, `contains_of_shim_fixed` and
+  `circle_safe_shim`, on which "a point upstream counts is always counted"
+  rests.
 - **T8. Display (new).** The names in state messages (the shim's table from
   zone index to name) and the polygons published for `visualize`. A mistake
   here misinforms an observer; it changes no velocity.
 
-What the theorems will say: for every sequence of lifecycle transitions,
-scans, shape messages and commands, with whatever transforms tf2 returned
-or failed to return, which velocity action and which report the node
+What the theorems say: for every sequence of lifecycle transitions, scans,
+shape messages and commands, with whatever coordinates the shim handed over
+or failed to hand over, which velocity action and which report the node
 gives, including that it gives none unless active, that a missing transform
-stops under the stated hypotheses, and that every point is the exact image
-of the scan-frame point under the transform it was given, truncated toward
-the origin.
+stops under the stated hypotheses, that the number of points is the number
+of valid readings of the stored scan, and that every point is the
+coordinate pair it was given, truncated toward the origin.
 
-What they will not say: that the transform is the right one (T6); that the
-scan-frame point is the right one (T2); anything about time spent waiting,
-about the order in which the middleware delivers messages, about the bond
-or the lifecycle manager; that a topic zone has a shape, or a current one
-(N32, N34); that the base stops when the node is silent (A3).
+What they do not say: that a coordinate pair is the image of its reading
+(T2), under the right transform (T6); that the scan-frame point is the
+right one (T2); anything about time spent waiting, about the order in which
+the middleware delivers messages, about the bond or the lifecycle manager;
+that a topic zone has a shape, or a current one (N32, N34); that the base
+stops when the node is silent (A3).
 
 ## 8. Shim boundary
 
@@ -955,24 +1067,31 @@ used: they can only suppress.
 
 ### 8.2 Scan and shape events
 
+(T05b: rewritten for option A. The encodings are proposals; T06 may choose
+others but not other meanings.)
+
 | Call | Arguments |
 | --- | --- |
-| `roslean_cm_on_scan` | monitor, `now_ns : uint64`, `stamp_ns : int64`, `range_min_bits : uint32`, `range_max_bits : uint32`, `beams : ByteArray` → monitor |
-| `roslean_cm_on_shape` | monitor, `zone : uint32`, `foreign : uint8`, `tf : ByteArray`, `verts : ByteArray` → monitor |
+| `roslean_cm_on_scan` | monitor, `now_ns : uint64`, `stamp_ns : int64`, `range_min_bits : uint32`, `range_max_bits : uint32`, `ranges : ByteArray` → monitor |
+| `roslean_cm_on_shape` | monitor, `zone : uint32`, `foreign : uint8`, `has_verts : uint8`, `verts : ByteArray` → monitor |
 | `roslean_cm_shape_accepted` | monitor → `uint8`: the last `on_shape` call was accepted (E7) |
 
-- `on_scan`: as today without the argument `usable`. `beams` keeps its
-  20-byte records; bytes 4–19 are now the coordinates **in the scan
-  frame** (R3, T2), whatever the frame. The shim keeps the `frame_id` and
-  the stamp of the message for the lookup at the next commands (T6).
-- `on_shape`: `verts` has 8 bytes per vertex, the bit patterns of `x` and
-  `y` of the `Point32`, little-endian; a remainder is ignored. `foreign` is
-  0 iff the message's `frame_id` equals `base_frame_id` (a string
-  comparison, as upstream's). `tf` is read only if `foreign` is not 0: 48
-  bytes, the six patterns `qx qy qz qw ox oy` as little-endian `double`s, or
-  any other length for "the lookup failed". The lookup is N33 step 2, made
-  by the shim before the call, and only if the message has at least three
-  points (so that a short message is ignored without a wait, as upstream).
+- `on_scan`: without the argument `usable`. `ranges` has 4 bytes per
+  reading, the range pattern, little-endian; a remainder is ignored. No
+  coordinates: they come with each command. The shim keeps the message
+  (ranges, `angle_min`, `angle_increment`, `frame_id`, stamp) for the
+  lookups and the points of the next commands (T2, T6).
+- `on_shape`: `verts` has 16 bytes per vertex, the bit patterns of `x` and
+  `y` of the vertex **in the base frame** as little-endian `double`s (N33,
+  step 3: the `float` coordinates of the message under the transform, `z`
+  taken as 0; for a message in the base frame the identity, which leaves
+  the widened `float`s); a remainder is ignored. `has_verts` is 0 if the
+  lookup failed: `verts = none`. `foreign` is 0 iff the message's
+  `frame_id` equals `base_frame_id` (a string comparison, as upstream's).
+  The lookup is N33 step 2, made by the shim before the call, and only if
+  the message has at least three points (so that a short message is ignored
+  without a wait, as upstream; the shim then still makes the call, with the
+  short list, and Lean refuses it).
 - If `shape_accepted` is 1 the shim stores the message for the lookups of
   later commands and for N16; otherwise it logs an error and keeps the
   previous one.
@@ -982,7 +1101,7 @@ used: they can only suppress.
 | Call | Arguments |
 | --- | --- |
 | `roslean_cm_cmd_plan` | monitor, `now_ns : uint64`, six `uint64` (the twist) → `uint8` |
-| `roslean_cm_on_cmd` | monitor, `now_ns : uint64`, six `uint64`, `scan_tf : ByteArray`, `zone_tfs : ByteArray` → monitor |
+| `roslean_cm_on_cmd` | monitor, `now_ns : uint64`, six `uint64`, `has_points : uint8`, `points : ByteArray`, `zone_verts : ByteArray` → monitor |
 | `roslean_cm_out_kind` | monitor → `uint8` |
 | `roslean_cm_out_zone`, `roslean_cm_out_ratio` | as today |
 | `roslean_cm_out_report` | monitor → `uint8` |
@@ -999,15 +1118,26 @@ used: they can only suppress.
    time, with the timeout `transform_tolerance`, on a buffer whose listener
    has its own thread, so that the wait of N26 is upstream's. For every
    enabled topic zone whose stored message is in another frame: N34.
-4. `on_cmd`. `scan_tf`: 48 bytes as in 8.2, or another length for "failed or
-   not made". `zone_tfs`: 49 bytes per zone, in zone order: a flag byte (1:
-   the 48 bytes that follow are a transform) and 48 bytes; any other total
-   length means "none for every zone".
-5. `out_kind`: 0 `silent`; 1 to 4 as today (`answer (some a) _`); 5
+4. **Points (T2, new with option A).** If the scan's lookup succeeded: for
+   **every** reading `i` of the stored message, valid or not, the point of
+   R3 in `float`, widened, and its image by N25 in `double`; `points` gets
+   16 bytes per reading, the patterns of `x` and `y` in the base frame,
+   little-endian, in scan order, and `has_points` is 1. Otherwise
+   `has_points` is 0. The shim does not test the range of a reading: which
+   readings count is Lean's decision, and what it writes for a reading that
+   does not count is not looked at (`output_filter_validBeam`). For every
+   zone looked up in step 3: the vertices of the stored message by N25.
+5. `on_cmd`. `scanPts` is `none` if `has_points` is 0, else the decoded
+   pairs (a remainder of fewer than 16 bytes is ignored; a list that is not
+   one pair per stored reading counts as no points, E8 step 3). `zone_verts`:
+   for each zone in order a 4-byte little-endian count `n` and `16·n` bytes
+   of vertices, with `n = 0xFFFFFFFF` for "none"; a zone the array does not
+   reach has none.
+6. `out_kind`: 0 `silent`; 1 to 4 as today (`answer (some a) _`); 5
    `answer none _` (processed, velocity withheld). `out_report`: 0 no
    report; 1 `normal`; 2 `stop`; 3 `slowdown`; 4 `source`; the zone index
    in `out_report_zone` for 2 and 3.
-6. The shim then: publishes the state message if `out_report` is not 0 and
+7. The shim then: publishes the state message if `out_report` is not 0 and
    `state_topic` is set (1 → `("", 0)`; 2 → `(<name>, 1)`; 3 → `(<name>,
    2)`; 4 → `("invalid source", 1)`), **before** the velocity (N13);
    publishes the velocity for kinds 1 to 4 as today; publishes the
@@ -1016,21 +1146,40 @@ used: they can only suppress.
 Theorems T06 owes for these calls (`ROSlean/CollisionMonitor/FFI.lean`): a
 sequence of calls yields `run` of the corresponding events; the numbers
 read back determine the model's output, including the report; if
-`cmd_plan` is 0 or 1 the result of `on_cmd` does not depend on `scan_tf`,
-and if it is 0 not on `zone_tfs`; `cmd_plan` does not change the monitor;
-decoding of `tf`, `zone_tfs` and `verts` is total and inverts the shim's
-encoding.
+`cmd_plan` is 0 or 1 the result of `on_cmd` does not depend on `points`,
+and if it is 0 not on `zone_verts`; `cmd_plan` does not change the monitor;
+decoding of `ranges`, `points`, `verts` and `zone_verts` is total and
+inverts the shim's encoding. (The present interface has the corresponding
+theorems for its one array: `decodeBeams_encodeBeams`,
+`decodeCoords_encodeBeams`, `fits_decode`, `points_decode`.)
 
 ### 8.4 What stays in C++
 
-- `transforms.hpp` (new, the only file that calls tf2): the two lookups,
-  the copy of seven numbers into bytes, the comparison of frame names. No
-  arithmetic on the numbers. Tests: against a `tf2::BufferCore` filled by
-  the test, that the bytes are tf2's numbers for N23 and N24, that every
-  kind of failure gives "none", that the arguments are in the right order
-  (source and target frame, the two times).
-- `conversions.hpp`: `encode_scan` without the sensor pose. `cos`, `sin`,
-  the `float` product (T2).
+- `transforms.hpp` (new, the only file that calls tf2 and the only one
+  that computes with a transform; T05b: it now holds arithmetic). (a) The
+  two lookups, the comparison of frame names, the check of ND7 (seven
+  finite numbers, a quaternion that is not zero; otherwise "none"). (b)
+  **N25**: the looked-up message into a `tf2::Transform` with tf2's own
+  `fromMsg`, and the image of each point with tf2's own `operator*`, so
+  that the operations and their order are upstream's by construction;
+  `x` and `y` of the result, the third coordinate dropped. For a base-frame
+  scan without correction the identity is applied all the same, as upstream
+  does (N23). (c) Compiled with **`-ffp-contract=off`**, like the rest of
+  the node: decided by the user. On a platform where upstream's build fuses
+  (arm64) the last bits of a coordinate can therefore differ from
+  upstream's (section 5, T7); the flag is not to be changed per platform.
+  Tests: against a `tf2::BufferCore` filled by the test, that the lookups
+  ask for N23 and N24 with the arguments in the right order (source and
+  target frame, the two times) and that every kind of failure gives "none";
+  for the arithmetic, that the points equal those of a reference
+  computation written out operation by operation (N25) on exact and on
+  general quaternions, bit for bit, and that the object code contains no
+  fused multiply-add (the existing check of task T01, extended to this
+  file).
+- `conversions.hpp`: `encode_scan` without the sensor pose and without
+  coordinates (ranges only); the scan-frame point of R3 (`cos`, `sin`, the
+  `float` product) moves to where the points of a command are computed
+  (T2).
 - The polygons for `visualize` (N16): the fixed polygon's vertices as read,
   the 16 points of a circle, the last accepted message. T8.
 
@@ -1121,10 +1270,9 @@ Not made by this task. T05 and T06 make them when the code exists.
 4. **R17**: add the parameters of 8.5.
 5. **R18, R19**: the node is a lifecycle node; drop "no lifecycle" wording;
    `~/toggle` and run-time `enabled` move to ND8.
-6. **"Units and representation"**: scan points are `binary64` patterns in
-   the scan frame until a command; `Xform.pointMm` replaces `coordMm` on the
-   scan path (it equals it for the identity); add topic-zone vertices
-   (`Xform.vertexMm`).
+6. **"Units and representation"**: (T05b) scan points are `binary64`
+   patterns in the base frame, handed over with each command, and converted
+   by `coordMm` as before; add topic-zone vertices (`vertexCoordMm`).
 7. **"Safe direction"**: the scan-point paragraph and the polygon paragraph
    get the argument of section 5.
 8. **T1–T5**: replaced by section 7.
@@ -1133,7 +1281,8 @@ Not made by this task. T05 and T06 make them when the code exists.
     sensor pose disappears from the pseudo-code and from "What the shim
     still refuses". `Monitor.dropScan`, and `Event.scanUnusable` if T01 has
     introduced it, are removed: a scan is no longer usable or unusable when
-    it arrives; whether it can be placed is decided per command by `scanTf`.
+    it arrives; whether it can be placed is decided per command (the command
+    carries its points or none).
 11. **Excluded features**: remove the rows "Motion correction",
     "Transforms", "State topic", "Zone visualisation" and "Lifecycle";
     "Dynamic polygon or radius" becomes "Dynamic radius" (ND12); "Footprint
@@ -1292,7 +1441,9 @@ state messages and polygon topics.
 
 ## 11. Implementation plan
 
-**T05, model and proofs** (needs T01 merged and this document).
+**T05, model and proofs** (needs T01 merged and this document). Done, for
+option B; **T05b** then moved the transform out of the model (option A):
+items 1 and 3 below describe what T05 built, not what the model has now.
 1. The data of 3.1 and the events of 3.2 in
    `core/ROSleanCore/CollisionMonitor.lean`; `Xform.pointMm` and
    `Xform.vertexMm` in a Mathlib-free file beside it, exact, with zero
@@ -1312,8 +1463,8 @@ state messages and polygon topics.
 3. The parameter handling of 8.5 and the refusal message of ND11.
 4. `smoke_*` tests at node level for the rows of section 10 that need no
    upstream; the try of 8.5 "Composition".
-5. A benchmark of a command with 360 and with 1000 readings against the
-   figures of section 5; the fixed-point form only if needed and proved.
+5. A benchmark of a command with 360 and with 1000 readings through the
+   node, against upstream (section 5 has only an estimate for option A).
 6. The edits of section 9.
 
 **T07, upstream scenarios** (needs T02 and this document; beside T05 and
@@ -1350,13 +1501,13 @@ completely: its lists name one fixed stop polygon and one scan.
 | Velocity polygons | `src/velocity_polygon.cpp`: the zone's shape is the first sub-polygon whose ranges contain the command (`linear_min/max`, `theta_min/max`, and for `holonomic` a direction from `atan2`); if none matches, the previous shape stays | No | Defined (`VelocityPolygonStop`), not in `polygons` | Comparisons of `double`s, exact on bit patterns (a signed `F64.le`). The shape becomes a function of the command, so `evaluate` depends on the command (it does not today). The holonomic branch needs `hypot` and `atan2` from the shim. Non-holonomic: about a tenth |
 | Dynamic polygons | `polygon_sub_topic` for a polygon | No (it uses `footprint_topic`, which only `approach` reads) | No | **Closed by this extension** (N29–N35) |
 | Dynamic radius | `polygon_sub_topic` on a circle: `std_msgs/Float32` (N36) | No | No | One event; `radiusMm` exists. Small |
-| Point cloud source | `src/pointcloud.cpp`: `PointCloud2` with `x`, `y`, `z` (and optionally `height`), `min_range` on the 3D length, the 3D transform, a height filter `min_height`…`max_height` on the transformed `z` or the `height` field | No (its `scan` entry carries `min_height` and `max_height`, which a scan never reads) | Defined (`pointcloud`), not in `observation_sources` | The third row of the matrix in `Xform`; the height comparison in Lean; decoding of `PointCloud2` layouts in the shim (trusted). Clouds have 10⁵ points and more: at the costs of section 5 the exact transform is too slow, so the fixed-point form on machine integers with its overflow proofs is needed first. About a fifth |
+| Point cloud source | `src/pointcloud.cpp`: `PointCloud2` with `x`, `y`, `z` (and optionally `height`), `min_range` on the 3D length, the 3D transform, a height filter `min_height`…`max_height` on the transformed `z` or the `height` field | No (its `scan` entry carries `min_height` and `max_height`, which a scan never reads) | Defined (`pointcloud`), not in `observation_sources` | The shim's transform keeps the third coordinate; the height comparison in Lean on a third pattern per point; decoding of `PointCloud2` layouts in the shim (trusted). Clouds have 10⁵ points and more, handed over with every command (option A): the cost of the hand-over has to be measured first. About a fifth |
 | Range source | `src/range.cpp`: one `sensor_msgs/Range` becomes an arc of points every `obstacles_angle`, with `cos` and `sin` in `float` | No | No | Like the scan path with a different generator of scan-frame points in the shim (T2). Small |
 | Polygon source | `src/polygon_source.cpp`: `PolygonInstanceStamped` messages kept per id, dropped when too old, sampled along their edges every `sampling_distance` (`hypot`, `ceil`, a division) | No | No | The sampling in the shim (trusted) or in Lean with a rational square-root bound; a list of stored polygons with ids in the state. About a tenth |
 | Costmap source | Not in Jazzy: `src/` has no such file | — | — | — |
 | Several sources | `process`, first loop: every enabled source in order, the first invalid one stops; `<zone>.sources_names` selects which sources a zone counts (`Polygon::getPointsInside`) | No (one source) | No (one in the list) | `State.scan` and `sourcePoints` become lists; the theorems generalise without new ideas. About a tenth, mostly proofs |
 | `~/toggle`, run-time `enabled` | `toggleCMServiceCallback`; `Polygon::dynamicParametersCallback`, `Source::dynamicParametersCallback` | No | No | Three events and a flag in the state (ND8). Small |
-| Collision point markers | N17 | No | No | An interface call that returns the model's points (ND9). Small, display only |
+| Collision point markers | N17 | No | No | The shim has the points (option A); a publisher (ND9). Small, display only |
 | Component | N18: Nav2's bring-up loads the monitor into a container by default (`bringup_launch.py`) | Bring-up, not parameters | — | 8.5 (ND10) |
 | `action_type: none` | Accepted, does nothing (UPSTREAM_BEHAVIOUR.md 23) | No | No | Trivial; refused today |
 | `max_points` | Deprecated alias (R11) | No | No | Refused (D10) |
@@ -1389,6 +1540,7 @@ Each is implemented as upstream does it until decided, as PLAN.md says.
    refuse `polygon_sub_topic` on the costmap's topic. Interacts with
    question 1.
 3. **Option A or B** for the transform (section 5). Recommended: B.
+   **Decided: A** (2026-11-24), with `-ffp-contract=off` on every platform.
 4. **`source_timeout: 0` also disables the stop for a missing transform**
    (N27). Same question as SPEC.md, open decision 5.
 5. **The wait for a transform inside the callback** (N26) holds up every

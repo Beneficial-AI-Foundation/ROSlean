@@ -28,6 +28,23 @@ registered as expected failures.
    interface call the fast one). Measure before and after with
    `bench/roslean_bench`. Add a start-up warning when the configured zones
    and the first scan's size make a command cost more than a stated bound.
+   **Since T05b** (read `tasks/reports/T05b.md`, "Cost of a command"): the
+   command now carries the base-frame coordinates of every reading, and the
+   conversion to millimetres (`coordMm`) runs per command. Measured with
+   `cmd_cost` at 1080 readings: 207 µs for two circles (18 µs before the
+   extension) and 628 µs for two 4-vertex polygons (0.41 ms before). Of the
+   207 µs about 135 µs is `coordMm` on `Nat` patterns (a pattern with the
+   sign bit set is a big number in Lean's runtime), 50 µs the lists, 18 µs
+   the zones. So this item has two parts now, in this order: (a) make the
+   conversion cheap, for example by decoding sign and magnitude apart as
+   before T05, proved equal to the current definition; (b) the polygon path
+   as described above. "Counting once per scan" is no longer possible: the
+   points differ with every command. State a budget per command for 360,
+   1080 and 10,000 readings, measure against it and against upstream
+   (8 µs at 1080 readings and two polygons, T02), and replace the limit of
+   T02's `roslean_cmd_cost` test (25 ns per reading and zone, a line T02
+   drew) by that budget. Correct COMPARISON.md where it still explains the
+   cost by `Xform.pointMm`, which no longer exists.
 3. Any other defect T02 reported. For each: fix, test (turn the expected
    failure into a passing test), and note it in COMPARISON.md.
 

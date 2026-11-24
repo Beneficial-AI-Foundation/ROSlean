@@ -60,7 +60,7 @@ endif()
 set(_ir "${ROSLEAN_ROOT}/.lake/build/ir")
 set(ROSLEAN_MODULES
   ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop
-  ROSleanCore/CollisionMonitorXform
+  ROSleanCore/CollisionMonitorPoint
   ROSleanCore/CollisionMonitor ROSleanCore/CollisionMonitorConvert
   ROSleanCore/CollisionMonitorFFI)
 set(_generated)

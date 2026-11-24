@@ -3,6 +3,21 @@
 Branch: `claude/cm-nav2-harness`. Needs: T02 and T04 merged. Can run beside
 T05 and T06. Read [README.md](README.md) first.
 
+**Note (T05b).** The user has decided that the Lean node applies the
+sensor-to-base transform in C++ in `double`, as upstream does (option A of
+SPEC_NAV2.md, section 5), compiled with `-ffp-contract=off` on every
+platform. Nothing in the scenarios below changes. For the expectations it
+means: the Lean node's points are no longer exact images but a second
+floating-point evaluation of upstream's formula; where upstream's build
+fuses multiply-adds (its arm64 binary does) the two can differ in the last
+bits of a coordinate, an estimated 10⁻⁸ mm. Keep every point of a scenario
+and of the random test at least 5 mm from every zone boundary, as the
+harness already does, also under rotated and general transforms; do not
+write a scenario that expects the two nodes to agree on a point that lies
+on a boundary. A transform with a non-finite number or a zero quaternion
+cannot be published through tf2 (N25); if a scenario finds a way, the Lean
+node treats it as a failed lookup (ND7).
+
 ## Why
 
 The harness (`ros/roslean_collision_monitor/test/`) pins down what upstream

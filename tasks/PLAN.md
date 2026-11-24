@@ -49,9 +49,9 @@ same row group can run at the same time.
 | [T01](T01-finish-node-fixes.md) | Verify and finish `claude/cm-node-fixes` | — | yes | merged 39ad5e1 |
 | [T04](T04-nav2-spec.md) | Specification and design of the Nav2 extension (new file only) | — | yes | merged c2d5f85 |
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | merged 259589a |
-| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | open |
+| [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | running |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
-| [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | running |
+| [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | running |
 | [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
@@ -113,6 +113,10 @@ Decided by the user on 2026-11-24:
 | Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | In C++, as upstream (option A). T05, already merged, built option B; T05b reworks the model and proofs, T06 writes the shim code. T02 measured B through the node at about 20 times upstream's time per command |
 | With the transform in C++: compile the shim to match upstream's floating-point results bit for bit on each platform (upstream's arm64 binary fuses multiply-adds), or keep `-ffp-contract=off`? | Keep `-ffp-contract=off`: the same results on every platform, T01's test stands. Our points may differ from upstream's in the last bit on arm64 |
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
+| (T05b) A valid reading whose base-frame coordinate is not finite becomes a saturated point outside every zone. Keep, or stop? | Keep: as upstream and as before T05 |
+| (T05b) Scan coordinates of the wrong count with `source_timeout: 0` let the command pass. Keep, or stop regardless? | Keep: consistent with N27; a shim that works as specified cannot produce it |
+| (T05b) The model checks that a refreshed topic shape has as many vertices as before. Keep? | Keep |
+| (T05b) After the move to C++ a command still costs more than before the extension (1080 readings: 207 µs for two circles against 18 µs; 628 µs for two polygons against 0.41 ms), because the conversion to millimetres now runs per command on patterns that are big numbers when the sign bit is set. Who fixes it? | T03, with its item 2: decode sign and magnitude apart, proved equal |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | (T02) The cost of a command: target? | Not decided. T03 measures after T05b and proposes a budget per command; until then T02's `roslean_cmd_cost` (25 ns per reading and zone) stays an expected failure |
 | (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
