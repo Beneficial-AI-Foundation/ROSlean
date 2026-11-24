@@ -1352,12 +1352,15 @@ harness has `late` for that).
 ### 10.1 Where each row is tested (added by T07)
 
 The rows above are scenarios of
-`ros/roslean_collision_monitor/test/scenario_nav2.py` (36 scenarios in six
+`ros/roslean_collision_monitor/test/scenario_nav2.py` (37 scenarios in six
 families), written from runs of upstream's binary, not from the column
 "Upstream does"; what they show is in UPSTREAM_BEHAVIOUR.md, findings 24 to
 38. No row was contradicted; N28 is made more precise below. The node under test is an argument;
 `test/profile_roslean_nav2.py` is the one place that states where the
-ROSlean node is to answer differently (ND4, ND5, ND6, ND11).
+ROSlean node is to answer differently (ND4, ND5, ND6, ND11). Every point of
+a scenario is at least 0.125 m from every zone boundary, except in
+`shift-interpolation`, which pins upstream's interpolation with points on a
+boundary and is therefore not run for the ROSlean node (ND1).
 
 | Rows | Scenarios |
 | --- | --- |
@@ -1370,7 +1373,7 @@ ROSlean node is to answer differently (ND4, ND5, ND6, ND11).
 | 9 | `test/bond_manager.py` (wall clock) |
 | 10 | `offset`, `rotated` of `scenario.py`, as before |
 | 11 | `tf-latest` |
-| 12 | `tf-tilt`, `tf-pitch-circle` |
+| 12 | `tf-tilt`, `tf-pitch-circle`; also `tf-bad-quaternion` (transforms tf2 refuses; ND7 is not reachable through them) |
 | 13 | `tf-missing`; also `tf-tolerance-decimal`, `tf-tolerance-0.3` |
 | 14 | `tf-missing-timeout0`, `tf-tolerance0`; also `tf-wait-timeout0` |
 | 15 | `shift-straight`, `shift-off`; also `shift-interpolation` |
@@ -1405,6 +1408,9 @@ at all (all on 1.3.12, macOS arm64, and, except the scenarios that need
 - N24: the interpolation between two odom samples decides a zone boundary
   exactly where the numbers are binary fractions (`shift-interpolation`: a
   quarter, a half and three quarters of the way between samples 1 m apart).
+- N25: a transform published with a zero quaternion, a NaN in the
+  quaternion or a NaN translation is not taken by tf2; the frame stays
+  unknown (`tf-bad-quaternion`).
 - N27: with `source_timeout: 0` a command whose lookup fails still waits
   for `transform_tolerance` before it passes.
 - N28: a backward jump of the clock clears the transforms received on

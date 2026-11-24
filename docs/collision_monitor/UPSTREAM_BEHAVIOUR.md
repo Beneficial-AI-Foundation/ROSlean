@@ -650,7 +650,29 @@ correction) is reported as a disagreement.
 
 ### What was run for the extension
 
-@@RUN_TABLE@@
+All on 2026-11-24. macOS: arm64, pixi/RoboStack, `nav2_collision_monitor`
+1.3.12. Linux: arm64 container (Docker Desktop), Ubuntu 24.04, apt,
+`nav2_collision_monitor` 1.3.14; that image has neither `nav2_bringup` nor
+`nav2_lifecycle_manager`, so the five scenarios that edit `nav2_params.yaml`
+and the manager half of `bond_manager.py` were not run there.
+
+| | macOS | Linux |
+| --- | --- | --- |
+| `scenario_nav2.py` on upstream: 37 scenarios, 256 checks (lifecycle 6/68, state and polygon topics 3/26, transforms 11/68, base shift correction 7/33, topic zones 4/38, footprint edit 6/23) | 0 failures on the final version (once, through colcon, 139 s); the two runs of the version before it (36 scenarios, 249 checks): 0 failures; the two runs of the first version (34 scenarios): one failure each, a fault of the harness, see below | 32 scenarios, 237 checks, 0 failures (125 s); two earlier runs of 29 and 31 scenarios: 0 failures |
+| `random_nav2.py`, upstream against the model | seeds 0 to 39: 2279 commands, 0 disagreements, none retried; seeds 0 to 9 three more times through colcon (621 commands each): 0 disagreements, one case retried once (it agreed with 300 ms between events) | seeds 0 to 19, twice: 1182 commands, 0 disagreements, none retried |
+| `random_nav2.py --self-test`, seeds 0 to 5 | disagreements reported in 3 of 6 cases, as it must be | not run |
+| `bond_manager.py` | 15 checks, 0 failures, three runs | the bond half: 9 checks, 0 failures, two runs |
+
+The harness fault: every scenario starts a node of the same name, and the
+first clock message of `polygon-pub` was twice sent while only the previous
+scenario's node was in the graph, so the new node's clock still read 0 at
+activation ("polygon stamped 0"). The runner now waits for the old node's
+endpoints to leave the graph. Nothing about upstream follows from it.
+
+`profile_roslean_nav2.py` states what the ROSlean node is to do differently
+(ND4, ND5, ND6, ND11 of SPEC_NAV2.md). It was written before that node had
+the extension and has been run against upstream only, where it fails in
+exactly the five places it names.
 
 ## Nondeterminism
 
