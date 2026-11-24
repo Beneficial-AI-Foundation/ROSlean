@@ -53,7 +53,7 @@ same row group can run at the same time.
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | merged 56ac73b |
-| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
+| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | running (started from T03's pushed branch, before T03's merge) |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | open |
