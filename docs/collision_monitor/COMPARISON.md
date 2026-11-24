@@ -87,7 +87,7 @@ on Linux by the step of `bench/cm_linux/run.sh` given in the last column.
 | Per-call latency in process | `run_cm_bench.py core` | [below](#per-call-latency) | below | `bench` |
 | Latency through the nodes | `run_cm_bench.py node` | [below](#through-the-nodes) | below | `bench` |
 | Memory | `run_cm_bench.py soak --minutes 32`; `bench_cm --which lean --scan slow --soak 100000 --iters 1000000 --warmup 0` | [below](#memory) | below | `soak` |
-| The registered tests | `colcon test --base-paths ros --packages-select roslean_collision_monitor` | @@CTEST_MAC@@ | @@CTEST_LINUX@@ | `ctest` |
+| The registered tests | `colcon test --base-paths ros --packages-select roslean_collision_monitor` | 15 of 15 passed, 22 min 11 s | 14 of 14 passed, 21 min 45 s | `ctest` |
 
 The registered tests are listed under [Running it](#running-it).
 
@@ -469,7 +469,7 @@ for the number of commands answered in a burst.
 | 10,000 readings | passes, slows, stops as the readings say | same |
 | 100,000 readings (400 kB) | stop | stop |
 | 1,000,000 and 10,000,000 readings (4 and 40 MB) | the message does not arrive (best-effort subscription): the previous scan stays in force | same |
-| the same sizes handed to the callback in process (`bench_cm --readings N --zones circles --scan near`, macOS) | handled: 47 ms and 0.48 s per scan, 15 ms and 0.15 s per command; no crash | 2.8 ms and 30 ms per command |
+| the same sizes handed to the callback in process (`bench_cm --readings N --zones circles --scan near`, macOS) | handled without a crash: 0.23 s per scan and 2.6 s per command at 1,000,000 readings; 2.6 s per scan at 10,000,000, where the command could not be timed (the scan is older than `source_timeout` by the time the scan callback returns). Before the extension: 47 ms and 0.48 s per scan, 15 ms and 0.15 s per command | 3.0 ms and 34 ms per command (`--which upstream`) |
 | Stamp of −1 s | stop (stamp taken as 0, D8); next good scan passes | **aborts** at the next command |
 | Stamp `sec = -1, nanosec = 2·10⁹`; `sec = -2³¹` | stop | aborts |
 | Clock at 0.25 s, scan stamped −5 s | **used as fresh** (D8): stops for an obstacle scan, passes for a clear one, until the clock passes `source_timeout` | aborts |
@@ -941,14 +941,20 @@ container:
 
 | Test | What | macOS | Linux | Label |
 | --- | --- | ---: | ---: | --- |
-| `band_bounds` | core against upstream's zone tests, 6.8 million points | @@T_band@@ | |
-| `roslean_cmd_cost` | **expected to fail** (defect 2): a command costs at most 25 ns per stored reading and zone | @@T_cost@@ | |
-| `t2_point_as_upstream` | macOS only: the shim's point for one reading against upstream's bits | @@T_t2@@ | |
-| `roslean_fault_clock_negative` | **expected to fail** (defect 1); passes once the node survives a negative `/clock`, then remove `WILL_FAIL` | @@T_clock@@ | |
-| `upstream_probes` | the 18 probes on upstream's binary | @@T_probes@@ | |
-| `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | @@T_scen@@ | long |
-| `roslean_fault_injection` | 19 fault cases, upstream beside the node | @@T_fault@@ | long |
-| `roslean_random_diff` | seeds 0 to 5 of the random comparison | @@T_rand@@ | long |
+| `band_bounds` | core against upstream's zone tests, 6.8 million points | 35 s | 30 s | |
+| `roslean_cmd_cost` | **expected to fail** (defect 2): a command costs at most 25 ns per stored reading and zone | 8 s | 7 s | |
+| `t2_point_as_upstream` | macOS only: the shim's point for one reading against upstream's bits | under 1 s | not registered | |
+| `roslean_fault_clock_negative` | **expected to fail** (defect 1); passes once the node survives a negative `/clock`, then remove `WILL_FAIL` | 9 s | 9 s | |
+| `upstream_probes` | the 18 probes on upstream's binary | 35 s | 33 s | |
+| `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | 274 s | 271 s | long |
+| `roslean_fault_injection` | 19 fault cases, upstream beside the node | 93 s | 92 s | long |
+| `roslean_random_diff` | seeds 0 to 5 of the random comparison | 95 s | 95 s | long |
+
+All 15 tests of the package (14 in the container) passed in that run: 22
+min 11 s on macOS, 21 min 45 s in the container, while the soak of the
+section before was running on the same machine. `band_bounds` took 2.4 s
+before the extension of the model; it is the same program on the same
+points (defect 2).
 
 Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93. A test
 marked `WILL_FAIL` passes while the defect is there; `WILL_FAIL` cannot
@@ -956,7 +962,11 @@ tell why a test fails, so after a change to the harness run the two
 programs by hand once and look for the lines quoted under
 [Defects](#defects).
 
-@@T_total@@
+`pixi run test` as a whole was not run for this document. An estimate of
+its duration on this Mac: 34 minutes, namely the 22 minutes above plus
+what the other packages took when task T01 ran the whole (24 min 25 s in
+all, of which about 13 were this package's seven tests of that time).
+`pixi run test-quick` took @@T_QUICK@@.
 
 ```
 pixi run cm-diff               # 600 random cases beside upstream, one process; cm-diff 0 50 for fewer

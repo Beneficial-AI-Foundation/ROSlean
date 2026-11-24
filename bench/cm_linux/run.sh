@@ -16,7 +16,11 @@
 #   points     band_bounds 100000 7
 #   faults     fault injection, both nodes, the very large scans included
 #   qos        probe_qos.py on both nodes
-#   bench      per-call latency in process and latency through the nodes
+#   bench      per-call latency in process (25 minutes) and latency through
+#              the nodes
+#   node       latency through the nodes only: twice for 20 s per scan size
+#              (the second run's file goes to OUT_DIR/second) and once for
+#              120 s (OUT_DIR/long)
 #   soak       both nodes under load for 32 minutes, memory sampled
 #   ctest      the registered tests of roslean_collision_monitor (colcon test)
 #
@@ -101,6 +105,14 @@ for step in "$@"; do
         "python3 bench/roslean_bench/scripts/run_cm_bench.py core --out /out"
       in_container bench_node \
         "ROS_DOMAIN_ID=39 python3 bench/roslean_bench/scripts/run_cm_bench.py node --out /out"
+      ;;
+    node)
+      in_container bench_node \
+        "ROS_DOMAIN_ID=39 python3 bench/roslean_bench/scripts/run_cm_bench.py node --out /out"
+      in_container bench_node_2 \
+        "ROS_DOMAIN_ID=39 python3 bench/roslean_bench/scripts/run_cm_bench.py node --out /out/second"
+      in_container bench_node_long \
+        "ROS_DOMAIN_ID=39 python3 bench/roslean_bench/scripts/run_cm_bench.py node --seconds 120 --out /out/long"
       ;;
     soak)
       in_container bench_soak \
