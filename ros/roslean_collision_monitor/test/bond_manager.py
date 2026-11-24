@@ -72,7 +72,7 @@ def part_bond(exe, tmp):
     side.proc = start(exe, log)
     try:
         if not d.detect_lifecycle(side, 'auto'):
-            note(False, 'the node offers no lifecycle services')
+            note(False, 'the node offers no lifecycle services (or has exited)')
             return False
         note(d.change_state(side, Transition.TRANSITION_CONFIGURE), 'configure')
         d.spin_for(1.0)

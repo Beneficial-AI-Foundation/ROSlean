@@ -224,7 +224,8 @@ if(BUILD_TESTING)
   # The ROSlean node through the same three tests. EXPECTED TO FAIL until the
   # node has the extension (tasks/T06): today it is not a lifecycle node, and
   # each script stops at its first check ("the node offers no lifecycle
-  # services"), within seconds. T08 removes WILL_FAIL, adds LABELS long to the
+  # services (or has exited)": it exits, because it refuses `state_topic`),
+  # within seconds. T08 removes WILL_FAIL, adds LABELS long to the
   # first and the third, and completes test/profile_roslean_nav2.py, which
   # states the differences from upstream that a scenario can see (ND4, ND5,
   # ND6, ND11). (WILL_FAIL cannot tell why a test fails; run by hand, the

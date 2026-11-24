@@ -23,6 +23,13 @@
 #              120 s (OUT_DIR/long)
 #   soak       both nodes under load for 32 minutes, memory sampled
 #   ctest      the registered tests of roslean_collision_monitor (colcon test)
+#   nav2       the tests of the Nav2 extension on upstream's node (tasks/T07):
+#              scenario_nav2.py, random_nav2.py seeds 0-19, bond_manager.py.
+#              The test directory of this checkout is mounted over the
+#              image's copy, so the image need not be rebuilt for a changed
+#              test. The image has neither nav2_bringup nor
+#              nav2_lifecycle_manager: the five scenarios that edit
+#              nav2_params.yaml and the manager part report "not run".
 #
 # Every step is one container (`docker run --rm`), so nothing is left over.
 # The containers have their own network: the ROS_DOMAIN_IDs below separate
@@ -123,6 +130,18 @@ for step in "$@"; do
     ctest)
       in_container ctest "time colcon test --base-paths ros --packages-select roslean_collision_monitor \
         --event-handlers console_direct+; colcon test-result --verbose"
+      ;;
+    nav2)
+      HERE=$(cd "$(dirname "$0")/../.." && pwd)
+      for run in "scenario_nav2:61:scenario_nav2.py" "random_nav2:62:random_nav2.py 0 20" \
+                 "bond_manager:63:bond_manager.py"; do
+        IFS=: read -r name domain script <<< "$run"
+        echo "== $name"
+        docker run --rm -e PYTHONUNBUFFERED=1 -v "$HERE/$T":/src/$T:ro "$IMAGE" \
+          bash -c "time ROS_DOMAIN_ID=$domain python3 $T/$script" > "$OUT/$name.log" 2>&1 &
+      done
+      wait
+      tail -n 2 "$OUT/scenario_nav2.log" "$OUT/random_nav2.log" "$OUT/bond_manager.log"
       ;;
     *)
       echo "unknown step: $step" >&2

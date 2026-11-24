@@ -406,7 +406,7 @@ types; `stamped` runs with the parameter set.
 
 ## The Nav2 extension
 
-Findings 24 to 37 are for what the extension adds to the subset
+Findings 24 to 38 are for what the extension adds to the subset
 (`docs/collision_monitor/SPEC_NAV2.md`): the lifecycle interface, the state
 topic and the polygon topics, transforms from TF with base shift correction,
 and zones whose shape arrives on a topic, which is the route by which Nav2's
@@ -550,15 +550,19 @@ circle, passes when the base is half way between two odom samples 1 m
 apart, and stops when the base has advanced the full metre; after half a
 turn of the base a point that was ahead is behind, and after a quarter turn
 to the left it is on the right (new); with the scan in a sensor frame both
-transforms apply. The same sequence with the correction off passes
+transforms apply. The interpolation between two odom samples is exact
+where the numbers allow it (new): with samples 1 m and 1 s apart and the
+command a quarter, a half and three quarters of the way, a point at range
+0.75, 1.0 and 1.25 lands on the 0.5 m circle and passes, and one float32
+step closer stops. The same sequence with the correction off passes
 throughout. The lookup needs an odom sample at or after the command's clock
 reading: a command 0.25 s after the newest sample waits as in finding 33
 and is then stopped for `invalid source`, or is answered as soon as a newer
 sample arrives; so is a scan stamped before the oldest sample, and a scan
 in the base frame when there is no odom frame at all. A command before any
 scan is stopped at once: no lookup is made. Scenarios `shift-straight`,
-`shift-off`, `shift-turn`, `shift-quarter-turn`, `shift-sensor-frame`,
-`shift-no-odom`. (N22, N24.)
+`shift-off`, `shift-interpolation`, `shift-turn`, `shift-quarter-turn`,
+`shift-sensor-frame`, `shift-no-odom`. (N22, N24.)
 
 ### 35. Nav2's footprint zone cannot be turned into a stop zone by changing `action_type` alone (flag)
 
@@ -610,7 +614,21 @@ these files and switches the bond off; nothing else is changed.
 Scenarios `polygon-topic`, `polygon-topic-moving`, `polygon-topic-inactive`,
 `footprint-topic-ignored`, `footprint-sub-topic`. (N29, N31 to N35.)
 
-### 37. A model of the extension agrees with upstream on random cases
+### 37. A backward jump of the clock forgets the transforms from `/tf`, not the static ones (flag)
+
+New. When the node clock jumps back (here by one second) the node logs
+`Detected jump back in time. Clearing TF buffer.` A scan in a frame whose
+transform came from `/tf_static` is used as before. A scan in a frame whose
+transform came from `/tf` is not: the command waits for `transform_tolerance`
+and is stopped for `invalid source`, and so is every command until the
+transform has been published again. With `base_shift_correction: true` the
+odom transform is of that kind, so after a backward jump every command is
+held and then stopped until odometry stamped at or after the new clock
+arrives (inferred from this finding and finding 34, not run as a scenario).
+Scenario `tf-clock-jump-back`. (N28, which has the clearing from the source
+and does not say that static transforms survive.)
+
+### 38. A model of the extension agrees with upstream on random cases
 
 `test/random_nav2.py` generates random configurations (circles, fixed
 polygons and polygons fed by a topic; a sensor frame with exact, general,
@@ -622,8 +640,8 @@ bit and state message, with a Python model of the findings above (about 150
 lines on top of `cm_model.py`). Commands are not generated when a point is
 within 5 mm of a zone boundary, when a lookup would need tf2's
 interpolation, or at the edge of tf2's 10 s history; `transform_tolerance`
-is 0. So this test says nothing about finding 33, about interpolation, or
-about boundaries. The self-test (`--self-test`: the model ignores the
+is 0, and the clock never runs backwards. So this test says nothing about
+findings 33 and 37, about interpolation, or about boundaries. The self-test (`--self-test`: the model ignores the
 correction) is reported as a disagreement.
 
 ### What was run for the extension
@@ -715,7 +733,7 @@ The extension's tests take the node as their first argument in the same
 way (default: upstream), and need a lifecycle node:
 
 ```
-python3 scenario_nav2.py                                  # upstream, 34 scenarios
+python3 scenario_nav2.py                                  # upstream, 36 scenarios
 python3 scenario_nav2.py --only transforms,shift          # families, or scenario names
 python3 scenario_nav2.py NODE --profile profile_roslean_nav2
 python3 random_nav2.py 0 20                               # upstream against the model

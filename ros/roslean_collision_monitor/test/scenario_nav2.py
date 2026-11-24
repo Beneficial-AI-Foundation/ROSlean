@@ -45,7 +45,7 @@ import tempfile
 import rclpy
 
 from cm_harness import (
-    DO_NOTHING, HERE, SLOWDOWN, STOP, UPSTREAM, Driver, Side, f32, resolve, s, xf)
+    DO_NOTHING, HERE, SLOWDOWN, STOP, UPSTREAM, Driver, Side, f32, f32_next, resolve, s, xf)
 from scenario import INVALID, NORMAL, P, check_answer, clock, cmd, describe, late, quiet, ray, scan
 
 PI = math.pi
@@ -407,6 +407,25 @@ TF_WAIT_TIMEOUT0 = [
     late(T + s(0.5), V, 'after the tolerance: it PASSES'),
 ]
 
+# A backward jump of the clock (N28): tf2 clears its buffer, which forgets
+# the transforms received on /tf but not the static ones.
+LASER_DYN = dict(frame='laser_dyn')
+TF_CLOCK_JUMP_BACK = [
+    clock(T), tf(xf(BASE, 'laser_dyn', stamp=T)),
+    scan(ray(0.25, **LASER_DYN)),
+    cmd(V, ZERO, 'scan in a frame known from /tf, point in the circle: stop', state=SC),
+    clock(T - s(1)), scan(ray(0.25, **LASER)),
+    cmd(V, ZERO, 'the clock has jumped back by 1 s; scan in a frame known from /tf_static: the '
+        'static transform is still there, stop'),
+    scan(ray(0.25, **LASER_DYN)),
+    cmd(V, None, 'scan in the frame known from /tf: that transform is FORGOTTEN, the command '
+        'waits'),
+    late(T - s(0.5), ZERO, 'after the tolerance: invalid source', state=INVALID),
+    cmd(V, None, 'and so does the next command'),
+    arrives(tf(xf(BASE, 'laser_dyn', stamp=T - s(1))), ZERO,
+            'until the transform is published again', state=SC),
+]
+
 # ---- base shift correction (N24; rows 15 to 19) --------------------------------
 
 SHIFT_STRAIGHT = [
@@ -431,6 +450,31 @@ SHIFT_STRAIGHT = [
             'an odom sample newer than the command arrives: answered without the clock moving',
             state=SC),
     cmd(V, ZERO, 'odom samples on both sides of the clock: answered at once'),
+]
+
+# The interpolation between two odom samples, at a zone boundary. Samples at
+# 0 s (x = 0) and 1 s (x = 1), a scan stamped 0 s, commands in between: the
+# base is at 0.5 m and at 0.25 m exactly, and a point at range 1.0 or 0.75
+# lands exactly on the 0.5 m circle.
+SHIFT_INTERPOLATION = [
+    clock(T), tf(odom(T), odom(T + s(1), x=1.0)),
+    scan(ray(0.75)),
+    clock(T + s(0.25)),
+    cmd(V, V, 'a quarter of the way between the samples, point at range 0.75: on the circle, '
+        'outside'),
+    scan(ray(f32_next(0.75, -1), stamp=T)),
+    cmd(V, ZERO, 'a quarter of the way: one float32 step closer, inside', state=SC),
+    scan(ray(1.0, stamp=T)),
+    clock(T + s(0.5)),
+    cmd(V, V, 'half way, point at range 1.0: on the circle, outside', state=NORMAL),
+    scan(ray(f32_next(1.0, -1), stamp=T)),
+    cmd(V, ZERO, 'half way: one float32 step closer, inside', state=SC),
+    scan(ray(1.25, stamp=T)),
+    clock(T + s(0.75)),
+    cmd(V, V, 'three quarters of the way, point at range 1.25: on the circle, outside',
+        state=NORMAL),
+    scan(ray(f32_next(1.25, -1), stamp=T)),
+    cmd(V, ZERO, 'three quarters of the way: one float32 step closer, inside', state=SC),
 ]
 
 SHIFT_OFF = [
@@ -772,8 +816,14 @@ SCENARIOS = {
     'tf-wait-timeout0': dict(family='transforms', params=[P('StopCircle'), 'source_timeout:=0.0'],
                              steps=TF_WAIT_TIMEOUT0),
 
+    'tf-clock-jump-back': dict(family='transforms', params=[P('StopCircle')],
+                               steps=TF_CLOCK_JUMP_BACK, tf=[xf(BASE, 'laser')]),
+
     'shift-straight': dict(family='shift', params=[P('StopCircle'), 'base_shift_correction:=true'],
                            steps=SHIFT_STRAIGHT),
+    'shift-interpolation': dict(
+        family='shift', params=[P('StopCircle'), 'base_shift_correction:=true'],
+        steps=SHIFT_INTERPOLATION),
     'shift-off': dict(family='shift', params=[P('StopCircle')], steps=SHIFT_OFF),
     'shift-turn': dict(family='shift', params=[P('FrontBox'), 'base_shift_correction:=true'],
                        steps=SHIFT_TURN),
@@ -1078,7 +1128,7 @@ class Run:
                 d.shape_publisher(topic, sc.get('latched', False))
             d.publish_tf(sc.get('tf', []))
             if not d.detect_lifecycle(side, 'auto'):
-                self.note(False, 'the node offers no lifecycle services')
+                self.note(False, 'the node offers no lifecycle services (or has exited)')
             else:
                 # The node's clock subscription exists from start-up; a clock
                 # message sent before it is matched would be lost.

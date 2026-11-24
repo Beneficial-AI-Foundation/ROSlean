@@ -447,7 +447,7 @@ def run_case(tag, cfg, events, exes, opts, settle):
         d.publish_tf(statics)
         for side in sides:
             if not d.detect_lifecycle(side, 'auto'):
-                return [f'{side.name} offers no lifecycle services']
+                return [f'{side.name} offers no lifecycle services (or has exited)']
         if not d.spin_until(lambda: d.clock_pub.get_subscription_count() >= n, 20.0):
             return ['the nodes did not subscribe to /clock']
         transition(Transition.TRANSITION_CONFIGURE)
