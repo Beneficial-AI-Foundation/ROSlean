@@ -35,6 +35,10 @@ emulation. The comparison with upstream has not been run on Linux at all.
 
 ## Tasks
 
+**On hold (2026-11-24).** The user has asked that no further task is started
+until they have decided the open questions under "Decisions". T02, already
+running, finishes; T03, T06 and T07 wait.
+
 Run a task when everything in "Needs" is merged into `collision-monitor`. Tasks in the
 same row group can run at the same time.
 
