@@ -52,7 +52,7 @@ same row group can run at the same time.
 | [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02, T05b (both change the model; T05b changes the command path that item 2 measures) | yes | running |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
 | [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | merged 8bd13c8 |
-| [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | running |
+| [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | merged 56ac73b |
 | [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
@@ -117,6 +117,8 @@ Decided by the user on 2026-11-24:
 | (T05b) Scan coordinates of the wrong count with `source_timeout: 0` let the command pass. Keep, or stop regardless? | Keep: consistent with N27; a shim that works as specified cannot produce it |
 | (T05b) The model checks that a refreshed topic shape has as many vertices as before. Keep? | Keep |
 | (T05b) After the move to C++ a command still costs more than before the extension (1080 readings: 207 µs for two circles against 18 µs; 628 µs for two polygons against 0.41 ms), because the conversion to millimetres now runs per command on patterns that are big numbers when the sign bit is set. Who fixes it? | T03, with its item 2: decode sign and magnitude apart, proved equal |
+| (T07) After a backward clock jump upstream forgets all `/tf` transforms (observed); with base shift correction that means stops until new odometry arrives (inferred). The Lean node? | As upstream; listed among what the documentation does not say |
+| (T07) The Linux container image lacks `nav2_bringup` and the lifecycle manager, so five footprint scenarios and half the bond test do not run there. Add them? | Yes, T08 adds them to `bench/cm_linux/Dockerfile` when it runs the Lean node through the scenarios |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | (T02) The cost of a command: target? | Not decided. T03 measures after T05b and proposes a budget per command; until then T02's `roslean_cmd_cost` (25 ns per reading and zone) stays an expected failure |
 | (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |

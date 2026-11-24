@@ -30,9 +30,9 @@ import subprocess
 import time
 
 import rclpy
-from geometry_msgs.msg import TransformStamped, Twist, TwistStamped
+from geometry_msgs.msg import Point32, PolygonStamped, TransformStamped, Twist, TwistStamped
 from lifecycle_msgs.msg import Transition
-from lifecycle_msgs.srv import ChangeState
+from lifecycle_msgs.srv import ChangeState, GetState
 from nav2_msgs.msg import CollisionMonitorState
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
@@ -129,6 +129,28 @@ def static_tf(parent, child, x=0.0, y=0.0, yaw_half_turns=0):
     return t
 
 
+def xf(parent, child, x=0.0, y=0.0, z=0.0, q=(0.0, 0.0, 0.0, 1.0), stamp=0):
+    """A transform with any translation and quaternion (x, y, z, w) and a chosen stamp (ns)."""
+    t = TransformStamped()
+    t.header.frame_id, t.child_frame_id = parent, child
+    t.header.stamp.sec, t.header.stamp.nanosec = divmod(stamp, NS)
+    t.transform.translation.x = float(x)
+    t.transform.translation.y = float(y)
+    t.transform.translation.z = float(z)
+    (t.transform.rotation.x, t.transform.rotation.y,
+     t.transform.rotation.z, t.transform.rotation.w) = (float(v) for v in q)
+    return t
+
+
+def polygon_msg(points, frame, stamp_ns):
+    """A PolygonStamped from (x, y) pairs; the coordinates are float32 on the wire."""
+    m = PolygonStamped()
+    m.header.stamp.sec, m.header.stamp.nanosec = divmod(stamp_ns, NS)
+    m.header.frame_id = frame
+    m.polygon.points = [Point32(x=float(x), y=float(y)) for x, y in points]
+    return m
+
+
 class Side:
     """One node under test: its process and what it has published."""
 
@@ -138,6 +160,7 @@ class Side:
         self.proc = None
         self.out = []      # every velocity message received, in order
         self.states = []   # every state message received, in order
+        self.polys = []    # every (topic, PolygonStamped) received on a watched topic
         self.lifecycle = None
 
     def start(self, params_file, params, log=None):
@@ -189,6 +212,8 @@ class Driver(Node):
         latched = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.tf_pub = self.create_publisher(TFMessage, '/tf_static', latched)
+        self.tf_dyn_pub = self.create_publisher(TFMessage, '/tf', 100)
+        self.shape_pubs = {}
         for side in sides:
             self.create_subscription(
                 self.T, side.out_topic, lambda m, sd=side: sd.out.append(m), 10)
@@ -270,6 +295,59 @@ class Driver(Node):
     def publish_tf(self, transforms):
         if transforms:
             self.tf_pub.publish(TFMessage(transforms=transforms))
+
+    # -- the Nav2 extension: /tf with stamps, zone shapes, polygon topics,
+    # -- lifecycle transitions in the middle of a run -------------------------
+
+    def publish_dynamic(self, transforms, settle):
+        """Transforms on /tf, each with the stamp it carries (see `xf`)."""
+        self.tf_dyn_pub.publish(TFMessage(transforms=list(transforms)))
+        self.spin_for(settle)
+
+    def publish_static(self, transforms, settle):
+        """Static transforms sent while the node runs (one message)."""
+        self.tf_pub.publish(TFMessage(transforms=list(transforms)))
+        self.spin_for(settle)
+
+    def shape_publisher(self, topic, latched=False):
+        """The PolygonStamped publisher for a zone's `polygon_sub_topic`: reliable,
+        and volatile unless `latched` (upstream's subscription is best effort)."""
+        if topic not in self.shape_pubs:
+            qos = QoSProfile(depth=10, history=HistoryPolicy.KEEP_LAST)
+            if latched:
+                qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+            self.shape_pubs[topic] = self.create_publisher(PolygonStamped, topic, qos)
+        return self.shape_pubs[topic]
+
+    def send_shape(self, topic, points, frame, settle, stamp=None):
+        self.shape_publisher(topic).publish(
+            polygon_msg(points, frame, self.now_ns if stamp is None else stamp))
+        self.spin_for(settle)
+
+    def watch_polygon(self, side, topic):
+        """Record every PolygonStamped the node publishes on `topic` (volatile, so
+        that only messages published while we listen are seen)."""
+        self.create_subscription(
+            PolygonStamped, topic, lambda m, t=topic: side.polys.append((t, m)), 10)
+
+    def get_state(self, side, timeout=10.0):
+        """The label of the node's lifecycle state, or None."""
+        client = self.create_client(GetState, f'/{side.name}/get_state')
+        try:
+            if not client.wait_for_service(timeout_sec=timeout):
+                return None
+            future = client.call_async(GetState.Request())
+            if not self.spin_until(future.done, timeout):
+                return None
+            return future.result().current_state.label
+        finally:
+            self.destroy_client(client)
+
+    def endpoints_of(self, side, topic, publishers):
+        """The endpoints of the node under test on a topic."""
+        get = (self.get_publishers_info_by_topic if publishers
+               else self.get_subscriptions_info_by_topic)
+        return [i for i in get(topic) if i.node_name == side.name]
 
     def wait_connected(self, tf_listeners=0, timeout=20.0):
         """Wait until every node has all its subscriptions and its publisher.

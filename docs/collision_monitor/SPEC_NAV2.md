@@ -387,7 +387,9 @@ Probes: `review/collision_monitor/nav2/run_nav2_probe.sh <env prefix>
   the command passes [B: `tf-missing-timeout0`].
 - **N28. Clock.** `publishVelocity` reads the clock again (D7), now after
   the wait [S]. A backward jump of the clock clears the TF buffer
-  (`tf2_ros/src/buffer.cpp`, `Buffer::onTimeJump`) [S].
+  (`tf2_ros/src/buffer.cpp`, `Buffer::onTimeJump`) [S]: the transforms
+  received on `/tf` are forgotten, those received on `/tf_static` are not
+  [B: scenario `tf-clock-jump-back` of `scenario_nav2.py`, added by T07].
 
 ### 1.6 Zones whose shape arrives on a topic
 
@@ -1347,7 +1349,88 @@ harness has `late` for that).
 | 24 | Topic zone in a moving frame, `slowdown` | N34 | `polygon-topic-moving` |
 | 25 | Shape while inactive; shape lost at cleanup; latched message with `polygon_subscribe_transient_local` | N31, N35 | `polygon-topic-inactive` |
 
-Not observed for this document, to be pinned by T07 if wanted: the exact
+### 10.1 Where each row is tested (added by T07)
+
+The rows above are scenarios of
+`ros/roslean_collision_monitor/test/scenario_nav2.py` (37 scenarios in six
+families), written from runs of upstream's binary, not from the column
+"Upstream does"; what they show is in UPSTREAM_BEHAVIOUR.md, findings 24 to
+38. No row was contradicted; N28 is made more precise below. The node under test is an argument;
+`test/profile_roslean_nav2.py` is the one place that states where the
+ROSlean node is to answer differently (ND4, ND5, ND6, ND11). Every point of
+a scenario is at least 0.125 m from every zone boundary, except in
+`shift-interpolation`, which pins upstream's interpolation with points on a
+boundary and is therefore not run for the ROSlean node (ND1).
+
+| Rows | Scenarios |
+| --- | --- |
+| 1, 2, 3 | `lifecycle-states` |
+| 4 | `lifecycle-reactivate` |
+| 5 | `lifecycle-cleanup`, `polygon-topic-inactive` |
+| 6 | `lifecycle-shutdown-active`; also `lifecycle-shutdown-inactive`, `lifecycle-shutdown-deactivated` |
+| 7 | `state-topic`; also `state-name-collision` (N15 on the binary) |
+| 8 | `polygon-pub`, `lifecycle-states`, `polygon-topic` (not: the point markers of N17) |
+| 9 | `test/bond_manager.py` (wall clock) |
+| 10 | `offset`, `rotated` of `scenario.py`, as before |
+| 11 | `tf-latest` |
+| 12 | `tf-tilt`, `tf-pitch-circle`; also `tf-bad-quaternion` (transforms tf2 refuses; ND7 is not reachable through them) |
+| 13 | `tf-missing`; also `tf-tolerance-decimal`, `tf-tolerance-0.3` |
+| 14 | `tf-missing-timeout0`, `tf-tolerance0`; also `tf-wait-timeout0` |
+| 15 | `shift-straight`, `shift-off`; also `shift-interpolation` |
+| 16 | `shift-turn`; also `shift-quarter-turn` |
+| 17 | `shift-sensor-frame` |
+| 18 | `shift-straight` |
+| 19 | `shift-no-odom` |
+| 20 | `footprint-edit-stop`, `footprint-edit-slowdown`, `footprint-edit-example-file`, `footprint-approach-unchanged` |
+| 21 | `footprint-sub-topic`; also `footprint-sub-topic-slowdown` |
+| 22 | `footprint-topic-ignored` |
+| 23 | `polygon-topic` |
+| 24 | `polygon-topic-moving` |
+| 25 | `polygon-topic-inactive` |
+
+Observed by these scenarios and stated above from the source only, or not
+at all (all on 1.3.12, macOS arm64, and, except the scenarios that need
+`nav2_bringup`'s parameter file, on 1.3.14 in a Linux arm64 container):
+
+- N8: shut down from `active`, the node also still stores scans and
+  publishes a stop with its state message; shut down from `inactive` it
+  publishes nothing.
+- N15: a zone named `invalid source` hides the change to an invalid source
+  (`state-name-collision`).
+- N23: a transform with a newer stamp is used by the next command at once.
+- N24: after a quarter turn of the base to the left a point that was ahead
+  is on the right (points 0.125 m from the zone's edge; not a boundary
+  test).
+- N26: the rounding of `transform_tolerance` to the nearest nanosecond:
+  with 1.001 no answer at 1,000,999,999 ns and the stop at 1,001,000,000 ns
+  (`source_timeout: 1.001` is 1,000,999,999 ns: `timeout-decimal` of
+  `scenario.py`).
+- N24: the interpolation between two odom samples decides a zone boundary
+  exactly where the numbers are binary fractions (`shift-interpolation`: a
+  quarter, a half and three quarters of the way between samples 1 m apart).
+- N25: a transform published with a zero quaternion, a NaN in the
+  quaternion or a NaN translation is not taken by tf2; the frame stays
+  unknown (`tf-bad-quaternion`).
+- N27: with `source_timeout: 0` a command whose lookup fails still waits
+  for `transform_tolerance` before it passes.
+- N28: a backward jump of the clock clears the transforms received on
+  `/tf`; those received on `/tf_static` survive it (`tf-clock-jump-back`).
+  A command that needs a cleared transform waits and is stopped for
+  `invalid source` until the transform is published again.
+- N29: the `slowdown` form of the edited footprint zone with
+  `polygon_sub_topic` configures and slows to the default ratio 0.5.
+
+The random test of the extension is `test/random_nav2.py`: transforms with
+exact and general quaternions, a moving and turning base with odom samples
+at every command's clock reading unless the tick is meant to fail,
+lifecycle transitions and shape messages interleaved with scans and
+commands, judged against a Python model; points within 5 mm of a zone
+boundary, lookups that need interpolation and the wait of N26 are kept
+out. It compares velocities and state messages, not polygon topics.
+
+Not observed for this document, to be pinned by T07 if wanted (T07 pinned
+the interpolation at a boundary, the quarter turn, coarsely, and the
+backward clock jump; the others remain open): the exact
 interpolation of N24 at a point where it decides a boundary; a quarter-turn
 base rotation with correction; transforms with inexact quaternions at a zone
 boundary (they belong to the 5 mm the comparison excludes); a clock that

@@ -13,10 +13,12 @@ looks like a bug or is unsafe, the scenario still expects what upstream does
 and the finding is marked **(flag)**.
 
 Not covered: point clouds, range sensors, costmap and polygon sources, the
-`approach` and `limit` actions, velocity polygons, polygons received on a
-topic, the `enabled` parameters, the `toggle` service, a base that moves
-between the scan and the command (base-shift correction with a changing
-odometry transform), and more than one source.
+`approach` and `limit` actions, velocity polygons, the `enabled` parameters,
+the `toggle` service, and more than one source. The lifecycle, the state
+topic in full, the polygon topics, transforms that change, base-shift
+correction with a moving base and polygons received on a topic were added
+later and have their own section, [The Nav2 extension](#the-nav2-extension),
+with its own scenarios (`scenario_nav2.py`).
 
 ## What was run
 
@@ -402,6 +404,276 @@ types; `stamped` runs with the parameter set.
   half a turn, gives the points the transform says, exactly for these
   transforms (scenarios `offset`, `rotated`).
 
+## The Nav2 extension
+
+Findings 24 to 38 are for what the extension adds to the subset
+(`docs/collision_monitor/SPEC_NAV2.md`): the lifecycle interface, the state
+topic and the polygon topics, transforms from TF with base shift correction,
+and zones whose shape arrives on a topic, which is the route by which Nav2's
+footprint can become a `stop` or `slowdown` zone. SPEC_NAV2.md states the
+rules (N1 to N36) from upstream's source and from a probe that prints; the
+scenarios here assert. Each finding names its scenarios in
+`ros/roslean_collision_monitor/test/scenario_nav2.py` and the rule of
+SPEC_NAV2.md it belongs to. Every expected output was observed on the
+binary on 2026-11-24 (see [what was run](#what-was-run-for-the-extension));
+none was copied from SPEC_NAV2.md, and none contradicted it. Where the
+binary showed something SPEC_NAV2.md has only from the source, or not at
+all, the finding says "new".
+
+The scenarios drive the lifecycle transitions themselves, publish `/tf` with
+chosen stamps, static transforms with any quaternion and `PolygonStamped`
+shapes, and record the polygon topics. A command whose transform lookup
+fails is answered only when the node clock has advanced (finding 33), so
+such a command expects nothing and a following step claims the answer.
+
+### 24. Unconfigured, the node hears nothing; inactive, it listens but does not answer
+
+Before `configure` the node has no subscription to commands, scans or TF and
+no velocity or state publisher. After `configure` it has all of them, and
+one polygon publisher per visualised zone. While inactive a command is
+dropped without any output, not even the stop for a missing scan, and a
+non-finite command likewise; a scan received while inactive is stored and
+is the one used by the first command after activation; the same holds for a
+zone shape. Scenarios `lifecycle-states`, `polygon-topic-inactive`. (N2 to
+N5.)
+
+### 25. Deactivate and activate restarts the stop silence and reports the state again (flag)
+
+Neither transition publishes a velocity or a state message. But after
+deactivate and activate, with the same clock and the same scan, a stop that
+was already being withheld (finding 3) is published again together with its
+state message, and then for a further `stop_pub_timeout`: published exactly
+`stop_pub_timeout` after the first zero that followed the re-activation,
+withheld 1 ns later. Re-activated while passing, the node publishes no
+state message (the name it compares with is `""`, as at start). Scenario
+`lifecycle-reactivate`. (N6.)
+
+### 26. Cleanup forgets the scan and the shapes
+
+After `cleanup` every subscription and publisher of finding 24 is gone.
+After `configure` and `activate` the first command is answered with the
+stop for `invalid source`, and a zone fed by a topic has no shape again.
+Scenarios `lifecycle-cleanup`, `polygon-topic-inactive`. (N7.)
+
+### 27. Shut down from the active state, the node keeps working (flag)
+
+After the transition `shutdown` from `active` the node reports the state
+`finalized`, and still forwards a command; new: it also still takes scans
+in and publishes a stop with its state message. Shut down from `inactive`
+(also after a deactivation) it publishes nothing (new). Scenarios
+`lifecycle-shutdown-active`, `lifecycle-shutdown-inactive`,
+`lifecycle-shutdown-deactivated`. (N8; the ROSlean node is to stay silent,
+ND4.)
+
+### 28. The state topic, message by message
+
+Extends finding 12. No message for a first command that passes; one for
+every change of the acting zone's name and none while it stays; none for a
+non-finite command. While the velocity is withheld (finding 3) state
+messages are still published: `("", 0)` for a zero command in a triggered
+slowdown zone, and `("invalid source", 1)` when the scan times out, both
+without a velocity. The publisher is reliable and volatile. New, on the
+binary: a zone that is itself named `invalid source` hides the change from
+"stopped by that zone" to "the source is invalid", because only names are
+compared. Scenarios `state-topic`, `state-name-collision`. (N12 to N15; the
+ROSlean node refuses such a name, ND5.)
+
+### 29. Polygon topics
+
+A zone with `visualize: true` is published as a `PolygonStamped` once on
+activation and once after every processed command, also when the velocity
+is withheld; not on `configure` or `deactivate`, not for a non-finite
+command, not while inactive. The message is in the base frame and stamped
+with the node clock; a polygon carries its vertices, a circle 16 points on
+its radius starting at angle 0. The publishers are reliable and transient
+local. A zone fed by a topic is published as an empty polygon until its
+first shape, and afterwards as the last accepted message with its own frame
+name, including a NaN coordinate. Scenarios `polygon-pub`,
+`lifecycle-states`, `polygon-topic`. (N16.)
+
+### 30. The bond and Nav2's lifecycle manager
+
+With `bond_heartbeat_period: 0.1` and on the wall clock: no message on
+`/bond` while inactive; after activation heartbeats with the node's name as
+`id`, `active: true`, `heartbeat_timeout: 4.0`, `heartbeat_period: 0.1`
+(about 20 in two seconds), from a reliable, volatile publisher; one message
+with `active: false` on deactivation and none after it.
+`nav2_lifecycle_manager` with `autostart` and the node in `node_names`
+configures and activates it and reports the bond connected; 4.0 s after the
+node is killed with `SIGKILL` it logs `CRITICAL FAILURE: SERVER
+collision_monitor IS DOWN`. Test `bond_manager.py` (not a scenario: it runs
+on the wall clock and its checks are bounds). (N9, N10.)
+
+### 31. Without base shift correction the newest transform is used, whatever its stamp (flag)
+
+With `base_shift_correction: false` and the scan in a sensor frame: a
+transform stamped half a second *after* the scan and after the node clock
+is applied to the stored scan by the next command; it is still applied
+3.5 s later; a transform with an older stamp that arrives afterwards
+changes nothing, one with a newer stamp is used at once (new). The age of
+a transform is never checked. Scenario `tf-latest`. (N23.)
+
+### 32. A tilted sensor is projected, not refused (flag)
+
+The full rotation is applied and the third coordinate dropped: a sensor
+mounted upside down mirrors left and right; a sensor 5 m above the base
+gives the same points as one on it; a quaternion that is not normalised,
+(0, 0, 0, 2), acts as the identity; with the sensor pitched by a quarter
+turn a point 3 m along its x axis lands on the base and triggers a 0.5 m
+stop circle, while a ray to its side keeps its place. A transform
+published with the quaternion (0, 0, 0, 0), with a NaN in the quaternion or
+with a NaN translation is not taken by tf2 (`TF_DENORMALIZED_QUATERNION`,
+`TF_NAN_INPUT` in the node's output): the frame stays unknown and commands
+wait and stop as in finding 33 (new). Scenarios `tf-tilt`,
+`tf-pitch-circle`, `tf-bad-quaternion`. (N25.)
+
+### 33. `transform_tolerance` is a wait, exact to the nanosecond
+
+Extends finding 10. A command whose lookup fails is not answered while the
+node clock is before the clock reading at the command plus
+`transform_tolerance`: nothing 1 ns before, the stop for `invalid source`
+exactly at it. New: the parameter is rounded to the nearest nanosecond,
+unlike `source_timeout` (finding 16), which is truncated: with
+`transform_tolerance: 1.001` nothing at 1,000,999,999 ns and the stop at
+1,001,000,000 ns, and likewise for 0.3 at 299,999,999 and 300,000,000 ns.
+If the missing transform arrives during the wait, the command is answered
+then, without the clock moving, and with the transform applied. A scan with
+an empty `frame_id` waits like one in an unknown frame. With
+`transform_tolerance: 0.0` the stop comes at once. With `source_timeout:
+0.0` the failed lookup stops nothing (finding 4) but, new, the command still
+waits for the tolerance before it passes. Scenarios `tf-missing`,
+`tf-tolerance-decimal`, `tf-tolerance-0.3`, `tf-tolerance0`,
+`tf-missing-timeout0`, `tf-wait-timeout0`. (N26, N27.)
+
+### 34. Base shift correction moves the scan with the base, and needs odometry newer than the command
+
+With `base_shift_correction: true` the points of a scan are carried from
+where the base was at the scan's stamp to where it is at the command's
+clock reading, through the odom frame: a point 1.25 m ahead passes a 0.5 m
+circle, passes when the base is half way between two odom samples 1 m
+apart, and stops when the base has advanced the full metre; after half a
+turn of the base a point that was ahead is behind, and after a quarter turn
+to the left it is on the right (new); with the scan in a sensor frame both
+transforms apply. The interpolation between two odom samples is exact
+where the numbers allow it (new): with samples 1 m and 1 s apart and the
+command a quarter, a half and three quarters of the way, a point at range
+0.75, 1.0 and 1.25 lands on the 0.5 m circle and passes, and one float32
+step closer stops. The same sequence with the correction off passes
+throughout. The lookup needs an odom sample at or after the command's clock
+reading: a command 0.25 s after the newest sample waits as in finding 33
+and is then stopped for `invalid source`, or is answered as soon as a newer
+sample arrives; so is a scan stamped before the oldest sample, and a scan
+in the base frame when there is no odom frame at all. A command before any
+scan is stopped at once: no lookup is made. Scenarios `shift-straight`,
+`shift-off`, `shift-interpolation`, `shift-turn`, `shift-quarter-turn`,
+`shift-sensor-frame`, `shift-no-odom`. (N22, N24.)
+
+### 35. Nav2's footprint zone cannot be turned into a stop zone by changing `action_type` alone (flag)
+
+`nav2_bringup`'s `nav2_params.yaml` with `FootprintApproach.action_type`
+changed to `stop` or to `slowdown` and nothing else: `configure` fails, the
+node stays `unconfigured` with no subscription, and its output says
+`parameter 'FootprintApproach.polygon_sub_topic' is not initialized` and
+`static points and sub topic both not defined`. The package's
+`collision_monitor_params.yaml` with that zone selected and set to `stop`
+fails the same way. Unchanged, with `approach`, the first file configures
+and the node subscribes to `footprint_topic`. With `polygon_sub_topic:
+"/local_costmap/published_footprint"` added, the `stop` and the `slowdown`
+zone configure (the latter slows to the default ratio 0.5) and behave as
+finding 36 says. Scenarios `footprint-edit-stop`, `footprint-edit-slowdown`,
+`footprint-edit-example-file`, `footprint-approach-unchanged`,
+`footprint-sub-topic`, `footprint-sub-topic-slowdown`. (N29.) The harness
+overrides `cmd_vel_in_topic`, `cmd_vel_out_topic` and `state_topic` of
+these files and switches the bond off; nothing else is changed.
+
+### 36. A zone fed by a topic: no shape, no protection; and it stays where it was published (flag)
+
+- Until its first accepted message the zone takes no action: a point in
+  front of the base passes a `stop` zone. With Nav2's edited zone and
+  `min_points: 6`, eight points 0.125 m ahead pass until a footprint message
+  has come.
+- A message with fewer than three points is ignored and the previous shape
+  stays; three points are enough (a fixed polygon needs four, finding 8). A
+  closed polygon and three equal points are accepted; the latter contains
+  nothing.
+- A message in a frame without transform, or with an empty `frame_id`, is
+  ignored after the wait of finding 33, which happens inside the
+  subscription callback. A message in another frame is placed by the newest
+  transform, and again at every command: a shape given in a frame that then
+  moves 2 m moves with it, without a new message.
+- For the footprint this means the opposite of what one wants: a footprint
+  published in the odom frame stays where it was in odom. The base moved
+  1 m with no new message: points 0.125 m ahead of it passed, and points
+  1.125 m behind it, where the footprint had been, stopped it.
+- A message with a NaN coordinate is accepted, and a point well inside the
+  box then passes: the zone is blind until the next message. (The ROSlean
+  node is to ignore such a message, ND6.)
+- The subscription is best effort and volatile; with
+  `polygon_subscribe_transient_local` it is transient local, and a message
+  published reliable and transient local before `configure` was still not
+  delivered.
+- A zone with fixed `points` subscribes to neither `polygon_sub_topic` nor
+  `footprint_topic`, even if both are set.
+
+Scenarios `polygon-topic`, `polygon-topic-moving`, `polygon-topic-inactive`,
+`footprint-topic-ignored`, `footprint-sub-topic`. (N29, N31 to N35.)
+
+### 37. A backward jump of the clock forgets the transforms from `/tf`, not the static ones (flag)
+
+New. When the node clock jumps back (here by one second) the node logs
+`Detected jump back in time. Clearing TF buffer.` A scan in a frame whose
+transform came from `/tf_static` is used as before. A scan in a frame whose
+transform came from `/tf` is not: the command waits for `transform_tolerance`
+and is stopped for `invalid source`, and so is every command until the
+transform has been published again. With `base_shift_correction: true` the
+odom transform is of that kind, so after a backward jump every command is
+held and then stopped until odometry stamped at or after the new clock
+arrives (inferred from this finding and finding 34, not run as a scenario).
+Scenario `tf-clock-jump-back`. (N28, which has the clearing from the source
+and does not say that static transforms survive.)
+
+### 38. A model of the extension agrees with upstream on random cases
+
+`test/random_nav2.py` generates random configurations (circles, fixed
+polygons and polygons fed by a topic; a sensor frame with exact, general,
+upside-down, unnormalised and 3D rotations; correction on or off) and
+random sequences of clock ticks, odom samples with a moving and turning
+base, scans, shape messages in four kinds of frame, commands, and lifecycle
+transitions including cleanup; and compares every answer, velocity bit for
+bit and state message, with a Python model of the findings above (about 150
+lines on top of `cm_model.py`). Commands are not generated when a point is
+within 5 mm of a zone boundary, when a lookup would need tf2's
+interpolation, or at the edge of tf2's 10 s history; `transform_tolerance`
+is 0, and the clock never runs backwards. So this test says nothing about
+findings 33 and 37, about interpolation, or about boundaries. The self-test (`--self-test`: the model ignores the
+correction) is reported as a disagreement.
+
+### What was run for the extension
+
+All on 2026-11-24. macOS: arm64, pixi/RoboStack, `nav2_collision_monitor`
+1.3.12. Linux: arm64 container (Docker Desktop), Ubuntu 24.04, apt,
+`nav2_collision_monitor` 1.3.14; that image has neither `nav2_bringup` nor
+`nav2_lifecycle_manager`, so the five scenarios that edit `nav2_params.yaml`
+and the manager half of `bond_manager.py` were not run there.
+
+| | macOS | Linux |
+| --- | --- | --- |
+| `scenario_nav2.py` on upstream: 37 scenarios, 256 checks (lifecycle 6/68, state and polygon topics 3/26, transforms 11/68, base shift correction 7/33, topic zones 4/38, footprint edit 6/23) | 0 failures on the final version (once, through colcon, 139 s); the two runs of the version before it (36 scenarios, 249 checks): 0 failures; the two runs of the first version (34 scenarios): one failure each, a fault of the harness, see below | 32 scenarios, 237 checks, 0 failures (125 s); two earlier runs of 29 and 31 scenarios: 0 failures |
+| `random_nav2.py`, upstream against the model | seeds 0 to 39: 2279 commands, 0 disagreements, none retried; seeds 0 to 9 three more times through colcon (621 commands each): 0 disagreements, one case retried once (it agreed with 300 ms between events) | seeds 0 to 19, twice: 1182 commands, 0 disagreements, none retried |
+| `random_nav2.py --self-test`, seeds 0 to 5 | disagreements reported in 3 of 6 cases, as it must be | not run |
+| `bond_manager.py` | 15 checks, 0 failures, three runs | the bond half: 9 checks, 0 failures, two runs |
+
+The harness fault: every scenario starts a node of the same name, and the
+first clock message of `polygon-pub` was twice sent while only the previous
+scenario's node was in the graph, so the new node's clock still read 0 at
+activation ("polygon stamped 0"). The runner now waits for the old node's
+endpoints to leave the graph. Nothing about upstream follows from it.
+
+`profile_roslean_nav2.py` states what the ROSlean node is to do differently
+(ND4, ND5, ND6, ND11 of SPEC_NAV2.md). It was written before that node had
+the extension and has been run against upstream only, where it fails in
+exactly the five places it names.
+
 ## Nondeterminism
 
 Two upstream processes that were fed the same messages published the same
@@ -482,6 +754,22 @@ python3 scenario.py NODE --no-tf                          # a node that uses no 
 python3 random_diff.py NODE nav2_collision_monitor/collision_monitor 0 20
 python3 probe_qos.py NODE
 ```
+
+The extension's tests take the node as their first argument in the same
+way (default: upstream), and need a lifecycle node:
+
+```
+python3 scenario_nav2.py                                  # upstream, 37 scenarios
+python3 scenario_nav2.py --only transforms,shift          # families, or scenario names
+python3 scenario_nav2.py NODE --profile profile_roslean_nav2
+python3 random_nav2.py 0 20                               # upstream against the model
+python3 random_nav2.py NODE nav2_collision_monitor/collision_monitor 0 20
+python3 bond_manager.py NODE                              # wall clock
+```
+
+(`pixi run cm-nav2` and `pixi run cm-nav2-random` do the first and the
+fourth.) The families are `lifecycle`, `state`, `transforms`, `shift`,
+`topic-zones` and `footprint`; `scenario_nav2.py --list` shows them.
 
 `scenario.py --list` lists the scenarios, `--only a,b` selects some,
 `--skip a,b` leaves some out, `--repeat N` repeats them, `--ignore-state` skips the state topic, and
