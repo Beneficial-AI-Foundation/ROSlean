@@ -140,9 +140,13 @@ section 12: `approach` (Nav2's default; about half of the work so far),
 and polygon sources, several sources, `~/toggle` and run-time parameters,
 point markers. What follows is the rest.
 
-- **`pixi run test` as a whole on the final tree.** Each task ran
-  `test-quick` and the long tests it was about; the plan leaves the full
-  run to the end of the effort.
+- **The build on Linux through pixi.** `pixi run build` fails on a plain
+  Ubuntu 24.04 (arm64 container): no `strip` is found for
+  `libleanshared.so`, and `test_cm_ffi` does not link without `-pthread`
+  ([AUDIT.md](AUDIT.md), findings 1 and 2). With two workarounds the full
+  suite passes there. (`pixi run test` as a whole, which no task had run,
+  was run by the audit: macOS arm64, 29 tests, 0 failures; the Linux
+  container, 28 tests, 0 failures.)
 - **x86-64, and Linux on its own hardware.** The node with the Nav2
   extension has run on macOS arm64 and in a Linux arm64 container only.
   Whether to make such a run before publication is not decided

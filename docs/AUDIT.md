@@ -32,9 +32,14 @@ against a document and not against a run, the document is named.
   were tried on the built node. For Nav2's unchanged `nav2_params.yaml` the
   node prints `2 parameters refused`, where the README and `gaps.html`
   quoted `1 parameter refused`. Corrected.
+- **The whole test suite passed on both**, in one run each: macOS
+  `29 tests, 0 errors, 0 failures` in 39 minutes; the Linux container
+  `28 tests, 0 errors, 0 failures` in 39 minutes, beside upstream 1.3.13,
+  a version the pages do not name (finding 11).
 - **The numbers** agree with the documents they come from, with the
-  exceptions listed under "Discrepancies". The headline cost table rests on
-  a task report alone: its raw data is not in `bench/results/` (finding 5).
+  exceptions listed under "Discrepancies corrected". The headline cost
+  table rests on a task report: its raw data is not in `bench/results/`.
+  Re-measured here, it holds within 7 % (finding 5).
 - **The pages now say what the Nav2 demo found** (task T10): with a stop
   zone in place of Nav2's `approach` zone, Nav2's tour ended with the robot
   standing for good in three runs of six, with both nodes.
@@ -52,8 +57,9 @@ There was no fresh machine. Two approximations, both on one Apple M5 Pro
   was visible. What this does not remove: the Xcode command line tools
   (`/Library/Developer/CommandLineTools`, which provide `git` and the
   macOS SDK), anything else installed system-wide, and the machine's fast
-  network. The clone itself was made with the session's own environment,
-  because the session's sandbox refuses `git` under `env -i`.
+  network. The clone itself was made with the session's own environment
+  (the session's tooling does not let `git` run through the `env -i`
+  wrapper); it needed no credentials.
 - **(B) Linux arm64.** A `ubuntu:24.04` container in Docker Desktop 29.9.3
   on the same Mac (a Linux virtual machine with 18 cores and 7.7 GB of
   memory), as root, starting from the bare image. Not Linux on its own
@@ -74,13 +80,16 @@ anyone else.
 | `pixi run build` | `Summary: 4 packages finished [1min 37s]`, exit 0. Installs the environment (4.5 GB in `.pixi/`, 4.7 GB more in pixi's cache under the home directory) and the Lean toolchain 4.37.0-rc1 (3.3 GB in `~/.elan`). pixi warns that it skipped three post-link scripts (gdk-pixbuf, graphviz, gtk3); no effect seen | 3 min 5 s | repository 4.6 GB, home 8.0 GB |
 | `pixi run prove` | `Build completed successfully (6659 jobs)`, exit 0. Mathlib's cache was downloaded (7.8 GB in `.lake/`). 3,946 warning lines, all of them the same notice about Mathlib and the module system | 1 min 25 s | repository 12 GB, home 8.5 GB |
 | `pixi run test-quick` | `Summary: 17 tests, 0 errors, 0 failures, 0 skipped`, exit 0 | 7 min 6 s | |
-| `pixi run test` | PENDING-A4 | | |
+| `pixi run test` | `Summary: 29 tests, 0 errors, 0 failures, 0 skipped`, exit 0 (below) | 39 min 11 s | |
 | Run the mux (`pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_mux …'`) | The node `/twist_mux` runs, subscribed to `joy_vel`, `key_vel`, `nav_vel`, `e_stop`, `pause_navigation`, publishing `cmd_vel_out` (from `ros2 node info`) | | |
 | Run the collision monitor with the launch file | `lifecycle_manager_collision_monitor`: "Managed nodes are active"; `ros2 lifecycle get /collision_monitor`: `active [3]` | | |
 | "or by hand": the three `ros2` commands as printed | `env: ros2: No such file or directory`: unlike the two commands before it, this block is not wrapped in `pixi run bash -c 'source install/setup.bash && …'`. Inside the environment the three commands work (configure and activate: "Transitioning successful") | | |
-| `pixi run demo` and the three `demo-*` commands | PENDING-DEMO | | |
+| `pixi run demo`, then `pixi run demo-estop` and `pixi run demo-release` from a second process | The four processes started; the narrator printed, in order, `planner drives: it is the only live input and no lock is active / theorem forward_of_highest_live`, `e-stop lock ENGAGED`, `nothing is forwarded: the e-stop lock (255) is above every input / theorem not_forward_of_top_lock`, `e-stop lock released`, `planner drives …`: the lines the README shows. The turtlesim window was **not seen**. `demo-teleop` was not run (it needs a keyboard) | 40 s | |
 | `pixi run gazebo`, `gazebo-nav2`, `gazebo-teleop` | Not run: they need a person at the screen (see "Not checked") | | |
-| `pixi run cm-gazebo-scenario`, `pixi run cm-check`, `pixi run cm-check --monitor nav2_collision_monitor`, `pixi run cm-check --nav2` | PENDING-GAZEBO | | |
+| `pixi run cm-check` | `PASSED in 95 s (27 s simulated)`: first zero with the box 0.265 m away, 2 mm moved after it, at rest 0.263 m, no flicker. The first run downloads the apartment's furniture | 96 s | |
+| `pixi run cm-check --monitor nav2_collision_monitor` | `PASSED in 32 s (27 s simulated)`: first zero at 0.265 m, 4 mm, at rest 0.263 m | 34 s | |
+| `pixi run cm-check --nav2` (the tutorial's, not in the README's list) | `PASSED in 62 s (57 s simulated)` on its first start in this fresh environment: the node `collision_monitor` active, `Managed nodes are active`, the executable is the fresh clone's `roslean_collision_monitor/collision_monitor`; first zero at 0.275 m, 0 mm, at rest 0.275 m, no flicker | 63 s | |
+| `pixi run cm-gazebo-scenario` (with a window), stopped by the audit after 90 s | From the log, in order: box dropped 1.2 m ahead; `monitor: SLOWDOWN, the command is published times 0.40`; `monitor: STOP, zero is published instead of the command`; `the robot is at rest, 0.26 m from the box`; `monitor: publishes NOTHING although commands arrive`; `box removed`; `the command passes unchanged`; `the robot drives on`. The window was **not seen** | 90 s | |
 | `docker build -f docker/Dockerfile …` | PENDING-DOCKER | | |
 
 Altogether a fresh macOS machine needs about 21 GB (12 GB in the
@@ -101,7 +110,7 @@ minutes before the first test can run.
 | Run the mux; run the collision monitor with the launch file | Both as on macOS (`/twist_mux` in the graph; "Managed nodes are active", `active [3]`) | |
 | `pixi run demo` | **Stops at the display**: `qt.qpa.xcb: could not connect to display`; `turtlesim_node` dies with exit code -6, the planner and the narrator go on | |
 | `pixi run cm-check` | **Stops at the display, without saying so**: after `[obstacle] waiting for the robot to drive straight with free space ahead` nothing more was printed; ended by the audit after 150 s. The README calls this check "without windows"; it still needs a display to render the lidar (the tutorial says so in its table of symptoms). `pixi.toml` has `cm-check-cloud` for a machine without a display (needs `xvfb-run`); the README does not mention it, and it was not tried | 150 s |
-| `pixi run test` | PENDING-B13 | |
+| `pixi run test` | `Summary: 28 tests, 0 errors, 0 failures, 0 skipped`, exit 0 (below) | 38 min 57 s |
 
 Disk in the container at the end: 20 GB under `/root` (5.9 GB `.pixi`,
 7.9 GB `.lake`, 3.4 GB `~/.elan`, 1.7 GB caches). The stripped
@@ -128,7 +137,36 @@ Corrected in the README by this audit unless marked otherwise.
 
 ## The full test suite
 
-PENDING-TESTS
+`pixi run test` was run once on each fresh clone, as the README gives it.
+No test failed in either run, so nothing was retried.
+
+| | (A) macOS arm64 | (B) Linux arm64 container, after the two workarounds |
+| --- | --- | --- |
+| Summary line | `Summary: 29 tests, 0 errors, 0 failures, 0 skipped` | `Summary: 28 tests, 0 errors, 0 failures, 0 skipped` |
+| Exit code, wall-clock time | 0, 39 min 11 s | 0, 38 min 57 s |
+| `roslean_core` | 2 of 2 passed, 28 s | 2 of 2, 22 s |
+| `roslean_twist_mux` | 2 of 2, 472 s: 69 decisions in the scenarios, 4,692 in 20 random cases, 0 divergences | 2 of 2, 479 s: the same counts, 0 divergences |
+| `roslean_collision_monitor` | 25 of 25, 1,851 s | 24 of 24, 1,835 s (`t2_point_as_upstream` is macOS only) |
+| Upstream beside which it ran (from the environment's `conda-meta`) | `nav2_collision_monitor` 1.3.12, `twist_mux` 4.5.0 | `nav2_collision_monitor` **1.3.13**, `twist_mux` 4.5.0 |
+| `roslean_scenario` | `0 failure(s) in 318 checks, 73 scenario runs` | the same |
+| `roslean_nav2_scenario` | `0 failure(s) in 289 checks, 44 scenario runs, 2 not run: ['footprint-approach-unchanged', 'shift-interpolation']` | the same |
+| `roslean_fault_injection` | `0 failure(s) in 109 checks, 19 cases` | the same |
+| `upstream_scenario`, `upstream_nav2_scenario` | 277 checks in 55 runs; 299 checks in 46 runs; 0 failures | the same |
+| `roslean_nav2_random`, `upstream_nav2_random` | 0 of 3 and 0 of 10 cases disagree with the model | the same |
+
+What ran beside these on the same machine: during the macOS run, the
+README's two node commands (once, on ROS domain 0) and the container's
+`test-quick` and full run, the latter for half an hour; during
+`test-quick` on macOS, the 25 short starts of the node on ROS domain 231
+and the container's builds. No failure came of it. The whole suite takes
+39 minutes, not "about 20 minutes … longer now" (README corrected).
+
+`pixi.lock` pins a different upstream for each platform:
+`nav2-collision-monitor` 1.3.12 and Python 3.12 for `osx-arm64`, 1.3.13 and
+Python 3.14 for `linux-64` and `linux-aarch64`. The pages name 1.3.12
+(macOS, RoboStack) and 1.3.14 (Linux, apt) as the binaries the node was
+compared with; a reader who follows the README on Linux compares with a
+third, 1.3.13. In this run every check passed beside it (finding 11).
 
 ## Findings
 
@@ -139,15 +177,15 @@ Matters of substance, left as they are. Numbered for reference.
    the pixi environment on Linux arm64 CMake finds neither `strip` nor `ar`
    (`CMAKE_STRIP:FILEPATH=CMAKE_STRIP-NOTFOUND`,
    `CMAKE_AR:FILEPATH=CMAKE_AR-NOTFOUND` in the cache): the environment
-   has `aarch64-conda-linux-gnu-strip` and no plain `strip`, and CMake is
-   given the compiler as `cc`. It works wherever the system has `binutils`,
-   which is why the cloud session (T00) and the Docker image did not meet
-   it. Reproduce: `docker run -it ubuntu:24.04`, install `curl
-   ca-certificates git`, elan and pixi, clone, `pixi run build`. A fix
-   would be to look the tool up with the toolchain's prefix
-   (`find_program(… NAMES ${CMAKE_STRIP} $ENV{STRIP} strip)`; pixi's
-   activation sets `STRIP`), and to fail at configure time with a message
-   when none is found. After installing `binutils` the build tree must be
+   has `aarch64-conda-linux-gnu-strip` and no plain `strip`, and CMake
+   finds the compiler as `cc` (a link to `aarch64-conda-linux-gnu-gcc`);
+   `STRIP` and `AR` are not set in the environment. It works wherever the
+   system has `binutils`, as the Docker image's base has; that the cloud
+   session (T00) had them is inferred, not checked. Reproduce:
+   `docker run -it ubuntu:24.04`, install `curl ca-certificates git`, elan
+   and pixi, clone, `pixi run build`. A fix would be to look for the
+   prefixed tool as well and to fail at configure time with a message when
+   none is found. After installing `binutils` the build tree must be
    removed, because the missing tool stays in the cache.
 2. **Linux through pixi: `test_cm_ffi` does not link.**
    `ros/roslean_core/test/test_cm_ffi.cpp` uses `std::thread` (the test of
@@ -178,8 +216,18 @@ Matters of substance, left as they are. Numbered for reference.
    appear in `tasks/reports/T06.md` and `SPEC_NAV2.md` and nowhere else:
    not in COMPARISON.md, and `bench/results/cm_core.json` and
    `cm_node.json` are from the earlier node (commit `86ae565`, task T02).
-   The pages agree with T06's report; the report could not be checked
-   against data. Not re-measured by this audit.
+   The pages agree with T06's report. The in-process figures were
+   re-measured by the audit with T06's command (`pixi run bench-build`,
+   then `bench_cm --readings N --zones Z --scan clear --iters 20000
+   --warmup 2000`, one run each, in the fresh clone, while a Docker build
+   was running on the same machine). Median per command, Lean / upstream,
+   µs: 11.0 / 1.8 and 17.3 / 2.9 at 360 readings (pages: 10.3 / 1.7 and
+   16.5 / 2.8); 31.8 / 4.2 and 49.9 / 7.4 at 1080 (30.0 / 4.1 and
+   48.9 / 7.2); 290 / 32 and 461 / 61 at 10,000 (281 / 31 and 438 / 60).
+   Ratios 6.0 to 9.0: "6 to 9 times" holds, and every figure is within 7 %
+   of the page's. The scan callback: 3.8, 11.2 and 97 µs ("about 10 ns per
+   reading"). The latencies through the nodes were not re-measured. What
+   remains of the finding: the published table's own data is not kept.
 6. **"4 to 9 times upstream's processor time"** in the table "Does it fit
    your robot" of `gaps.html`, against "6 to 9 times" everywhere else. The
    six pairs of the table give 5.9 to 9.1. The 4 may be the Linux figure
@@ -219,6 +267,15 @@ Matters of substance, left as they are. Numbered for reference.
     them `review/collision_monitor/Checks.lean`, which `gaps.html` cites
     for the 300,000 patterns per helper). Their results are as recorded in
     REVIEWS.md; not re-run here.
+11. **Three upstream versions, of which the pages name two.** `pixi.lock`
+    gives Linux `nav2_collision_monitor` 1.3.13 (see "The full test
+    suite"). SPEC.md says the cited files are byte-identical in 1.3.12 and
+    1.3.14; nothing in the repository says so of 1.3.13, though the suite
+    passing beside it is evidence that it behaves alike where tested.
+12. **`pixi run cm-check --nav2` came up on its first start here**, in a
+    freshly installed environment, where T10's first start failed. One
+    start; it says nothing about how often Nav2 fails to come up. The
+    pages give T10's count (one failed start, none in 27 further ones).
 
 ## Discrepancies corrected in this branch
 
@@ -229,9 +286,9 @@ Matters of substance, left as they are. Numbered for reference.
 | README "Linux and deployment" | `libroslean_core` on macOS: 4 MB | 2.5 MB | Observed: 2,470,280 bytes in `install/roslean_core/lib/` |
 | README "Quick start" | "about 6 GB"; no word on `git`, `curl`, how to clone, the toolchain, Mathlib's size, a new shell | the measured sizes; the prerequisites; a `git clone` line | (A) and (B) above |
 | README, "or by hand" | three `ros2` commands with no environment | "inside the environment (`pixi run bash`, then `source install/setup.bash`)" | Observed: `ros2: No such file or directory` |
-| README "Quick start", "What has been run where" | no entry for Linux arm64 through pixi; the time of `pixi run test` | PENDING-README | (B) above; the run below |
+| README "Quick start", "What has been run where" | "`pixi run test` … about 20 minutes before the collision monitor's Nav2 extension, longer now"; no entry for Linux through pixi on the present tree | "about 40 minutes"; an entry for the fresh-clone run on macOS and one for Linux arm64 through pixi, with the two failures and the workarounds | (A), (B), and the two full runs |
 | `details.html`, "Further reading" | a link "API documentation" to `docs/` | removed | No `site/docs/`; the Pages workflow publishes `site/` with no build step; the deployed URL returns 404 |
-| `gaps.html`, "Platforms never tested", last row | "`pixi run test` as a whole was not run by any task" | PENDING-GAPS | the run below |
+| `gaps.html`, "Platforms never tested", last row; `docs/PLAN.md`, "Not done", first item | "`pixi run test` as a whole was not run by any task" | the two runs of the audit and their summary lines; the Linux build failure as what is not done | "The full test suite" |
 | README "Demo", "Under Nav2"; `index.html` "The demo" and the note under "Collision monitor"; `details.html` "The demo"; `gaps.html` "Under Nav2" and "Does it fit your robot"; `docs/PLAN.md` row T10 and "Not done" | pointers to the tutorial "for the run with a simulated robot", written before T10 reported; "in one run with the node as a lifecycle node" | T10's results, below | `tasks/reports/T10.md`; TUTORIAL_COLLISION_MONITOR.md, sections 5 and 7. Read, not re-run, except as noted under (A) |
 
 What the pages now say of T10, each from T10's report and the tutorial:
@@ -278,8 +335,14 @@ Against the repository's files (read), unless "observed":
   commands, 586 differing, farthest 2.056 and 3.044 mm; 300 cases with
   16,797 commands; 26,951 + 16,797 = 43,748, the overview's figure; 109
   checks in 19 fault cases; 34.0 million points on 340 zones, 3.409 and
-  4.167 mm; Linux: 289 checks, 20 cases with 1,182 commands. The counts of
-  the scenario suites were PENDING-COUNTS
+  4.167 mm; Linux: 289 checks, 20 cases with 1,182 commands. Of these the audit's own run of `pixi run test` printed: `0 failure(s) in
+  318 checks, 73 scenario runs`; `0 failure(s) in 289 checks, 44 scenario
+  runs, 2 not run: ['footprint-approach-unchanged',
+  'shift-interpolation']`; `0 failure(s) in 109 checks, 19 cases`; for
+  twist_mux 69 decisions in the scenarios and 4,692 in 20 random cases, 0
+  divergences (against the environment's 4.5.0 binary). The random runs of
+  300 cases, the point comparison and the Linux counts are not part of
+  `pixi run test` and were not repeated.
 - 11 tests on x86-64 (`tasks/reports/T00.md`); the 32-minute soak and its
   48 kB and 84 kB (COMPARISON.md); 300,000 patterns (REVIEWS.md); 530,000
   values and 200,000 transforms (THEOREMS.md, SPEC.md); the budget of 50,
@@ -398,4 +461,52 @@ theorems are about the functions that are exported.
 
 ## Not checked, and why
 
-PENDING-NOTCHECKED
+- **Any window.** The Mac's screen was locked for the whole audit
+  (`CGSSessionScreenIsLocked` true). The turtlesim demo, the Gazebo
+  scenario with its window and the three headless checks ran, and what is
+  reported of them is their text output. Nobody saw the turtle, the robot,
+  Gazebo's window or RViz. No screenshot was taken.
+- **Anything that needs a keyboard:** `pixi run demo-teleop`,
+  `pixi run gazebo-teleop`.
+- **`pixi run gazebo` and `pixi run gazebo-nav2`** (the twist_mux Gazebo
+  demo): not started. Their tutorial is not in the audit's scope and their
+  result is something to look at.
+- **Nav2 driving the tour** (`pixi run cm-gazebo-bringup`,
+  `nav2_observe.py tour`): not repeated. The tour figures on the pages are
+  T10's, seven runs of 300 simulated seconds.
+- **macOS without the Xcode command line tools**, and any Mac other than
+  this one.
+- **x86-64, Linux on its own hardware, a machine with a slow network.**
+- **The demos on Linux**: no display in the container; `cm-check-cloud`
+  (`xvfb-run`) was not tried.
+- **`docker run … -v $PWD/my.yaml:/cfg.yaml …`**, the README's third Docker
+  command: the README names no such file to start from.
+- **`pixi run bench`, `pixi run bench-cm`, `pixi run cm-diff`,
+  `pixi run cm-faults`, `bench/cm_linux/run.sh`**: about five hours
+  together by their own descriptions. Of the benchmark only the in-process
+  figures were re-measured (finding 5). The random runs of 300 cases, the
+  34.0 million points, the soak, the Linux container's counts and the
+  latencies through the nodes were compared with COMPARISON.md and the task
+  reports, not run.
+- **The x86-64 figures of twist_mux** (BENCHMARK.md): compared with the
+  document only.
+- **Whether each theorem is the right theorem.** The audit checked that the
+  statements say what the sentences beside them say, and what they rest
+  on. It did not review the model against upstream's source, the proofs'
+  definitions (`IsFirstStop`, `SourceInvalid`, `ZeroPublishedLast` and the
+  like were read only as far as the sentences needed), or the C++ shim.
+  That is what REVIEWS.md records.
+- **THEOREMS.md, SPEC.md, COMPARISON.md, the tutorials** as documents:
+  used as sources, not audited. Where the README or a page disagrees with
+  one of them it is listed above; whether they are right is outside this
+  task.
+
+## Left on the machine
+
+Removed at the end: the fresh clone and the empty home directory under
+`$TMPDIR/t12-fresh/`, the container `t12-fresh-b`, the image built from the
+README's Dockerfile (under the tag `t12-audit-roslean-twist-mux`, so that
+the existing `roslean-twist-mux` image was not replaced), the `ros2`
+daemons the fresh clone had started. Left: the `ubuntu:24.04` and
+`ros:jazzy-ros-base` base images in Docker's store, and Docker's build
+cache.

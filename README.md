@@ -86,7 +86,7 @@ Requires `git`, `curl`, [elan](https://github.com/leanprover/elan) and
 adds its directory to the `PATH` of new shells only, so open a new terminal
 after installing). On macOS, `git` comes with the Xcode command line tools.
 The ROS 2 Jazzy environment (RoboStack, with Nav2 and Gazebo; 4.5 GB on
-macOS arm64, 6 GB on Linux arm64, and about as much again in pixi's download
+macOS arm64, 6 GB on Linux arm64, and up to as much again in pixi's download
 cache) is installed into `.pixi/` on first use; the first build also
 downloads the Lean toolchain (3 GB in `~/.elan`), and the first
 `pixi run prove` downloads Mathlib (8 GB in `.lake/`). Altogether a fresh
@@ -97,14 +97,26 @@ build needs two more steps for now: see "What has been run where".
 git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git && cd ROSlean
 pixi run build        # lake build of the core + colcon build of the ROS packages
 pixi run test-quick   # the tests without the long comparisons with upstream; about 7 minutes
-pixi run test         # all tests; about 20 minutes before the collision monitor's Nav2 extension, longer now
+pixi run test         # all tests; about 40 minutes
 pixi run prove        # check all theorems (first run fetches or builds Mathlib)
 pixi run demo         # turtlesim driven through the Lean-backed mux
 ```
 
 What has been run where:
 
-- **macOS arm64:** everything.
+- **macOS arm64:** everything. From a fresh clone with an empty home
+  directory (the audit, [docs/AUDIT.md](docs/AUDIT.md)): build, proofs,
+  `pixi run test` with `29 tests, 0 errors, 0 failures`, the turtlesim demo
+  and the three Gazebo checks.
+- **Linux arm64 through pixi** (the same audit; a plain `ubuntu:24.04`
+  container in Docker on that Mac): **`pixi run build` fails as the tree
+  is**, first for want of `strip`, then linking `test_cm_ffi`. With
+  `apt-get install binutils` and, in an empty build tree,
+  `pixi run bash -c 'export LDFLAGS="$LDFLAGS -pthread"; colcon build --symlink-install --base-paths ros --cmake-args -G Ninja'`
+  it builds, and `pixi run test` gives `28 tests, 0 errors, 0 failures`
+  (beside upstream 1.3.13, which is what `pixi.lock` pins on Linux).
+  `pixi run prove` needs neither step. The demos and `pixi run cm-check`
+  need a display.
 - **Linux x86-64** (Ubuntu 24.04, through pixi): twist_mux: `pixi run build`
   and `pixi run test` pass and the turtlesim demo runs. The collision
   monitor: one cloud session ran build, all tests then present (11 tests,
