@@ -227,3 +227,17 @@ tr.warn td { color: var(--accent); font-weight: 500; }
 
 footer { border-top: 1px solid var(--line); margin-top: 2rem; }
 footer .wrap { padding-block: 1.5rem 2.5rem; font-size: 0.9rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between; }
+
+/* Gaps page: one block per gap, with the same five questions answered for each */
+.gap { margin: 1.5rem 0; border: 1px solid var(--line); background: var(--surface); }
+.gap > h3 { margin: 0; padding: 0.7rem 1rem; font-size: 1.05rem; border-bottom: 1px solid var(--line); }
+.gap > p { margin: 0; padding: 0.7rem 1rem 0; font-size: 0.95rem; }
+.gap dl { margin: 0; padding: 0.7rem 1rem 0.8rem; display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.5rem 1rem; font-size: 0.93rem; line-height: 1.5; }
+.gap dt { font: 500 0.75rem/1.9 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.gap dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .gap dl { grid-template-columns: 1fr; gap: 0.1rem; } .gap dd { margin-bottom: 0.5rem; } }
+.kind { font: 500 0.72rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.kind.proved { color: var(--proved); }
+.kind.open { color: var(--accent); }
+td code, dd code { overflow-wrap: anywhere; }
+blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--code-bg); border-left: 3px solid var(--line); font: 0.84rem/1.5 var(--font-mono); overflow-wrap: anywhere; }
