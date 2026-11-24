@@ -135,9 +135,10 @@ def add (a b : Dy) : Dy :=
 def sub (a b : Dy) : Dy := a.add b.neg
 
 /-- `num / den · 1000` as a quotient `(N, D)` of an integer by a natural
-number; `D` is positive if `den.m` is. -/
+number; `D` is positive if `den.m` is. A zero numerator is not aligned. -/
 def scaled (num den : Dy) : Int × Nat :=
-  if den.e ≤ num.e then (num.m * 1000 * 2 ^ (num.e - den.e).toNat, den.m.toNat)
+  if num.m = 0 then (0, den.m.toNat)
+  else if den.e ≤ num.e then (num.m * 1000 * 2 ^ (num.e - den.e).toNat, den.m.toNat)
   else (num.m * 1000, den.m.toNat * 2 ^ (den.e - num.e).toNat)
 
 end Dy

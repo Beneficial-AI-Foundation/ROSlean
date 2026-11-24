@@ -252,6 +252,10 @@ theorem scaled_spec (num den : Dy) (hd : 0 < den.m) :
   have hn : 0 < den.m.toNat := by omega
   unfold Dy.scaled
   split
+  · rename_i h0
+    refine ⟨hn, ?_⟩
+    simp [dval, h0]
+  split
   · rename_i h
     refine ⟨hn, ?_⟩
     simp only [dval]

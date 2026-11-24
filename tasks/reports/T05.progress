@@ -2,3 +2,4 @@
 2026-11-24T09:21:47Z baseline builds pass (core 17 jobs, root 6647 jobs); read SPEC_NAV2, model, proofs; next: core model (Xform file, events, state, step) and keeping FFI compiling
 2026-11-24T09:25:48Z core model done: CollisionMonitorXform.lean (exact transform), events E1-E8, state, Output.answer; core/ builds; old FFI entry points kept (signatures unchanged). Root proofs not yet adapted. next: Basic, Transform, Properties, Trace, FFI proofs
 2026-11-24T09:42:38Z Basic, Geometry, Transform (new), Properties, Lifecycle (new) build without sorry; next: Trace, FFI proofs, Examples, then docs
+2026-11-24T09:52:21Z whole root package builds without sorry (6653 jobs): Trace, FFI proofs, Examples adapted; next: print axioms, pixi build + C-level tests, then THEOREMS.md/SPEC.md/SPEC_NAV2.md and report
