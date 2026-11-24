@@ -1,0 +1,49 @@
+[INFO] [1795519361.359483000] [collision_monitor]: 
+	collision_monitor lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1795519361.359542000] [collision_monitor]: Configuring
+[INFO] [1795519361.363480000] [collision_monitor]: [scan]: Creating Scan
+[INFO] [1795519361.366535000] [collision_monitor]: [Stop]: Creating Polygon
+[INFO] [1795519361.366543000] [collision_monitor]: [Stop]: Creating Circle
+[INFO] [1795519361.366651000] [collision_monitor]: [Slow]: Creating Polygon
+[INFO] [1795519361.366657000] [collision_monitor]: [Slow]: Creating Circle
+[INFO] [1795519361.373680000] [collision_monitor]: Activating
+[WARN] [1795519364.157782000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.735159 seconds. Ignoring the source.
+[WARN] [1795519364.157841000] [collision_monitor]: Robot to stop due to invalid source. Either due to data not published yet, or to lack of new data received within the sensor timeout, or if impossible to transform data to base frame
+[WARN] [1795519366.956723000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.798563 seconds. Ignoring the source.
+[WARN] [1795519369.780515000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.823649 seconds. Ignoring the source.
+[WARN] [1795519372.566807000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.786061 seconds. Ignoring the source.
+[WARN] [1795519375.333328000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.766379 seconds. Ignoring the source.
+[WARN] [1795519378.099194000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.765731 seconds. Ignoring the source.
+[WARN] [1795519380.909450000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.810095 seconds. Ignoring the source.
+{"readings":1000000,"zones":"circles","scan":"near","iters":6,"lean_out_kind":0,"upstream_action":1,"rss_start_kb":96128,"rss_end_kb":349184,"lean_scan_ns":{"mean":232547549,"min":225727875,"p50":230349291,"p90":243908667,"p99":243908667,"p999":243908667,"max":243908667},"lean_cmd_ns":{"mean":2559166667,"min":2535347584,"p50":2559707042,"p90":2584338458,"p99":2584338458,"p999":2584338458,"max":2584338458},"upstream_scan_ns":{"mean":3889,"min":2458,"p50":3333,"p90":7750,"p99":7750,"p999":7750,"max":7750},"upstream_cmd_ns":{"mean":68507,"min":58958,"p50":72500,"p90":74500,"p99":74500,"p999":74500,"max":74500}}
+[INFO] [1795519380.913997000] [collision_monitor]: [Slow]: Destroying Circle
+[INFO] [1795519380.914011000] [collision_monitor]: [Slow]: Destroying Polygon
+[INFO] [1795519380.914018000] [collision_monitor]: [Stop]: Destroying Circle
+[INFO] [1795519380.914022000] [collision_monitor]: [Stop]: Destroying Polygon
+[INFO] [1795519380.914026000] [collision_monitor]: [scan]: Destroying Scan
+[INFO] [1795519380.914428000] [collision_monitor]: Destroying
+[INFO] [1795519381.104703000] [collision_monitor]: 
+	collision_monitor lifecycle node launched. 
+	Waiting on external lifecycle transitions to activate
+	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[INFO] [1795519381.104742000] [collision_monitor]: Configuring
+[INFO] [1795519381.108353000] [collision_monitor]: [scan]: Creating Scan
+[INFO] [1795519381.111435000] [collision_monitor]: [Stop]: Creating Polygon
+[INFO] [1795519381.111442000] [collision_monitor]: [Stop]: Creating Circle
+[INFO] [1795519381.111541000] [collision_monitor]: [Slow]: Creating Polygon
+[INFO] [1795519381.111545000] [collision_monitor]: [Slow]: Creating Circle
+[INFO] [1795519381.117745000] [collision_monitor]: Activating
+[WARN] [1795519383.971842000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.392225 seconds. Ignoring the source.
+[WARN] [1795519383.974040000] [collision_monitor]: Robot to stop due to invalid source. Either due to data not published yet, or to lack of new data received within the sensor timeout, or if impossible to transform data to base frame
+[WARN] [1795519386.540768000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.564015 seconds. Ignoring the source.
+[WARN] [1795519388.944905000] [collision_monitor]: [scan]: Latest source and current collision monitor node timestamps differ on 2.403347 seconds. Ignoring the source.
+{"readings":10000000,"zones":"circles","scan":"near","iters":2,"lean_out_kind":0,"upstream_action":1,"rss_start_kb":658464,"rss_end_kb":3017264,"lean_scan_ns":{"mean":2483651042,"min":2403317708,"p50":2563984375,"p90":2563984375,"p99":2563984375,"p999":2563984375,"max":2563984375},"lean_cmd_ns":{"mean":4833,"min":4541,"p50":5125,"p90":5125,"p99":5125,"p999":5125,"max":5125},"upstream_scan_ns":{"mean":1584,"min":1417,"p50":1750,"p90":1750,"p99":1750,"p999":1750,"max":1750},"upstream_cmd_ns":{"mean":72104,"min":72000,"p50":72209,"p90":72209,"p99":72209,"p999":72209,"max":72209}}
+[INFO] [1795519388.952345000] [collision_monitor]: [Slow]: Destroying Circle
+[INFO] [1795519388.952361000] [collision_monitor]: [Slow]: Destroying Polygon
+[INFO] [1795519388.952367000] [collision_monitor]: [Stop]: Destroying Circle
+[INFO] [1795519388.952371000] [collision_monitor]: [Stop]: Destroying Polygon
+[INFO] [1795519388.952375000] [collision_monitor]: [scan]: Destroying Scan
+[INFO] [1795519388.952946000] [collision_monitor]: Destroying
+exit 0 after 28 s

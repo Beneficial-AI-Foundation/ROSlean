@@ -18,20 +18,27 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
   upstream's zone that the core counted was 3.409 mm for a circle (bound
   3.5) and 4.167 mm for a polygon (bound 4.4).
 - *Defects, open.* Two. A `/clock` message with a negative time aborts the
-  node (as it aborts upstream). And the node's command path is slow for
-  polygon zones: about 200 ns per reading and zone in a hot loop, 50 to 70
-  times upstream's, and about four times that again at the rate a node is
-  really called. With a 1080-reading scan and two polygons a command takes
-  0.4 ms back to back and 1.2 to 1.7 ms when commands come 20 ms apart;
-  through the nodes on Linux the Lean node's median latency is 2.4 ms
-  where upstream's is 0.4 ms.
+  node (as it aborts upstream). And a command is slow. On the node before
+  the model was extended for transforms (commit `91c21f9`): 0.4 ms for a
+  1080-reading scan and two polygon zones, 50 to 70 times upstream. On the
+  node as merged now, which applies an exact transform in Lean to every
+  reading at every command (T05's option B): 3 ms in a hot loop and 6 to
+  8 ms at the rate a node is really called; through the nodes in the Linux
+  container its median latency is 5.8 ms where upstream's is 0.26 ms, and
+  with 10,000 readings it answers 532 of 1000 commands on macOS and 678 in
+  the container where upstream answers 850. **Option B is being replaced** (the user's decision: the
+  transform moves to C++, task T05b), so the second set of figures
+  describes code on its way out; the timing comparison must be repeated
+  after T05b and T06.
 - *Defects, fixed since the first draft of this document.* The shim was
   compiled without optimisation, and on macOS it then computed 2.6 % of the
   scan points one float32 step away from upstream's. The package now builds
   optimised by default (review CM3/CM4, finding 5); both were re-measured
   here and are gone.
 - *Memory.* Resident memory of the node over 32 minutes of load
-  (1.15 million messages sent to it): @@MEM_SHORT@@
+  (1.15 million messages sent to it): after the first ten seconds it rises
+  by 48 kB on macOS (to 26.1 MB) and by 84 kB in the Linux container (to
+  77.1 MB). It does not grow in any way that matters in that time.
 - *The two documents.* SPEC and UPSTREAM_BEHAVIOUR.md contradict each other
   in one place (how often a timeout is converted); the binary sides with the
   SPEC. Every statement that only the SPEC makes and that could be put to
@@ -47,7 +54,12 @@ The behavioural runs had been made on the node before that extension
 (commit `91c21f9`) first and were all repeated; every count of every run
 came out the same, on both platforms. The run times did not: see
 [Defects](#defects), 2. Where this document gives a number from the earlier
-node it says "before the extension".
+node it says "before the extension". After these runs the user decided that
+the transform will be applied in C++ and not in Lean (option A; task T05b
+reworks the model). Behaviour is expected to stay as measured here, and
+must be re-checked; every cost and latency figure of the merged node is
+labelled "option B, being replaced" and has to be measured again after T05b
+and T06.
 
 | | macOS | Linux |
 | --- | --- | --- |
@@ -522,11 +534,16 @@ has a registered test that is expected to fail.
    topic.
 
 2. **A command is slow, and since the model was extended it is too slow
-   for an ordinary scanner.** Each command places every stored reading in
+   for an ordinary scanner.** (The figures of the merged node are with
+   T05's exact transform in Lean, option B, which is being replaced by a
+   transform in C++; they are to be repeated after T05b and T06. The
+   figures "before the extension" are of the code that option A returns
+   to in this respect, and the defect was there too, seven to eight times
+   smaller for polygons.) Each command places every stored reading in
    the base frame again and then tests every point against every zone, all
    in exact integer arithmetic.
 
-   | Per command, in a hot loop | macOS | Linux (container) | Upstream |
+   | Per command, in a hot loop (option B) | macOS | Linux (container) | Upstream |
    | --- | ---: | ---: | ---: |
    | 360 readings, two polygons | 1.0 ms | 0.85 ms | 3 to 5 µs |
    | 1080 readings, two polygons | 3.1 ms | 2.5 ms | 8 to 12 µs |
@@ -554,7 +571,14 @@ has a registered test that is expected to fail.
    inferred from these figures, it was not profiled.
 
    What follows from it, measured through the nodes
-   ([Through the nodes](#through-the-nodes)): @@NODE_SUMMARY@@
+   ([Through the nodes](#through-the-nodes)): in the Linux container the
+   Lean node's median latency is 3.2 ms at 360 readings, 5.8 ms at 1080 and
+   34 ms at 10,000, where upstream's is 0.24 to 0.38 ms; at 10,000 readings
+   it answers 678 of 1000 commands sent at 50 Hz (macOS: 532), upstream 850;
+   and at changes of the scene a few answers differ from upstream's because
+   the busy node takes in a scan later (9 commands in four runs). Before
+   the extension: 0.99, 2.4 and 7.5 ms, no command lost, no answer
+   different.
 
    The answers to a given sequence of events are right, and they are the
    same as before the extension in every run of this document. What is
@@ -645,27 +669,39 @@ When this document was finished:
 
 ## Measurements
 
+**Read this first.** Every cost and latency figure of this section that is
+not marked "before the extension" was measured on the node as merged at
+`b503265`, that is with T05's exact transform in Lean (option B). The user
+has since decided that the transform is applied in C++ (option A); the
+model is being reworked (task T05b) and the node follows (T06). So these
+figures describe code that is being replaced. They are kept because they
+are what was measured and because they are the reason to look at the cost
+again; **the timing comparison must be repeated after T05b and T06.** The
+figures "before the extension" (commit `91c21f9`) are given alongside.
+
 In the manner of [BENCHMARK.md](../BENCHMARK.md). Sources:
 `bench/roslean_bench/src/bench_cm.cpp`, `cm_load.cpp`,
-`scripts/run_cm_bench.py`; raw data in `bench/results/cm_*.json` (macOS)
-and `bench/results/cm_comparison/linux/cm_*.json`.
+`scripts/run_cm_bench.py`; raw data in `bench/results/cm_*.json` (macOS),
+`bench/results/cm_comparison/linux/cm_*.json`, and for the node before the
+extension in `bench/results/cm_comparison/before_t05/`.
 
 **Environment and its limits.** The two platforms of the table at the top:
 an Apple M5 Pro with 18 cores, and a Linux container in Docker's virtual
 machine on that same computer. Neither is a robot computer or a real-time
 system, and the second is not a Linux computer: its processor is the Mac's,
 its scheduler and its C library are Linux's. Another session was working on
-the same machine (Lean builds), so the tails (p99.9, max) may contain its
-scheduling; the latency runs of this section were made one at
-a time, with none of this document's other runs going. The two columns of
-every table were measured in the same process or at the same time on the
-same messages and can be compared with each other; a macOS table and a
-Linux table can not, beyond the order of magnitude.
+the same machine (Lean builds), and some runs of this section overlapped
+with each other (noted where it matters), so the tails (p99.9, max) contain
+scheduling that is not the node's. The two columns of every table were
+measured in the same process or at the same time on the same messages and
+can be compared with each other; a macOS table and a Linux table can not,
+beyond the order of magnitude.
 
-Upstream converts a scan to points when a command arrives (R3); the Lean
-node converts it when the scan arrives and stores the points. So upstream's
-scan callback only stores a pointer, and the two paths must be read
-together.
+Upstream converts a scan to points when a command arrives (R3). The Lean
+node computes the points in the scan's frame when the scan arrives and
+places them in the base frame, in millimetres, when a command arrives
+(since the extension of the model; before it, both were done when the scan
+arrived). So the two paths must be read together.
 
 Configuration: Nav2's example zones. "polygons": a stop box 0.3 × 0.6 m and
 a slowdown box 0.8 × 0.8 m (ratio 0.3), `min_points` 4. "circles": radii 0.3
@@ -681,67 +717,91 @@ and `CollisionMonitor::cmdVelInCallbackUnstamped` called directly. A new
 message object per call; 20,000 calls per row (5,000 for 10,000 readings)
 after a warm-up of a tenth, back to back. Microseconds.
 
-macOS:
+macOS (option B, being replaced):
 
 | Readings | Zones | Call | Lean p50 | p99 | p99.9 | max | Upstream p50 | p99 | p99.9 | max |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | polygons | scan | 16.1 | 18.6 | 36.6 | 47.2 | 0.0 | 0.5 | 1.9 | 2.1 |
-| 360 | polygons | command, clear | 135 | 161 | 169 | 230 | 2.8 | 3.6 | 6.9 | 25.9 |
-| 360 | polygons | command, slowdown | 137 | 188 | 198 | 223 | 2.8 | 4.1 | 7.8 | 30.4 |
-| 360 | polygons | command, stop | 66.8 | 77.7 | 96.8 | 104 | 2.0 | 2.6 | 6.1 | 21.7 |
-| 360 | circles | scan | 16.2 | 18.3 | 35.8 | 43.1 | 0.0 | 0.3 | 0.5 | 0.6 |
-| 360 | circles | command, clear | 6.0 | 6.7 | 15.3 | 29.8 | 1.7 | 1.9 | 3.6 | 22.5 |
-| 360 | circles | command, slowdown | 6.0 | 6.8 | 13.2 | 39.4 | 1.7 | 2.0 | 5.6 | 86.5 |
-| 360 | circles | command, stop | 5.4 | 6.0 | 10.4 | 29.5 | 1.6 | 1.9 | 3.9 | 21.9 |
-| 1080 | polygons | scan | 48.9 | 57.5 | 80.2 | 93.3 | 0.0 | 0.5 | 1.8 | 2.8 |
-| 1080 | polygons | command, clear | 406 | 443 | 456 | 538 | 7.0 | 8.4 | 19.6 | 73.2 |
-| 1080 | polygons | command, slowdown | 408 | 446 | 457 | 475 | 7.0 | 8.2 | 24.7 | 43.7 |
-| 1080 | polygons | command, stop | 202 | 231 | 239 | 259 | 5.1 | 6.2 | 10.6 | 26.9 |
-| 1080 | circles | scan | 48.3 | 56.1 | 76.8 | 83.3 | 0.0 | 0.9 | 1.9 | 2.2 |
-| 1080 | circles | command, clear | 17.6 | 20.1 | 41.8 | 47.2 | 4.0 | 5.0 | 12.9 | 29.2 |
-| 1080 | circles | command, slowdown | 18.4 | 20.9 | 41.5 | 58.8 | 4.0 | 5.0 | 9.3 | 26.9 |
-| 1080 | circles | command, stop | 14.9 | 17.3 | 34.4 | 50.1 | 3.8 | 4.3 | 6.3 | 28.3 |
-| 10000 | polygons | scan | 474 | 517 | 551 | 565 | 0.2 | 0.4 | 1.6 | 11.5 |
-| 10000 | polygons | command, clear | 3 878 | 4 058 | 4 127 | 4 235 | 60.2 | 70.2 | 86.5 | 87.6 |
-| 10000 | polygons | command, slowdown | 3 879 | 4 063 | 4 137 | 4 173 | 60.4 | 66.0 | 85.5 | 92.6 |
-| 10000 | polygons | command, stop | 1 952 | 2 051 | 2 413 | 2 463 | 44.1 | 51.3 | 83.2 | 131 |
-| 10000 | circles | scan | 473 | 507 | 544 | 548 | 0.1 | 0.4 | 0.5 | 0.6 |
-| 10000 | circles | command, clear | 170 | 196 | 210 | 215 | 32.2 | 35.2 | 55.0 | 117 |
-| 10000 | circles | command, slowdown | 175 | 203 | 211 | 215 | 32.2 | 35.2 | 55.1 | 56.3 |
-| 10000 | circles | command, stop | 151 | 173 | 187 | 205 | 30.0 | 33.2 | 53.2 | 65.6 |
+| 360 | polygons | scan | 74.9 | 86.6 | 105 | 164 | 0.0 | 0.2 | 0.5 | 1.6 |
+| 360 | polygons | command, clear | 999 | 1 078 | 1 142 | 1 232 | 2.9 | 4.5 | 9.0 | 23.6 |
+| 360 | polygons | command, slowdown | 1 010 | 1 095 | 1 304 | 2 086 | 3.0 | 4.6 | 13.8 | 27.3 |
+| 360 | polygons | command, stop | 954 | 1 035 | 1 116 | 1 387 | 2.1 | 3.2 | 7.0 | 22.0 |
+| 360 | circles | scan | 78.0 | 95.4 | 110 | 159 | 0.0 | 0.2 | 1.0 | 2.5 |
+| 360 | circles | command, clear | 887 | 964 | 1 207 | 1 674 | 1.9 | 3.1 | 11.9 | 56.8 |
+| 360 | circles | command, slowdown | 892 | 998 | 1 293 | 2 403 | 1.9 | 5.4 | 19.1 | 66.6 |
+| 360 | circles | command, stop | 905 | 1 033 | 1 192 | 2 456 | 1.5 | 3.1 | 11.7 | 90.6 |
+| 1080 | polygons | scan | 236 | 271 | 390 | 704 | 0.1 | 1.0 | 2.2 | 32.5 |
+| 1080 | polygons | command, clear | 3 100 | 3 532 | 4 521 | 5 804 | 7.6 | 18.3 | 29.7 | 395 |
+| 1080 | polygons | command, slowdown | 3 085 | 3 287 | 3 470 | 4 869 | 7.6 | 13.0 | 23.5 | 69.3 |
+| 1080 | polygons | command, stop | 2 845 | 3 029 | 3 306 | 3 650 | 5.5 | 9.2 | 13.4 | 23.8 |
+| 1080 | circles | scan | 235 | 264 | 275 | 552 | 0.0 | 0.4 | 1.1 | 2.9 |
+| 1080 | circles | command, clear | 2 652 | 2 816 | 2 960 | 3 821 | 4.4 | 8.0 | 16.9 | 61.3 |
+| 1080 | circles | command, slowdown | 2 659 | 2 933 | 3 623 | 3 996 | 4.4 | 6.7 | 18.6 | 30.1 |
+| 1080 | circles | command, stop | 2 724 | 2 859 | 3 185 | 3 374 | 3.9 | 6.3 | 11.0 | 20.5 |
+| 10000 | polygons | scan | 2 243 | 2 583 | 3 267 | 3 500 | 0.5 | 2.9 | 11.1 | 22.6 |
+| 10000 | polygons | command, clear | 28 927 | 31 722 | 36 700 | 39 434 | 64.0 | 81.7 | 130 | 191 |
+| 10000 | polygons | command, slowdown | 29 028 | 30 662 | 34 775 | 38 050 | 62.1 | 76.9 | 87.8 | 150 |
+| 10000 | polygons | command, stop | 27 228 | 28 771 | 30 251 | 35 385 | 46.1 | 59.7 | 86.4 | 133 |
+| 10000 | circles | scan | 2 272 | 2 921 | 3 438 | 3 574 | 0.3 | 2.8 | 4.9 | 20.6 |
+| 10000 | circles | command, clear | 25 653 | 29 470 | 33 540 | 38 795 | 34.2 | 52.4 | 92.1 | 138 |
+| 10000 | circles | command, slowdown | 25 826 | 28 025 | 29 538 | 32 893 | 35.0 | 91.2 | 101 | 131 |
+| 10000 | circles | command, stop | 25 727 | 28 331 | 32 590 | 33 185 | 32.3 | 48.8 | 64.2 | 94.2 |
 
-Linux (container):
+Linux (container, option B; the macOS runs of this section were going on at
+the same time):
 
 | Readings | Zones | Call | Lean p50 | p99 | p99.9 | max | Upstream p50 | p99 | p99.9 | max |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | polygons | scan | 25.4 | 31.0 | 53.0 | 59.6 | 0.1 | 0.2 | 0.4 | 3.5 |
-| 360 | polygons | command, clear | 154 | 184 | 193 | 239 | 3.2 | 4.6 | 8.4 | 29.1 |
-| 360 | polygons | command, slowdown | 154 | 184 | 193 | 250 | 3.3 | 4.8 | 10.0 | 41.9 |
-| 360 | polygons | command, stop | 77.5 | 93.8 | 111 | 178 | 2.5 | 3.8 | 7.1 | 25.8 |
-| 360 | circles | scan | 25.2 | 31.7 | 50.9 | 61.2 | 0.0 | 0.1 | 0.4 | 6.7 |
-| 360 | circles | command, clear | 8.7 | 12.2 | 23.8 | 38.1 | 2.0 | 2.8 | 6.1 | 31.4 |
-| 360 | circles | command, slowdown | 8.9 | 12.5 | 26.2 | 39.0 | 2.0 | 2.8 | 6.3 | 30.8 |
-| 360 | circles | command, stop | 7.5 | 10.7 | 19.6 | 35.6 | 2.0 | 2.6 | 6.1 | 31.6 |
-| 1080 | polygons | scan | 81.4 | 100 | 117 | 193 | 0.1 | 0.4 | 0.5 | 77.6 |
-| 1080 | polygons | command, clear | 519 | 630 | 663 | 734 | 8.4 | 12.6 | 28.2 | 44.5 |
-| 1080 | polygons | command, slowdown | 530 | 632 | 671 | 752 | 8.5 | 12.7 | 29.2 | 54.1 |
-| 1080 | polygons | command, stop | 270 | 330 | 341 | 405 | 6.2 | 10.2 | 17.0 | 396 |
-| 1080 | circles | scan | 80.4 | 99.2 | 114 | 129 | 0.1 | 0.1 | 0.5 | 5.6 |
-| 1080 | circles | command, clear | 26.9 | 33.0 | 55.4 | 65.0 | 5.2 | 9.4 | 15.5 | 45.5 |
-| 1080 | circles | command, slowdown | 27.9 | 34.7 | 56.1 | 147 | 5.2 | 9.4 | 18.0 | 44.4 |
-| 1080 | circles | command, stop | 24.0 | 29.6 | 50.3 | 57.1 | 4.7 | 8.7 | 13.8 | 45.0 |
-| 10000 | polygons | scan | 802 | 858 | 896 | 1 918 | 0.3 | 0.6 | 1.5 | 1.8 |
-| 10000 | polygons | command, clear | 5 579 | 5 810 | 6 108 | 6 159 | 98.4 | 128 | 146 | 170 |
-| 10000 | polygons | command, slowdown | 5 540 | 5 789 | 5 978 | 6 074 | 100 | 131 | 155 | 157 |
-| 10000 | polygons | command, stop | 2 631 | 2 727 | 2 863 | 3 670 | 84.1 | 112 | 135 | 322 |
-| 10000 | circles | scan | 789 | 841 | 867 | 967 | 0.1 | 0.4 | 0.7 | 4.0 |
-| 10000 | circles | command, clear | 278 | 317 | 338 | 352 | 70.5 | 106 | 120 | 183 |
-| 10000 | circles | command, slowdown | 257 | 295 | 307 | 320 | 72.0 | 107 | 119 | 124 |
-| 10000 | circles | command, stop | 228 | 280 | 502 | 1 736 | 70.0 | 117 | 247 | 336 |
+| 360 | polygons | scan | 65.1 | 73.7 | 92.1 | 378 | 0.1 | 0.4 | 0.9 | 5.0 |
+| 360 | polygons | command, clear | 850 | 883 | 910 | 1 889 | 5.0 | 9.0 | 13.5 | 47.1 |
+| 360 | polygons | command, slowdown | 841 | 870 | 889 | 1 042 | 5.0 | 8.4 | 13.7 | 33.0 |
+| 360 | polygons | command, stop | 763 | 788 | 802 | 850 | 4.0 | 6.5 | 9.0 | 27.5 |
+| 360 | circles | scan | 65.3 | 72.3 | 87.4 | 173 | 0.1 | 0.3 | 0.6 | 1.4 |
+| 360 | circles | command, clear | 688 | 714 | 729 | 1 729 | 3.9 | 6.7 | 10.4 | 24.0 |
+| 360 | circles | command, slowdown | 683 | 713 | 757 | 901 | 3.8 | 7.1 | 11.0 | 24.1 |
+| 360 | circles | command, stop | 689 | 715 | 732 | 805 | 3.4 | 6.2 | 8.5 | 23.2 |
+| 1080 | polygons | scan | 190 | 211 | 249 | 612 | 0.1 | 0.5 | 1.5 | 15.5 |
+| 1080 | polygons | command, clear | 2 519 | 2 607 | 2 987 | 3 790 | 12.0 | 17.2 | 27.2 | 41.6 |
+| 1080 | polygons | command, slowdown | 2 519 | 2 709 | 3 265 | 3 748 | 12.5 | 18.8 | 31.2 | 46.7 |
+| 1080 | polygons | command, stop | 2 325 | 2 521 | 3 019 | 3 647 | 10.3 | 16.2 | 28.2 | 59.9 |
+| 1080 | circles | scan | 195 | 225 | 319 | 482 | 0.1 | 0.5 | 1.2 | 3.8 |
+| 1080 | circles | command, clear | 2 053 | 2 268 | 2 844 | 3 122 | 9.4 | 15.6 | 22.5 | 60.1 |
+| 1080 | circles | command, slowdown | 2 057 | 2 358 | 2 869 | 4 394 | 9.2 | 15.7 | 31.0 | 103 |
+| 1080 | circles | command, stop | 2 042 | 2 358 | 2 978 | 3 704 | 8.8 | 19.0 | 38.6 | 116 |
+| 10000 | polygons | scan | 1 888 | 2 447 | 2 659 | 2 955 | 0.5 | 2.9 | 7.0 | 11.8 |
+| 10000 | polygons | command, clear | 24 159 | 27 397 | 30 684 | 30 893 | 76.6 | 200 | 217 | 244 |
+| 10000 | polygons | command, slowdown | 24 282 | 26 226 | 27 443 | 28 261 | 75.1 | 188 | 217 | 229 |
+| 10000 | polygons | command, stop | 21 324 | 23 116 | 25 733 | 27 303 | 58.9 | 96.8 | 134 | 146 |
+| 10000 | circles | scan | 1 887 | 2 179 | 2 887 | 3 129 | 0.4 | 2.8 | 5.8 | 7.6 |
+| 10000 | circles | command, clear | 18 777 | 20 678 | 22 832 | 24 879 | 46.1 | 78.0 | 113 | 144 |
+| 10000 | circles | command, slowdown | 18 808 | 19 983 | 23 241 | 25 980 | 47.0 | 79.7 | 110 | 172 |
+| 10000 | circles | command, stop | 18 554 | 19 526 | 22 748 | 23 026 | 43.6 | 79.8 | 101 | 136 |
 
 "clear", "slowdown" and "stop" are the scenes; in the stop scene the first
-zone decides and the second is not evaluated, and after `stop_pub_timeout`
-nothing is published. Sum of the two medians, clear scene, macOS:
+zone decides, and after `stop_pub_timeout` nothing is published. Sum of the
+two medians, clear scene, macOS (option B):
+
+| Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
+| ---: | --- | ---: | ---: | ---: |
+| 360 | polygons | 1 074 | 2.9 | 368 |
+| 360 | circles | 965 | 1.9 | 503 |
+| 1080 | polygons | 3 336 | 7.7 | 435 |
+| 1080 | circles | 2 887 | 4.4 | 654 |
+| 10000 | polygons | 31 170 | 64.5 | 483 |
+| 10000 | circles | 27 925 | 34.5 | 809 |
+
+Linux:
+
+| Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
+| ---: | --- | ---: | ---: | ---: |
+| 360 | polygons | 915 | 5.0 | 182 |
+| 360 | circles | 753 | 4.0 | 188 |
+| 1080 | polygons | 2 709 | 12.1 | 223 |
+| 1080 | circles | 2 248 | 9.5 | 238 |
+| 10000 | polygons | 26 046 | 77.0 | 338 |
+| 10000 | circles | 20 665 | 46.5 | 444 |
+
+The same sums for the node before the extension of the model (commit
+`91c21f9`, measured the same way earlier on the same day), macOS:
 
 | Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
 | ---: | --- | ---: | ---: | ---: |
@@ -752,7 +812,7 @@ nothing is published. Sum of the two medians, clear scene, macOS:
 | 10000 | polygons | 4 352 | 60.3 | 72 |
 | 10000 | circles | 643 | 32.3 | 20 |
 
-and Linux:
+Linux:
 
 | Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
 | ---: | --- | ---: | ---: | ---: |
@@ -763,136 +823,192 @@ and Linux:
 | 10000 | polygons | 6 381 | 98.7 | 65 |
 | 10000 | circles | 1 067 | 70.7 | 15 |
 
-Reading:
+Reading (option B, being replaced, unless it says "before"):
 
-- **Scan path.** The Lean node spends 45 to 47 ns per reading on macOS (70
-  to 80 in the container) when a scan arrives: computing the point
-  (`encode_scan`), copying 20 bytes per reading into the core, and
-  converting to millimetres. Upstream spends that time when the command
-  arrives.
-- **Command path, circles.** 16 to 17 ns per reading for the two zones on
-  macOS (24 to 28 in the container), against upstream's 3 to 5 ns (5 to 7)
-  including its conversion of the scan: 3.5 to 5 times slower, 18 µs at
-  1080 readings on macOS.
-- **Command path, polygons.** 376 to 388 ns per reading for the two
-  four-vertex polygons on macOS (426 to 558 in the container), i.e. about
-  200 ns per reading and zone, 50 ns per edge: 0.41 ms at 1080 readings and
-  3.9 ms at 10,000 on macOS, where upstream needs 7 µs and 60 µs. This is
-  defect 2. The cost is the exact integer test with its band, done for
-  every point against every edge; most points of a real scan are metres
-  away from every zone and could be excluded by one comparison with a
-  bounding box.
-- **Tail.** The Lean callbacks are steady: on macOS p99 is within 1.4 times
-  the median, and the largest call exceeds its median by less than 0.15 ms
-  up to 1080 readings and by at most 0.5 ms at 10,000; in the container the
-  largest excess in the table is 1.5 ms (one call of 1.7 ms against a
-  median of 0.23 ms). As with twist_mux there is no collector that pauses
-  the node.
+- **Scan path.** The Lean node spends 210 to 230 ns per reading on macOS
+  (175 to 190 in the container) when a scan arrives: computing the point
+  (`encode_scan`), copying 20 bytes per reading into the core, and storing
+  the coordinates. Before the extension it was 45 to 47 ns (70 to 80).
+- **Command path.** 2.5 to 2.9 µs per reading on macOS (1.9 to 2.4 in the
+  container), with little difference between circles and polygons: 2.7 ms
+  and 3.1 ms at 1080 readings on macOS, 26 ms and 29 ms at 10,000. Upstream
+  needs 4 to 8 ns per reading (5 to 14) for the scan and the command
+  together. This is defect 2. Before the extension the command path cost
+  16 to 17 ns per reading with two circles and 376 to 388 ns with two
+  polygons on macOS; the extension made a command 7 to 8 times slower with
+  polygon zones and 150 times slower with circle zones.
+- **Tail.** The Lean callbacks are steady in relative terms: p99 is within
+  1.3 times the median in every row of both tables; the largest single
+  call is at most 2.7 times the median for a command and up to 6 times for
+  the short scan callback. There is no collector that pauses the node; a
+  call is long because it computes for long.
 - **These are hot-loop figures.** Called every 20 ms, as a node is, the
-  same command costs about four times as much (defect 2, `cmd_cost`): 1.7 ms
-  instead of 0.4 ms at 1080 readings with two polygons on macOS.
+  same command costs two to three times as much (defect 2, `cmd_cost`):
+  about 7.5 ms instead of 2.7 to 3.2 ms at 1080 readings on macOS.
 - **What it costs.** With 1080 readings at 25 Hz, commands at 50 Hz and two
-  polygon zones, from the hot-loop medians on macOS: 25 × 0.05 ms + 50 ×
-  0.41 ms = 22 ms of work per second, 2.2 % of a core (upstream: 0.04 %);
-  with the 1.7 ms of a paced command, 86 ms per second, 9 % of a core. With
-  10,000 readings: 206 ms per second from the hot-loop medians, 21 % of a
-  core, and each command blocks the node for 4 ms or more. With circle
-  zones: 0.2 % and 2 %.
+  polygon zones, from the hot-loop medians on macOS: 25 × 0.24 ms + 50 ×
+  3.1 ms = 161 ms of work per second, 16 % of a core (upstream: 0.04 %);
+  with the 7.5 ms of a paced command, 38 % of a core. With 10,000 readings
+  a command takes 29 ms, longer than the 20 ms between two commands: the
+  node cannot answer every command at 50 Hz, whatever the zones.
 
 ### Through the nodes
 
 Both node binaries side by side on the same topics (upstream activated
 through its lifecycle), wall-clock time, `enable_stamped_cmd_vel`, polygon
 zones. `cm_load` publishes scans at 25 Hz and commands at 50 Hz for 20 s;
-the scene changes every 2.5 s. Latency from `publish` of a command to the
-callback of a subscriber on the node's output. Microseconds.
+the scene changes every 2.5 s (nothing near, an obstacle in the slowdown
+zone, an obstacle in the stop zone). Latency from `publish` of a command to
+the callback of a subscriber on the node's output. Microseconds.
 
-macOS:
+macOS (option B, being replaced):
 
-| Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max | Answers that differ |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | lean | 851 / 1000 | 6 316 | 9 745 | 11 318 | 11 493 | 11 493 | 0 of 851 |
-| 360 | upstream | 851 / 1000 | 5 930 | 9 387 | 11 317 | 11 393 | 11 393 | 0 of 851 |
-| 1080 | lean | 851 / 1000 | 7 136 | 11 204 | 12 428 | 12 929 | 12 929 | 0 of 850 |
-| 1080 | upstream | 850 / 1000 | 5 921 | 9 046 | 11 299 | 11 362 | 11 362 | 0 of 850 |
-| 10000 | lean | 852 / 1000 | 11 728 | 14 802 | 16 532 | 19 021 | 19 021 | 0 of 852 |
-| 10000 | upstream | 852 / 1000 | 6 041 | 9 397 | 10 936 | 11 356 | 11 356 | 0 of 852 |
+| Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 360 | lean | 850 / 1000 | 8 614 | 11 725 | 14 117 | 14 792 | 14 792 |
+| 360 | upstream | 851 / 1000 | 5 971 | 9 355 | 11 271 | 11 524 | 11 524 |
+| 1080 | lean | 852 / 1000 | 10 241 | 14 035 | 16 696 | 18 683 | 18 683 |
+| 1080 | upstream | 851 / 1000 | 5 922 | 9 055 | 10 715 | 11 348 | 11 348 |
+| 10000 | lean | 532 / 1000 | 46 253 | 55 976 | 60 213 | 62 256 | 62 256 |
+| 10000 | upstream | 851 / 1000 | 6 202 | 9 206 | 10 968 | 11 319 | 11 319 |
 
-Linux (container):
+Linux (container, option B):
 
-| Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max | Answers that differ |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | lean | 851 / 1000 | 985 | 1 190 | 1 449 | 1 670 | 1 670 | 0 of 851 |
-| 360 | upstream | 851 / 1000 | 410 | 690 | 937 | 1 439 | 1 439 | 0 of 851 |
-| 1080 | lean | 851 / 1000 | 2 418 | 2 636 | 2 889 | 3 159 | 3 159 | 0 of 851 |
-| 1080 | upstream | 851 / 1000 | 371 | 559 | 840 | 1 030 | 1 030 | 0 of 851 |
-| 10000 | lean | 852 / 1000 | 7 540 | 7 812 | 9 049 | 12 448 | 12 448 | 0 of 850 |
-| 10000 | upstream | 850 / 1000 | 312 | 362 | 423 | 1 110 | 1 110 | 0 of 850 |
+| Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 360 | lean | 851 / 1000 | 3 169 | 3 558 | 3 784 | 4 467 | 4 467 |
+| 360 | upstream | 851 / 1000 | 384 | 535 | 746 | 1 750 | 1 750 |
+| 1080 | lean | 850 / 1000 | 5 804 | 6 285 | 6 990 | 7 718 | 7 718 |
+| 1080 | upstream | 850 / 1000 | 260 | 336 | 448 | 656 | 656 |
+| 10000 | lean | 678 / 1000 | 34 071 | 42 169 | 46 317 | 48 287 | 48 287 |
+| 10000 | upstream | 850 / 1000 | 235 | 281 | 368 | 843 | 843 |
 
-About 850 of 1000 commands are answered by either node: the rest fall into
-the silence after `stop_pub_timeout` in the stop scene. The two nodes gave
-the same answer to every command that both answered, on both platforms.
+Answers of the two nodes to the same command, compared by `linear.x`
+(commands that one node left unanswered are not in the comparison). macOS:
 
-On macOS the latencies are mostly those of the middleware: upstream's
-median is 6 ms and its maximum 11 ms at every size, as if messages were
-picked up on a 10 ms tick, and the Lean node's extra work shows as 0.4 ms
-of the median at 360 readings, 1.2 ms at 1080 and 5.7 ms at 10,000.
+| Readings | Answered by both | Answers differ | Lean node less restrictive | Upstream less restrictive |
+| ---: | ---: | ---: | ---: | ---: |
+| 360 | 850 | 0 | 0 | 0 |
+| 1080 | 851 | 0 | 0 | 0 |
+| 10000 | 531 | 2 | 0 | 2 |
 
-In the Linux container the middleware takes 0.3 to 0.4 ms, and the node's
-own time is what is left: the Lean node's median is 0.6 ms above upstream's
-at 360 readings, 2.0 ms at 1080 and 7.2 ms at 10,000. Its p99 stays within
-1.5 times its median (1.4, 2.9 and 9.0 ms), so it is slow and steady, not
-erratic. These differences are larger than the sum of the hot-loop medians
-of the table before (0.18, 0.60 and 6.4 ms); the paced measurement of
-`cmd_cost` accounts for it at 1080 readings (1.2 to 1.7 ms for the command
-alone; the other sizes were not measured that way). For a robot this is the number to look at: with a
-1080-reading scanner and two polygon zones the Lean node delays every
-command by about 2 ms more than upstream does, on this processor.
+Linux:
+
+| Readings | Answered by both | Answers differ | Lean node less restrictive | Upstream less restrictive |
+| ---: | ---: | ---: | ---: | ---: |
+| 360 | 851 | 0 | n/a | n/a |
+| 1080 | 850 | 0 | n/a | n/a |
+| 10000 | 677 | 1 | n/a | n/a |
+
+The Linux table is from the first of the runs made (its `cm_load` did not
+yet record the direction of a difference, hence "n/a"); the macOS tables
+are from a later run that did. Two more runs on macOS: one before the
+direction was recorded (0 of 850, 5 of 846 and 1 of 545 answers differ at
+the three sizes) and one after (none differ at any size).
+
+Reading (all of it with the exact transform in Lean, option B, which is
+being replaced; to be repeated after T05b and T06):
+
+- **Latency.** In the Linux container the middleware takes 0.2 to 0.4 ms,
+  and the node's own time is what is left: the Lean node's median is 3.2 ms
+  at 360 readings, 5.8 ms at 1080 and 34 ms at 10,000, upstream's 0.24 to
+  0.38 ms. On macOS, where upstream's median is 6 ms at every size (as if
+  messages were picked up on a 10 ms tick), the Lean node's is 8.6, 10.2
+  and 46 ms.
+- **Commands lost.** At 10,000 readings a command takes longer than the
+  20 ms between two commands, and the subscription keeps one message: the
+  Lean node answered 532 of 1000 commands on macOS and 678 in the
+  container, upstream 851 and 850 (the other 150 fall into the silence
+  after `stop_pub_timeout` in the stop scene, for both nodes). At 360 and
+  1080 readings both nodes answered the same number, within two.
+- **Answers that differ.** Both nodes decide alike on the same events, but
+  a node that is busy takes in a new scan later, so at a change of scene
+  the two can answer the same command from different scans. Seen: 9
+  commands in four runs of 20 s per size (three on macOS, one in the
+  container), 5 of them at 1080 readings and 4 at 10,000; none at 360. For the 2 whose direction was recorded, the Lean
+  node was the more restrictive (it still had the obstacle). The other
+  direction, the Lean node passing a command that upstream already stops
+  because the obstacle's scan is still waiting behind a long command
+  callback, follows from the same delay and must be expected; it was not
+  observed in the runs whose direction was recorded, and the longer run
+  that was to count it was stopped (see "What was not tested"). This is
+  not a divergence of the decision, which the random comparison covers; it
+  is the delay of defect 2 seen from outside, bounded by the time of one
+  command callback.
+- **Before the extension of the model** (commit `91c21f9`, the same
+  command, `bench/results/cm_comparison/before_t05/`): the Lean node's
+  median in the container was 0.99, 2.4 and 7.5 ms at the three sizes
+  (upstream 0.41, 0.37 and 0.31), on macOS 6.3, 7.1 and 11.7 ms (upstream
+  5.9, 5.9 and 6.0); both nodes answered 850 to 852 of 1000 commands at
+  every size and no answer differed, on either platform.
 
 ### Memory
 
-Both nodes side by side for 32 minutes: 1080-reading scans at
-200 Hz and commands at 400 Hz, i.e. 5 to 8 times the usual rates, the scene
-changing every 2.5 s through pass, slowdown and stop:
-384,000 scans and 768,000 commands, 1,152,000 messages sent. Resident set
-size and CPU time of each process from `ps` every 10 s.
+Both nodes side by side for 32 minutes: 1080-reading scans at 200 Hz and
+commands at 400 Hz, i.e. 5 to 8 times the usual rates, the scene changing
+every 2.5 s through pass, slowdown and stop: 384,000 scans and 768,000
+commands, 1,152,000 messages sent. Resident set size and CPU time of each
+process from `ps` every 10 s (193 samples). `run_cm_bench.py soak --minutes
+32`, once on each platform, on the node as merged at `b503265` (option B).
+The tables list every change.
+
+macOS:
 
 | Time | Lean node, RSS kB | Upstream, RSS kB |
 | ---: | ---: | ---: |
-| start | 26,352 | 30,416 |
-| 10 s | 26,848 | 30,688 |
-| 30 s | 26,880 | 30,704 |
-| 220 s | 26,896 | 30,736 |
-| 560 s | 26,944 | 30,784 |
-| every sample from 560 s to 1920 s | 26,944 | 30,784 |
+| start | 25,488 | 30,592 |
+| 10 s | 26,032 | 30,816 |
+| 20 s | 26,032 | 30,848 |
+| 430 s | 26,064 | 30,864 |
+| 770 s | 26,048 | 30,848 |
+| 980 s | 26,064 | 30,880 |
+| 1870 s | 26,080 | 30,896 |
+| end, 1920 s | 26,080 | 30,896 |
 
-The table lists every change in 193 samples.
+Linux (container):
 
-The Lean node's resident memory rises by 592 kB in the first ten minutes,
-in four steps, and is then constant for the remaining 22.7 minutes. Upstream
-rises by 368 kB in steps at the very same sample times, so the steps belong
-to what the two processes share (the middleware), not to the core. The Lean
-node is the smaller process here: 26.3 MB against 30.1 MB. (The 70 MB of the
-twist_mux comparison were measured on Linux as proportional set size; these
-are resident set sizes on macOS, where the Lean runtime's library is counted
-differently. Only the curve is the result.)
+| Time | Lean node, RSS kB | Upstream, RSS kB |
+| ---: | ---: | ---: |
+| start | 76,512 | 41,100 |
+| 10 s | 76,988 | 41,520 |
+| 670 s | 76,988 | 41,524 |
+| 700 s | 77,032 | 41,912 |
+| 710 s | 77,032 | 41,960 |
+| 1790 s | 77,032 | 41,968 |
+| 1820 s | 77,072 | 41,968 |
+| 1910 s | 77,072 | 41,980 |
+| end, 1920 s | 77,072 | 41,980 |
 
-CPU time over the run: Lean node 432 s (22.5 % of a core), upstream 111 s
-(5.8 %). The difference is defect 2.
+The Lean node's resident memory rises by about 0.5 MB in the first ten
+seconds and by 48 kB (macOS) and 84 kB (Linux) in the 32 minutes after
+that, in steps of 16 to 44 kB. Upstream's rises by 80 kB and 460 kB in the
+same time, and on macOS in steps at the very same samples, so those steps
+belong to what the two processes share, not to the core. In 32 minutes it
+does not grow in any way that matters; whether the last small steps would
+continue over hours was not measured. The two platforms count resident
+memory differently (26 MB on macOS, 77 MB on Linux for the same node: the
+Lean runtime's library is counted on Linux); only the curves are the
+result.
 
-Not every message sent was processed. Of the 768,000 commands the Lean node
-answered 282,882 and upstream 322,851; about 614,000 answers were to be
-expected (the rest fall into the silence of the stop scene). At 400 Hz
-several commands arrive within one of the middleware's 10 ms ticks, and a
-subscription that keeps one message hands over the last (finding 11). So
-the node processed commands at about 150 to 190 per second for 32 minutes,
-still above the usual rates. Of 164,298 commands answered by both nodes,
-192 (0.12 %) got different answers; they lie at the scene changes, where
-one node has taken in the new scan and the other not yet. The same count
-at the usual rates, above, is 0 of 2,541.
+CPU time over the run (option B, being replaced): the Lean node 1,412 s on
+macOS (74 % of a core) and 1,914 s in the container (99.7 %: it computed
+without pause); upstream 106 s (5.5 %) and 53 s (2.8 %).
 
-In process, 2 million events (`bench_cm --soak`, 1080 readings):
-{{S_inproc}}
+Not every message sent was processed, by either node: several commands
+arrive between two turns of a node's executor and a subscription that
+keeps one message hands over the last (UPSTREAM_BEHAVIOUR.md, finding 11).
+Of the 768,000 commands the Lean node answered 314,906 on macOS and 569,489
+in the container, upstream 388,463 and 614,366. Of the answers that both
+nodes gave to the same command, 202 of 215,391 differ on macOS (0.09 %) and
+210 of 569,413 in the container (0.04 %); the direction of these
+differences was not recorded in the soak (see
+[Through the nodes](#through-the-nodes) for what they are). Both processes
+were alive at the end on both platforms.
+
+A soak of the node before the extension was started and stopped when the
+integration branch changed; there is no memory curve of that node from
+this work. The in-process soak (`bench_cm --soak`) was not completed
+either; see below.
 
 ## What was not tested
 
@@ -920,8 +1036,17 @@ In process, 2 million events (`bench_cm --soak`, 1080 readings):
 - **Long runs.** 32 minutes; not hours or days.
 - **Other middlewares, a real-time kernel, a robot computer, a robot.**
 - **The cost of a paced command at sizes other than 1080 readings**, and
-  why a paced command costs four times a hot one (caches and the
+  why a paced command costs two to four times a hot one (caches and the
   processor's idle states are the likely cause; not examined).
+- **Stopped by the orchestrator on the user's decision** (the transform
+  moves to C++, so further timing of the merged node measures code that is
+  being replaced): a node-level run of 120 s per scan size on each
+  platform, which was to count in which direction answers differ at scene
+  changes (the Linux runs have no direction at all, the macOS runs 2
+  commands); the in-process soak (`bench_cm --soak`, 400,000 events) on
+  both platforms; a profile of the command path. Also not made: a memory
+  curve and a node-level direction count of the node before the extension.
+- **Everything about run time after T05b and T06.**
 - **`pixi run test` as a whole** was not run for this document (the rule of
   the task: the orchestrator runs it once at the end). What was run instead
   is in the last line of the table at the top and under
@@ -965,8 +1090,9 @@ programs by hand once and look for the lines quoted under
 `pixi run test` as a whole was not run for this document. An estimate of
 its duration on this Mac: 34 minutes, namely the 22 minutes above plus
 what the other packages took when task T01 ran the whole (24 min 25 s in
-all, of which about 13 were this package's seven tests of that time).
-`pixi run test-quick` took @@T_QUICK@@.
+all, of which this package's seven tests of that time take about 13
+today).
+`pixi run test-quick` took 7 min 9 s on macOS (11 tests, 0 failures).
 
 ```
 pixi run cm-diff               # 600 random cases beside upstream, one process; cm-diff 0 50 for fewer

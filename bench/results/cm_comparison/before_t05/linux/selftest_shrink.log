@@ -1,0 +1,12 @@
+a: /src/install/roslean_collision_monitor/lib/roslean_collision_monitor/collision_monitor
+b: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+  bound: command 27: ROSlean gives an answer that no set of points within the stated growth of the zones explains: command (0.0, 1.0, 0.0, -0.25, 0.0, 0.0) at clock 116550000000 ns, roslean (0.0, 0.0, 0.0, 0.0, 0.0, 0.0), upstream (0.0, 1.0, 0.0, 0.0, 0.0, 0.0), scan in force {'ranges': [0.39630675315856934, 0.39630675315856934, 0.39630675315856934, 0.39630675315856934], 'angle_min': -1.8907341957092285, 'angle_increment': 0.0, 'range_min': 0.05, 'range_max': 10.0, 'age': 1000000000}
+  problems: []
+  zones:       type: "polygon"       points: "[[1.5, 0.25], [1.5, -0.25], [0.125, -0.25], [0.125, 0.25]]"       action_type: "stop"       min_points: 5;       type: "polygon"       points: "[[0.75, 0.25], [0.75, -0.25], [0.125, -0.25], [0.125, 0.25]]"       action_type: "slowdown"       slowdown_ratio: 0.0       min_points: 1; tf (0.25, 0.125, False); yaw None; source_timeout 1.025; stop_pub_timeout 1.025
+FAIL  seed=0 zones=2 tf=1 yaw=None stamped=0 commands=69 boundary-dependent=9 differ=10 published-differ=10 farthest=1.196mm 64.1s
+ok    seed=1 zones=1 tf=0 yaw=None stamped=1 commands=86 boundary-dependent=4 differ=4 published-differ=4 farthest=0.082mm 13.6s
+ok    seed=2 zones=1 tf=0 yaw=None stamped=0 commands=91 boundary-dependent=6 differ=6 published-differ=7 farthest=0.118mm 17.6s
+circle zones: 419 point tests, 27 of them within 3.5 mm outside the zone; 19 answers differ because of such a point, the deciding point 0.000 to 0.118 mm outside (median 0.000)
+polygon zones: 280 point tests, 11 of them within 4.4 mm outside the zone; 1 answers differ because of such a point, the deciding point 1.196 to 1.196 mm outside (median 1.196)
+1 case(s) outside the bounds in 3 random cases, 246 commands, of which 19 depend on a point in a growth band; the two nodes demand different velocities for 20 and publish differently for 21; 0 case(s) passed only on the slow retry
+self-test: violations were reported, as they must be

@@ -1,0 +1,107 @@
+[
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 6501561,
+   "p50_ns": 6316458,
+   "p90_ns": 9745042,
+   "p99_ns": 11318000,
+   "p999_ns": 11492584,
+   "max_ns": 11492584
+  },
+  "out_upstream": {
+   "n": 851,
+   "mean_ns": 6280814,
+   "p50_ns": 5930167,
+   "p90_ns": 9387167,
+   "p99_ns": 11317083,
+   "p999_ns": 11392917,
+   "max_ns": 11392917
+  },
+  "readings": 360,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 851
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 850,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 7172710,
+   "p50_ns": 7136250,
+   "p90_ns": 11204250,
+   "p99_ns": 12427709,
+   "p999_ns": 12928833,
+   "max_ns": 12928833
+  },
+  "out_upstream": {
+   "n": 850,
+   "mean_ns": 6205397,
+   "p50_ns": 5920791,
+   "p90_ns": 9046292,
+   "p99_ns": 11299042,
+   "p999_ns": 11362042,
+   "max_ns": 11362042
+  },
+  "readings": 1080,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 850,
+   "mismatches": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 850
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 852,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 852,
+   "mean_ns": 11804802,
+   "p50_ns": 11727875,
+   "p90_ns": 14801958,
+   "p99_ns": 16531917,
+   "p999_ns": 19021042,
+   "max_ns": 19021042
+  },
+  "out_upstream": {
+   "n": 852,
+   "mean_ns": 6172502,
+   "p50_ns": 6041208,
+   "p90_ns": 9396750,
+   "p99_ns": 10936000,
+   "p999_ns": 11356500,
+   "max_ns": 11356500
+  },
+  "readings": 10000,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 852,
+   "mismatches": 0,
+   "received_out_lean": 852,
+   "received_out_upstream": 852
+  }
+ }
+]
