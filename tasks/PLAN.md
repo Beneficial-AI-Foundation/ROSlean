@@ -58,7 +58,7 @@ same row group can run at the same time.
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | merged f7fa7cf |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | merged b893cea; screenshots of the windows still to be taken by a person (the screen was locked) |
 | [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | merged; the spots that point to T10's results are checked when T10 is merged |
-| [T12](T12-fresh-machine-audit.md) | Someone with nothing but the README builds and runs it | T11 | yes | open |
+| [T12](T12-fresh-machine-audit.md) | Someone with nothing but the README builds and runs it | T11 | yes | running |
 
 ```
 T00 ─┐
@@ -135,6 +135,9 @@ Decided by the user on 2026-11-24:
 | (T08) The component dies with its container on a negative `/clock`, as upstream's does. | "As upstream" for the component; D15 is promised for the executable only, and the documentation says so |
 | (T08) State messages in the old scenario suite are not compared for the Lean node. | Leave it to `scenario_nav2.py` and `random_nav2.py`; T09 adds boundary cases for state messages there if cheap |
 | (T09) The TF buffer has a clock of its own and the node clears it at a backward clock jump (trusted node code instead of tf2's hook). | Keep; it matches upstream in every scenario |
+| (T10) With the stop zone, Nav2's own tour ended with the robot standing for good in three runs of six (both nodes; stock `approach` reached 11 places). Should the documented edit stay "a fixed stop polygon" with this said, or recommend a slowdown-only zone under a real planner? | Stays a stop polygon with a slowdown zone, with the result stated plainly in the tutorial, the README and the site. **Open for the user** |
+| (T10) The two pictures in the tutorial were made by Gazebo's own screenshot service (the 3D scene only); the screen was locked, so nobody watched a window. | Keep them, labelled as such, until a person takes screenshots at an unlocked screen |
+| (T10) One start of the Nav2 variant in 28 failed (Nav2's lifecycle manager stopped at `behavior_server` on a cold start). Should the launch file wait for the simulated clock? | Not changed; recorded |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
