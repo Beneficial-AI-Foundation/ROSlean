@@ -75,6 +75,13 @@ gazebo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_key
 cm-gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py'", depends-on = ["build"] }
 cm-gazebo-scenario = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py scenario:=true'", depends-on = ["build"] }
 cm-gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
+# Nav2's own bring-up starts the Lean monitor in the place of nav2_collision_monitor
+# (tutorial, step 7). cm-gazebo-bringup: Nav2 drives a tour. cm-gazebo-bringup-scenario: the patrol
+# script drives on Nav2's controller topic and a box is dropped in its path.
+# Upstream's node in the same variant: add monitor_package:=nav2_collision_monitor.
+# The check of this variant: pixi run cm-check --nav2
+cm-gazebo-bringup = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_nav2_launch.py \"$@\"' --", depends-on = ["build"] }
+cm-gazebo-bringup-scenario = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_nav2_launch.py driver:=patrol scenario:=true \"$@\"' --", depends-on = ["build"] }
 # With cm-gazebo running: put a box 1.2 m in front of the robot; take it away.
 cm-box-drop = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py drop'"
 cm-box-remove = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py remove'"
