@@ -1,0 +1,2 @@
+2026-11-24 13:12 branch created from origin/claude/cm-comparison; setup (pixi install, cache, build) started in background; next: read SPEC_NAV2 section 10 and the harness
+2026-11-24 13:22 scenario_nav2.py written; 34 scenarios in six families run on upstream 1.3.12 (macOS), all pass after one harness fix; next: profile for the Lean node, CMake registration, bond test, documents
