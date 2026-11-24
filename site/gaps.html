@@ -236,18 +236,51 @@ FootprintStop:
 
     <section id="interface">
       <h2>Node interface</h2>
-      <div class="table">
-        <table>
-          <thead><tr><th>Feature</th><th>Upstream</th><th>Nav2's default</th><th>This node today</th><th>To close it; size (SPEC_NAV2)</th></tr></thead>
-          <tbody>
-            <tr><td><code>~/toggle</code>, <code>enabled</code> at run time</td><td><code>toggleCMServiceCallback</code>; <code>dynamicParametersCallback</code> of zones and sources</td><td>Not used</td><td>No toggle service. Every parameter change is rejected with a reason that names ND8 and says to restart the node with the new value.</td><td>Three events and a flag in the model's state. Small.</td></tr>
-            <tr><td>Collision point markers</td><td><code>~/collision_points_marker</code> (N17)</td><td>Not used</td><td>Not published (ND9). The state topic and the zone polygons are.</td><td>The shim has the points; a publisher. Small, display only.</td></tr>
-            <tr><td>Component with protection against a negative <code>/clock</code></td><td>Upstream's process ends on such a message, as executable and as component (seen on the binary for the executable).</td><td>Bring-up loads the monitor into a container by default</td><td>The stand-alone executable goes on and answers every command with zero until a usable <code>/clock</code> message arrives (D15; test <code>roslean_fault_clock_negative</code>; <span class="kind proved">proved</span> <code>noClock_velocity</code>). The component loads and runs in the three container kinds of <code>rclcpp_components</code> (tests <code>smoke_component</code>, <code>smoke_component_single</code>, <code>smoke_component_mt</code>, macOS) but ends with its container on such a message. That last statement is read from source, not run.</td><td>The container would have to catch the exception; that is not this node's code. The stand-alone executable is the supported form.</td></tr>
-            <tr><td><code>max_points</code></td><td>Deprecated alias that overrides <code>min_points</code></td><td>Not used</td><td>Refused: <code>deprecated and not supported; use min_points (D10)</code>.</td><td>By design.</td></tr>
-            <tr><td><code>use_realtime_priority</code></td><td><code>nav2_util::setSoftRealTimePriority</code> in <code>on_configure</code></td><td>Not used</td><td>Refused when <code>true</code>: <code>real-time priority is not supported</code>.</td><td>A call in the shim. Trivial.</td></tr>
-          </tbody>
-        </table>
-      </div>
+
+      <article class="gap" id="toggle">
+        <h3><code>~/toggle</code>, and <code>enabled</code> changed at run time</h3>
+        <dl>
+          <dt>Upstream</dt><dd><code>toggleCMServiceCallback</code> in <code>src/collision_monitor_node.cpp</code>; <code>dynamicParametersCallback</code> of zones and sources.</dd>
+          <dt>Nav2's default</dt><dd>Not used.</dd>
+          <dt>This node today</dt><dd>No toggle service. Every parameter change is rejected (ND8), with a reason that says the values are those given at start-up and to restart the node with the new value.</dd>
+          <dt>To close it</dt><dd>Three events and a flag in the model's state.</dd>
+          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+        </dl>
+      </article>
+
+      <article class="gap" id="markers">
+        <h3>Collision point markers</h3>
+        <dl>
+          <dt>Upstream</dt><dd>Published on <code>~/collision_points_marker</code> (N17).</dd>
+          <dt>Nav2's default</dt><dd>Not used.</dd>
+          <dt>This node today</dt><dd>Not published (ND9). The state topic and the zone polygons are.</dd>
+          <dt>To close it</dt><dd>The shim has the points; a publisher. Display only.</dd>
+          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+        </dl>
+      </article>
+
+      <article class="gap" id="component">
+        <h3>The component, and a <code>/clock</code> message with a negative time</h3>
+        <dl>
+          <dt>Upstream</dt><dd>Under simulated time such a message ends the process: rclcpp's clock thread throws and nothing catches it. Seen on the binary for the executable (fault case <code>clock-negative</code>); for the component read from source.</dd>
+          <dt>Nav2's default</dt><dd>Nav2's bring-up loads the monitor into a component container by default.</dd>
+          <dt>This node today</dt><dd>The stand-alone executable goes on and answers every command with zero until a usable <code>/clock</code> message arrives (D15; test <code>roslean_fault_clock_negative</code>; <span class="kind proved">proved</span> <code>noClock_velocity</code>). The component <code>roslean_collision_monitor::CollisionMonitorNode</code> loads and runs in the three container kinds of <code>rclcpp_components</code> (tests <code>smoke_component</code>, <code>smoke_component_single</code>, <code>smoke_component_mt</code>, macOS) but does not have this protection: it ends with its container, as upstream's component does. That it ends is read from source, not run. The stand-alone executable is the supported form.</dd>
+          <dt>To close it</dt><dd>The container would have to catch the exception; that is not this node's code.</dd>
+          <dt>Size (estimate)</dt><dd>Not estimated.</dd>
+        </dl>
+      </article>
+
+      <article class="gap" id="small-parameters">
+        <h3><code>max_points</code> and <code>use_realtime_priority</code></h3>
+        <dl>
+          <dt>Upstream</dt><dd><code>max_points</code> is a deprecated alias that overrides <code>min_points</code>. <code>use_realtime_priority</code> sets a soft real-time priority in <code>on_configure</code>.</dd>
+          <dt>Nav2's default</dt><dd>Neither is used.</dd>
+          <dt>This node today</dt><dd>Both refused: <code>parameter '&lt;zone&gt;.max_points': deprecated and not supported; use min_points (D10)</code>, and, when it is <code>true</code>, <code>parameter 'use_realtime_priority': real-time priority is not supported</code>.</dd>
+          <dt>To close it</dt><dd><code>max_points</code>: refused by design, so that the core has one rule for the threshold (D10). Real-time priority: a call in the shim.</dd>
+          <dt>Size (estimate)</dt><dd>Real-time priority: trivial (SPEC_NAV2).</dd>
+        </dl>
+      </article>
+
       <p>Refusals are reported together: one log line of the form <code>N parameters refused: parameter 'a': …; parameter 'b': …</code>, and <code>configure</code> fails. A refused configuration that reaches the Lean core anyway stops every command (<span class="kind proved">proved</span> <code>cm_not_ok_after</code>, <code>not_ok_of_refused_call</code>).</p>
     </section>
 
@@ -370,7 +403,7 @@ FootprintStop:
       <p>The two proved statements keep the robot stopped only under assumption A3: the base holds its last command, and nothing else commands it in the meantime. It matters when another node publishes to the base during the silence (teleop, a recovery behaviour, docking), which upstream intends to allow; when the base needs fresh zeros to stay stopped; or when something reads "no zeros" as "no stop". The state topic does report the stop.</p>
       <p><strong>To close it:</strong> publish zero for every command that meets a demanded stop, without a time limit. "A demanded stop is published" then becomes a theorem and A3 is no longer needed for stops. The cost is a deliberate difference from upstream: an outside system can no longer take over the velocity topic while the obstacle is in the stop zone and the planner is still commanding, and the comparison tests must leave these cases out. A parameter with upstream's behaviour as the default would keep both. Size (estimate, this page): one condition in the model's <code>step</code>, and the theorems about <code>stop_pub_timeout</code> in <code>Trace.lean</code> and <code>Properties.lean</code> restated; small beside the items above. The full note is <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/findings/stop_pub_timeout_theorem.md"><code>findings/stop_pub_timeout_theorem.md</code></a>.</p>
 
-      <h3>Decided by the user: as upstream</h3>
+      <h3>Decided by the user</h3>
       <div class="table">
         <table>
           <thead><tr><th>Question</th><th>Behaviour of the node</th><th>What the other choice would be</th></tr></thead>
