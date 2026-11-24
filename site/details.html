@@ -471,8 +471,42 @@
           </tbody>
         </table>
       </div>
-      <p class="note">macOS arm64, an earlier version of the node, which took the lidar's pose from a parameter. With the node as a lifecycle node that takes the pose from TF the check was run once, before the last fixes, and passed. The original's node passed the same check in four runs of four, at rest 0.253 to 0.257 m from the box. With a lidar noise of 1 cm and this few runs that is not a measurement of the difference between the two.</p>
-      <p>What the demo does not show: the stopping distance is that of Gazebo's drive, which takes the commanded speed at once; the zones were sized by hand and nothing relates them to a braking distance; the lidar scans one plane; it is one head-on approach at one speed. After the monitor has gone silent the robot stays put because Gazebo's drive holds the last command, a zero, and because the demo has a base watchdog. <!-- T10: the next sentence points to the tutorial for the Nav2 variant and states no result. Check at the merge. -->The <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">tutorial</a> has the steps, and the variant in which Nav2's own bring-up launches the Lean node in place of its monitor.</p>
+      <p class="note">macOS arm64, an earlier version of the node, which took the lidar's pose from a parameter. With the node as it is now, a lifecycle node that takes the pose from TF: three runs, three passed, first zero at 0.253 to 0.260 m, 0 to 2 mm moved after it, at rest 0.254 to 0.260 m. The original's node, measured like the table before the Lean node read TF, passed the same check in four runs of four, at rest 0.253 to 0.257 m from the box. With a lidar noise of 1 cm and this few runs that is not a measurement of the difference between the two.</p>
+      <p>What the demo does not show: the stopping distance is that of Gazebo's drive, which takes the commanded speed at once; the zones were sized by hand and nothing relates them to a braking distance; the lidar scans one plane; it is one head-on approach at one speed. After the monitor has gone silent the robot stays put because Gazebo's drive holds the last command, a zero, and because the demo has a base watchdog. The <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">tutorial</a> has the steps.</p>
+
+      <h3 id="cm-demo-nav2">Launched by Nav2</h3>
+      <p>In a second variant there is no mux and no base watchdog: Nav2's own bring-up (<code>use_composition:=False</code>, <code>navigation_launch.py</code> with the package name changed in one line) starts the Lean node as its collision monitor. Nav2's <code>FootprintApproach</code> zone is replaced by two fixed polygons, a stop zone reaching 0.305 m ahead of the base's origin and a slowdown zone (ratio 0.4) reaching 0.705 m. <code>pixi run cm-check --nav2</code> runs the box scenario on Nav2's topics, with the patrol script publishing on the controller's topic, and first checks that Nav2's lifecycle manager activated the node and that the process is the Lean executable.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>The check of the Nav2 variant</th><th class="n">Lean node, 10 runs</th><th class="n">Original node, 4 runs</th></tr></thead>
+          <tbody>
+            <tr><td>Runs that failed</td><td class="n">0</td><td class="n">0</td></tr>
+            <tr><td>True speed before the box</td><td class="n">0.170 to 0.176 m/s</td><td class="n">0.172 to 0.176 m/s</td></tr>
+            <tr><td>True speed in the slowdown zone</td><td class="n">0.071 to 0.072 m/s</td><td class="n">0.072 m/s</td></tr>
+            <tr><td>Gap to the box when the first zero was published</td><td class="n">0.270 to 0.283 m</td><td class="n">0.268 to 0.281 m</td></tr>
+            <tr><td>Distance moved after the first zero</td><td class="n">0 to 11 mm</td><td class="n">1 to 13 mm</td></tr>
+            <tr><td>Gap at rest</td><td class="n">0.269 to 0.275 m</td><td class="n">0.267 to 0.270 m</td></tr>
+            <tr><td>Runs in which the decision went back from stop to slowdown, once or twice</td><td class="n">7</td><td class="n">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">macOS arm64, the final node, the original 1.3.12 from the unedited launch file with the same parameters, without windows (task T10; tutorial, 7.4). Not in the table: two starts made while the variant was written. The first, in a freshly installed environment, failed: the simulator took 40 s to load, Nav2's lifecycle manager stopped at <code>Configuring behavior_server</code>, the monitor was never activated, and the check gave up after 228 s. It did not recur in 27 further starts. The two nodes cannot be told apart by these numbers.</p>
+      <p>The same variant with Nav2 planning and driving a tour of five places, 300 simulated seconds a run:</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Monitor and zones</th><th class="n">Run</th><th class="n">Places reached</th><th class="n">Distance</th><th>At the end</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="3">Lean node, stop and slowdown zone</td><td class="n">1</td><td class="n">1</td><td class="n">10.1 m</td><td>standing</td></tr>
+            <tr><td class="n">2</td><td class="n">1</td><td class="n">10.8 m</td><td>standing</td></tr>
+            <tr><td class="n">3</td><td class="n">8</td><td class="n">38.6 m</td><td>driving</td></tr>
+            <tr><td rowspan="3">Original node, the same zones</td><td class="n">1</td><td class="n">8</td><td class="n">38.9 m</td><td>driving</td></tr>
+            <tr><td class="n">2</td><td class="n">2</td><td class="n">13.5 m</td><td>standing</td></tr>
+            <tr><td class="n">3</td><td class="n">5</td><td class="n">28.9 m</td><td>driving</td></tr>
+            <tr><td>Original node, <code>FootprintApproach</code> (stock Nav2)</td><td class="n">1</td><td class="n">11</td><td class="n">47.4 m</td><td>driving</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>With the stop zone the tour ended with the robot standing for good in three runs of six, with both nodes.</strong> Each time near the second place of the tour. Nav2 reports <code>Failed to make progress</code> and runs its spin and back-up recoveries; the monitor answers those with zero as well, because in a stop zone every command becomes zero; the goal is aborted and sent again. The stops follow the rule and are not a defect of either node. Stock Nav2 with <code>approach</code>, which lets a command that leads away from the obstacle pass, reached 11 places in its one run and never stood. Three runs each do not compare the two nodes, and one run of stock Nav2 is no statistic; what the runs show is that a stop zone is not a substitute for <code>approach</code> under a planner. Nobody has watched either variant in a window: the screen of the machine was locked during the runs.</p>
     </section>
 
     <section id="cm-performance">
@@ -488,7 +522,7 @@
           </tbody>
         </table>
       </div>
-      <p class="note">Median per command, both nodes' callback bodies in one process on the same messages, nothing in a zone, the identity as the transform; one Apple M5, macOS arm64, 2026-11-24. Not a robot computer: compare the columns with each other. In a Linux arm64 container on the same machine an earlier version of the command path measured 4.2 to 6.4 times the original's. Nothing was timed on x86-64.</p>
+      <p class="note">Median per command, both nodes' callback bodies in one process on the same messages, nothing in a zone, the identity as the transform; one Apple M5 Pro, macOS arm64, 2026-11-24. Not a robot computer: compare the columns with each other. In a Linux arm64 container on the same machine an earlier version of the command path measured 4.2 to 6.4 times the original's. Nothing was timed on x86-64.</p>
       <div class="table">
         <table>
           <thead><tr><th>Aspect</th><th>Finding</th></tr></thead>
@@ -506,7 +540,7 @@
 
     <section id="more">
       <h2>Further reading</h2>
-      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL.md">Tutorial</a>: from an empty machine to the turtlesim experiment. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_GAZEBO.md">Gazebo tutorial</a>: the same on a TurtleBot3 with Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">Collision monitor tutorial</a>: the monitor behind the mux in Gazebo. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/PLAN.md">Development plan</a> and lessons learned. <a href="docs/">API documentation</a> generated from the Lean sources.</p>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL.md">Tutorial</a>: from an empty machine to the turtlesim experiment. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_GAZEBO.md">Gazebo tutorial</a>: the same on a TurtleBot3 with Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">Collision monitor tutorial</a>: the monitor behind the mux in Gazebo, and launched by Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/PLAN.md">Development plan</a> and lessons learned.</p>
       <p><a href="./#twist_mux">Back to the overview</a> · <a href="gaps.html">Collision monitor: what is missing</a></p>
     </section>
   </main>

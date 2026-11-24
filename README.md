@@ -81,22 +81,42 @@ Both:
 
 ## Quick start
 
-Requires [elan](https://github.com/leanprover/elan) and
-[pixi](https://pixi.sh), both on `PATH`. The ROS 2 Jazzy environment
-(RoboStack, with Nav2 and Gazebo; about 6 GB) is installed into `.pixi/` on
-first use, and the first `pixi run prove` also downloads Mathlib.
+Requires `git`, `curl`, [elan](https://github.com/leanprover/elan) and
+[pixi](https://pixi.sh), with `lake` and `pixi` on `PATH` (each installer
+adds its directory to the `PATH` of new shells only, so open a new terminal
+after installing). On macOS, `git` comes with the Xcode command line tools.
+The ROS 2 Jazzy environment (RoboStack, with Nav2 and Gazebo; 4.5 GB on
+macOS arm64, 6 GB on Linux arm64, and up to as much again in pixi's download
+cache) is installed into `.pixi/` on first use; the first build also
+downloads the Lean toolchain (3 GB in `~/.elan`), and the first
+`pixi run prove` downloads Mathlib (8 GB in `.lake/`). Altogether a fresh
+machine needs about 21 GB of disk; the demos need a display. On Linux the
+build needs two more steps for now: see "What has been run where".
 
 ```sh
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git && cd ROSlean
 pixi run build        # lake build of the core + colcon build of the ROS packages
 pixi run test-quick   # the tests without the long comparisons with upstream; about 7 minutes
-pixi run test         # all tests; about 20 minutes before the collision monitor's Nav2 extension, longer now
+pixi run test         # all tests; about 40 minutes
 pixi run prove        # check all theorems (first run fetches or builds Mathlib)
 pixi run demo         # turtlesim driven through the Lean-backed mux
 ```
 
 What has been run where:
 
-- **macOS arm64:** everything.
+- **macOS arm64:** everything. From a fresh clone with an empty home
+  directory (the audit, [docs/AUDIT.md](docs/AUDIT.md)): build, proofs,
+  `pixi run test` with `29 tests, 0 errors, 0 failures`, the turtlesim demo
+  and the three Gazebo checks.
+- **Linux arm64 through pixi** (the same audit; a plain `ubuntu:24.04`
+  container in Docker on that Mac): **`pixi run build` fails as the tree
+  is**, first for want of `strip`, then linking `test_cm_ffi`. With
+  `apt-get install binutils` and, in an empty build tree,
+  `pixi run bash -c 'export LDFLAGS="$LDFLAGS -pthread"; colcon build --symlink-install --base-paths ros --cmake-args -G Ninja'`
+  it builds, and `pixi run test` gives `28 tests, 0 errors, 0 failures`
+  (beside upstream 1.3.13, which is what `pixi.lock` pins on Linux).
+  `pixi run prove` needs neither step. The demos and `pixi run cm-check`
+  need a display.
 - **Linux x86-64** (Ubuntu 24.04, through pixi): twist_mux: `pixi run build`
   and `pixi run test` pass and the turtlesim demo runs. The collision
   monitor: one cloud session ran build, all tests then present (11 tests,
@@ -122,7 +142,9 @@ pixi run bash -c 'source install/setup.bash && ros2 launch roslean_collision_mon
   collision_monitor_launch.py params_file:=ros/roslean_collision_monitor/config/example.yaml'
 ```
 
-or by hand (it is a lifecycle node and does nothing until activated):
+or by hand (it is a lifecycle node and does nothing until activated), in
+two terminals inside the environment (`pixi run bash`, then
+`source install/setup.bash`):
 
 ```sh
 ros2 run roslean_collision_monitor collision_monitor --ros-args \
@@ -140,7 +162,7 @@ toolchain or to this checkout. Built normally (without `--symlink-install`,
 which `pixi run build` uses for development), it can be copied to another
 machine of the same OS and architecture that has ROS 2 Jazzy.
 
-- **macOS:** the runtime is linked statically into `libroslean_core` (4 MB).
+- **macOS:** the runtime is linked statically into `libroslean_core` (2.5 MB).
 - **Linux:** Lean's static runtime cannot be put in a shared library, so a
   stripped copy of Lean's shared runtime, `libleanshared.so` (about 190 MB),
   is installed next to `libroslean_core.so`.
@@ -158,9 +180,12 @@ runs the tests including the comparison with apt's `ros-jazzy-twist-mux`, and
 checks that the install tree is self-contained; the build fails if any of
 that fails. The final image holds ROS and the install tree only.
 `--build-arg RUN_TESTS=0` skips the tests. The collision monitor is in the
-same image. With the collision monitor in its present form the image has
-been built on arm64 with `RUN_TESTS=0` only; its tests have not been run in
-this image since the Nav2 extension.
+same image. With the collision monitor in its present form the image was
+built once on arm64 with the tests (the audit, docs/AUDIT.md): `28 tests,
+0 errors, 0 failures` beside apt's `nav2_collision_monitor` 1.3.14 and
+`twist_mux` 4.5.0, 39 minutes in all; four scenarios that need
+`nav2_bringup`'s parameter file are not run there. Not built on x86-64 in
+this form.
 
 Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
 `colcon build --base-paths ros` in this directory, which is what the
@@ -213,11 +238,23 @@ pixi run cm-check --monitor nav2_collision_monitor   # the same with upstream's 
 
 See [docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md),
 which also covers Nav2 as the planner and Nav2 launching the Lean node in
-place of its own monitor. The check passed in nine runs of nine on macOS
+place of its own monitor (section 7; `pixi run cm-gazebo-bringup`,
+`pixi run cm-check --nav2`). The check passed in nine runs of nine on macOS
 with an earlier version of the node (the robot at rest 0.255 to 0.268 m from
-the box, 0 to 14 mm after the first zero command) and in one run with the
-node as a lifecycle node. It shows the rule at work in one head-on approach
-in simulation; it is not evidence that a robot does not collide.
+the box, 0 to 14 mm after the first zero command) and in three runs of three
+with the node as a lifecycle node that reads TF (at rest 0.254 to 0.260 m,
+0 to 2 mm). It shows the rule at work in one head-on approach in simulation;
+it is not evidence that a robot does not collide.
+
+In the variant in which Nav2's own bring-up starts the monitor
+(`cm-check --nav2`, a stop and a slowdown zone), the same check passed in
+ten runs of ten with the Lean node and in four of four with upstream's node
+on the same parameters (at rest 0.269 to 0.275 m and 0.267 to 0.270 m from
+the box). One start before these, the first in a freshly installed
+environment, failed: Nav2's lifecycle manager did not get past
+`behavior_server` and the monitor was never activated. With Nav2 itself
+driving a tour through these zones the outcome was different: in three runs
+of six the robot ended standing for good. See [Under Nav2](#under-nav2).
 
 ## twist_mux: what is proved
 
@@ -379,7 +416,7 @@ where it was. One difference is a delay, not a decision: ND3.
 `FootprintApproach`, with `action_type: approach`. The Lean node refuses it:
 
 ```
-1 parameter refused: parameter 'FootprintApproach.action_type': only 'stop' and 'slowdown' are supported; got 'approach'. (…)
+2 parameters refused: parameter 'FootprintApproach.action_type': only 'stop' and 'slowdown' are supported; got 'approach'. (…); parameter 'FootprintApproach.polygon_sub_topic': is not initialized, and the zone has no 'points': (…)
 ```
 
 Changing only `action_type` to `stop` does not configure either, on
@@ -411,14 +448,33 @@ executable's `main`.
 
 With this edit Nav2's lifecycle manager configured, activated and bonded
 the node, and it stopped and released a command (review CM5; macOS,
-scripted scan, no simulator). For the run with a simulated robot see
-[docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md).
-The robot then stops where stock Nav2 would slow down in proportion to the
-time before a predicted collision.
+scripted scan, no simulator).
+
+With a simulated robot (Gazebo, TurtleBot3, macOS;
+[docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md),
+section 7): Nav2's bring-up started the Lean node as its collision monitor,
+with a stop and a slowdown zone in place of `FootprintApproach`. The
+automated check of the box scenario (`pixi run cm-check --nav2`) passed in
+ten runs of ten, and in four of four with upstream's node on the same
+parameters. The first start of all, in a freshly installed environment,
+failed before the monitor was activated: Nav2's lifecycle manager stopped at
+`Configuring behavior_server`. That did not recur in 27 further starts.
+
+**A stop zone is not a substitute for `approach`.** The robot stops where
+stock Nav2 slows down in proportion to the time before a predicted
+collision, and in a stop zone every command becomes zero, including the turn
+or the retreat that would clear the zone, and including Nav2's recovery
+behaviours. With Nav2 driving a tour of the apartment for 300 simulated
+seconds through these zones, **the robot ended standing for good in three
+runs of six**: in two of three runs with the Lean node (1, 1 and 8 places
+reached) and in one of three with upstream's node on the same zones (8, 2
+and 5 places). Stock Nav2 with `approach` reached 11 places in its one run
+and did not stand. Three runs each do not compare the two nodes; the
+standing is what a `stop` zone does under a planner, with either node.
 
 ### Cost and platforms
 
-In process, on one Apple M5 (macOS arm64), a command costs 6 to 9 times
+In process, on one Apple M5 Pro (macOS arm64), a command costs 6 to 9 times
 upstream's: 48.9 µs against 7.2 µs with 1080 stored readings and two polygon
 zones. In the Linux arm64 container an earlier version of the command path
 measured 4.2 to 6.4 times upstream's. Both are inside the budget set in
