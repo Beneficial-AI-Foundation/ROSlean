@@ -17,5 +17,5 @@ import ROSlean.CollisionMonitor.Properties
 import ROSlean.CollisionMonitor.Lifecycle
 import ROSlean.CollisionMonitor.Trace
 import ROSlean.CollisionMonitor.Convert
-import ROSlean.CollisionMonitor.Transform
+import ROSlean.CollisionMonitor.Margin
 import ROSlean.CollisionMonitor.FFI
