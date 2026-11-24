@@ -16,6 +16,11 @@
 // where the median must be below the limit. 25 ns is three times what the
 // circle path needs and several times upstream's whole cost per reading.
 //
+// The commands are timed back to back, which is the most favourable case.
+// A node gets one command every 20 ms or so and finds caches cold and the
+// processor idle; the program also reports the median of 100 commands sent
+// 20 ms apart (reported only: it depends on the machine's power management).
+//
 // Exit code 0 iff the polygon path is within the limit.
 
 #include <algorithm>
@@ -25,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -40,8 +46,9 @@ using roslean_collision_monitor::put_le;
 constexpr size_t kReadings = 1080;
 constexpr int kCommands = 400;
 
-// Nanoseconds per reading and zone for a command, median of kCommands.
-double measure(bool polygons)
+// Nanoseconds per reading and zone for a command: the median of kCommands
+// sent back to back, or of 100 sent `pace_ms` apart.
+double measure(bool polygons, int pace_ms = 0)
 {
   CollisionMonitor::Builder b;
   b.set_source(true, 0.0, std::nullopt);
@@ -75,7 +82,11 @@ double measure(bool polygons)
   m.on_scan(0, 0, true, roslean::bits_of(0.05f), roslean::bits_of(30.0f), rec.data(), rec.size());
   std::vector<double> ns;
   bool passed = true;
-  for (int k = 0; k < kCommands + 40; ++k) {
+  const int commands = pace_ms ? 100 : kCommands;
+  for (int k = 0; k < commands + 40; ++k) {
+    if (pace_ms && k >= 40) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(pace_ms));
+    }
     const auto t0 = std::chrono::steady_clock::now();
     const auto out = m.on_cmd(0, roslean::bits_of(0.5), 0, 0, 0, 0, 0);
     const auto t1 = std::chrono::steady_clock::now();
@@ -99,14 +110,22 @@ int main(int argc, char ** argv)
   const double limit = argc > 1 ? std::strtod(argv[1], nullptr) : 25.0;
   const double circles = measure(false);
   const double polygons = measure(true);
+  const double circles_paced = measure(false, 20);
+  const double polygons_paced = measure(true, 20);
+  const double us = kReadings * 2 / 1000.0;
   std::printf(
-    "a command with %zu stored readings, median of %d, per reading and zone:\n"
-    "      two circles          %7.1f ns  (%.1f us per command)\n"
-    "      two 4-vertex polygons %6.1f ns  (%.1f us per command)\n",
-    kReadings, kCommands, circles, circles * kReadings * 2 / 1000,
-    polygons, polygons * kReadings * 2 / 1000);
+    "a command with %zu stored readings, per reading and zone (and per command):\n"
+    "      back to back, median of %d\n"
+    "        two circles           %6.1f ns  (%.1f us)\n"
+    "        two 4-vertex polygons %6.1f ns  (%.1f us)\n"
+    "      one every 20 ms, median of 100\n"
+    "        two circles           %6.1f ns  (%.1f us)\n"
+    "        two 4-vertex polygons %6.1f ns  (%.1f us)\n",
+    kReadings, kCommands, circles, circles * us, polygons, polygons * us,
+    circles_paced, circles_paced * us, polygons_paced, polygons_paced * us);
   const bool ok = polygons <= limit;
   std::printf(
-    "%s  polygon zones cost at most %.0f ns per reading and zone\n", ok ? "ok  " : "FAIL", limit);
+    "%s  polygon zones cost at most %.0f ns per reading and zone, back to back\n",
+    ok ? "ok  " : "FAIL", limit);
   return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

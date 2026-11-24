@@ -11,54 +11,78 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
 
 - *Behaviour.* In every fixed scenario and every random case the Lean node
   differs from upstream only where the SPEC says it does. No divergence in
-  the unsafe direction was found: in {{R_cmds}} commands of {{R_cases}}
-  random cases, and in 34 million point tests against the core, upstream
-  never stopped or slowed where the Lean node did not. The zones grow as
-  stated and no more: the farthest point outside upstream's zone that the
-  core counted was 3.41 mm for a circle (bound 3.5) and 4.17 mm for a
-  polygon (bound 4.4).
-- *Defects.* A `/clock` message with a negative time aborts the node (as
-  it aborts upstream). The node's command path is slow for polygon zones,
-  about 200 ns per reading and zone, 50 to 65 times upstream's: with a
-  1080-reading scan and two polygons a command takes 0.43 ms, with 10,000
-  readings 4.0 ms. And two matters of the build: the shim is compiled
-  without optimisation, and on macOS it then computes 2.6 % of the scan
-  points one float32 step away from upstream's, far inside the margin of D4.
+  the unsafe direction was found: in 65,056 commands of 720 random cases,
+  run on each of two platforms, and in 34 million point tests against the
+  core on each, upstream never stopped or slowed where the Lean node did
+  not. The zones grow as stated and no more: the farthest point outside
+  upstream's zone that the core counted was 3.409 mm for a circle (bound
+  3.5) and 4.167 mm for a polygon (bound 4.4).
+- *Defects, open.* Two. A `/clock` message with a negative time aborts the
+  node (as it aborts upstream). And the node's command path is slow for
+  polygon zones: about 200 ns per reading and zone in a hot loop, 50 to 70
+  times upstream's, and about four times that again at the rate a node is
+  really called. With a 1080-reading scan and two polygons a command takes
+  0.4 ms back to back and 1.2 to 1.7 ms when commands come 20 ms apart;
+  through the nodes on Linux the Lean node's median latency is 2.4 ms
+  where upstream's is 0.4 ms.
+- *Defects, fixed since the first draft of this document.* The shim was
+  compiled without optimisation, and on macOS it then computed 2.6 % of the
+  scan points one float32 step away from upstream's. The package now builds
+  optimised by default (review CM3/CM4, finding 5); both were re-measured
+  here and are gone.
 - *Memory.* Resident memory of the node over 32 minutes of load
-  (1.15 million messages sent to it): 26.25 MB after the first minute,
-  26.31 MB from the tenth minute to the end. Over 2 million events in
-  process it does not move at all. It does not grow.
+  (1.15 million messages sent to it): @@MEM_SHORT@@
 - *The two documents.* SPEC and UPSTREAM_BEHAVIOUR.md contradict each other
   in one place (how often a timeout is converted); the binary sides with the
   SPEC. Every statement that only the SPEC makes and that could be put to
-  the binary was confirmed (18 new scenarios).
+  the binary was confirmed (18 new scenarios), by both versions of upstream
+  that were run.
 
-Run on 2026-11-23 on macOS 26.7 arm64 (Apple M5 Pro, 18 cores), ROS 2 Jazzy
-from RoboStack through pixi, Fast DDS, `nav2_collision_monitor` 1.3.12, Lean
-4.37.0-rc1. Other work ran on the machine at the same time (see
-[Measurements](#measurements)). Nothing here was run on Linux.
+Everything was run on 2026-11-24, on two platforms, with the Lean node as
+on the branch `collision-monitor` after the fixes of the review CM3/CM4
+(Lean 4.37.0-rc1):
+
+| | macOS | Linux |
+| --- | --- | --- |
+| Machine | Apple M5 Pro, 18 cores, macOS 26.7.2, arm64 | the same machine: Docker Desktop 29.9.3, a Linux virtual machine (kernel 7.0.14-linuxkit, aarch64, 18 cores, 8 GB), container with Ubuntu 24.04.5 |
+| ROS 2 Jazzy | RoboStack through pixi (`pixi.lock`) | the ROS apt repository (`ros:jazzy-ros-base`) |
+| `nav2_collision_monitor` | 1.3.12 | 1.3.14 |
+| Middleware | Fast DDS 2.14.6 | Fast DDS 2.14.7 |
+| Compiler | clang 21.1.8 from pixi | gcc 13.3.0 |
+| How | `pixi run build`, then the commands below | `bench/cm_linux/Dockerfile`, `bench/cm_linux/run.sh` |
+
+The Linux runs are a container on a Mac, not a Linux computer: the
+architecture is arm64 and the kernel is Docker's. Nothing was run on
+x86-64, on a robot computer or on a real-time kernel. Logs of every run
+named here are in `bench/results/cm_comparison/`.
 
 ## What was run
 
-| What | Command | Result |
-| --- | --- | --- |
-| Lean node, fixed scenarios and probes | `scenario.py NODE --profile profile_roslean` (ctest `roslean_scenario`) | {{C_scen}} |
-| Upstream, fixed scenarios, after the changes to the harness | `scenario.py` | 55 scenarios, 277 checks, 0 failures |
-| Reference node, after the changes | `scenario.py reference_node.py --no-tf --skip negative-stamp` | 45 scenarios, 238 checks, 0 failures |
-| Upstream, statements that only the SPEC makes | `scenario.py --profile profile_upstream --own` (ctest `upstream_probes`) | 18 scenarios, 48 checks, 0 failures |
-| Lean node beside upstream, random | `random_diff.py NODE UPSTREAM 0 600 --roslean` (`pixi run cm-diff`) | {{R_line}} |
-| The same with the scan frame turned | `… 1000 1120 --roslean --yaw` | {{Y_line}} |
-| Can that test fail? | `… 0 3 --roslean --self-test swap`, `… shrink` | {{T_line}} |
-| Core against upstream's zone tests, point by point | `band_bounds 100000 7` (ctest `band_bounds` with 20,000) | 34.0 million points, 340 zones: both bounds hold |
-| Fault injection, both nodes | `fault_injection.py NODE UPSTREAM --big` (ctest `roslean_fault_injection`; `pixi run cm-faults`) | 23 cases, 124 checks, as expected; one case kills the node |
-| Quality of service and bursts | `probe_qos.py NODE --no-state-topic` | as upstream |
-| Per-call latency in process | `run_cm_bench.py core` | [below](#per-call-latency) |
-| Latency through the nodes | `run_cm_bench.py node` | [below](#through-the-nodes) |
-| Memory | `run_cm_bench.py soak --minutes 32` | [below](#memory) |
-
 `NODE` is `roslean_collision_monitor/collision_monitor`, `UPSTREAM` is
-`nav2_collision_monitor/collision_monitor`. The registered tests are listed
-under [Running it](#running-it).
+`nav2_collision_monitor/collision_monitor`; the scripts are in
+`ros/roslean_collision_monitor/test/`. On macOS each line was run as
+`ROS_DOMAIN_ID=… pixi run bash -c 'source install/setup.bash && python3 …'`;
+on Linux by the step of `bench/cm_linux/run.sh` given in the last column.
+
+| What | Command | macOS | Linux | Step |
+| --- | --- | --- | --- | --- |
+| Lean node, fixed scenarios and probes | `scenario.py NODE --profile profile_roslean` (ctest `roslean_scenario`) | 77 scenarios, 318 checks, 0 failures; 1 not run (replaced) | the same | `scenarios` |
+| Upstream, fixed scenarios | `scenario.py UPSTREAM` | 55 scenarios, 277 checks, 0 failures | the same | `scenarios` |
+| Reference node | `scenario.py reference_node.py --no-tf --skip negative-stamp` | 45 scenarios, 238 checks, 0 failures; 9 skipped (transforms) | the same | `scenarios` |
+| Upstream, statements that only the SPEC makes | `scenario.py UPSTREAM --profile profile_upstream --own` (ctest `upstream_probes`) | 18 scenarios, 48 checks, 0 failures | the same | `scenarios` |
+| Lean node beside upstream, random | `random_diff.py NODE UPSTREAM A B --roslean`, seeds 0 to 599 in six processes of 100 | 0 cases outside the bounds, 54,043 commands; 1 case passed only on the slow retry | 0 cases outside the bounds, 54,043 commands; none retried | `random` |
+| The same with the scan frame turned | `… --roslean --yaw`, seeds 1000 to 1119 in two processes | 0 cases outside the bounds, 11,013 commands | the same | `random` |
+| Can that test fail? | `… 0 3 --roslean --self-test swap`, `… shrink` | violations reported in 3 of 3 cases, and in 1 of 3 | the same | `selftest` |
+| Core against upstream's zone tests, point by point | `band_bounds 100000 7` (ctest `band_bounds` with 20,000) | 34.0 million points, 340 zones: both bounds hold | the same | `points` |
+| Fault injection, both nodes | `fault_injection.py NODE UPSTREAM --big` (ctest `roslean_fault_injection` without the large scans; `pixi run cm-faults`) | 23 cases, 124 checks, 122 as expected; one case kills the node (2 checks) | the same | `faults` |
+| Quality of service and bursts | `probe_qos.py NODE --no-state-topic`, `probe_qos.py UPSTREAM` | as upstream | as upstream | `qos` |
+| Cost of a command per reading and zone | `cmd_cost` (ctest `roslean_cmd_cost`, expected to fail) | [below](#defects) | below | `ctest` |
+| Per-call latency in process | `run_cm_bench.py core` | [below](#per-call-latency) | below | `bench` |
+| Latency through the nodes | `run_cm_bench.py node` | [below](#through-the-nodes) | below | `bench` |
+| Memory | `run_cm_bench.py soak --minutes 32`; `bench_cm --which lean --scan slow --soak 100000 --iters 1000000 --warmup 0` | [below](#memory) | below | `soak` |
+| The registered tests | `colcon test --base-paths ros --packages-select roslean_collision_monitor` | @@CTEST_MAC@@ | @@CTEST_LINUX@@ | `ctest` |
+
+The registered tests are listed under [Running it](#running-it).
 
 ## Behavioural differences from Nav2
 
@@ -82,11 +106,10 @@ or the random test.
 | D13 | `state_topic` publishes the acting zone | parameter refused; no state messages | `roslean-state-topic`; no scenario checks a state message for the Lean node |
 | D14 | a refused configuration fails the `configure` transition | exit code 1 | all refusals above, `triangle`, `probe-wrong-type` |
 
-New differences, not recorded in the SPEC: **none in behaviour.** What the
-SPEC does not say is listed under [Defects](#defects): the abort on a
-negative `/clock` (the same as upstream, so not a difference), the run time
-of the command path, and scan points that differ from upstream's in the
-last bit (invisible in every answer).
+New differences, not recorded in the SPEC: **none in behaviour**, on either
+platform. What the SPEC does not say is listed under [Defects](#defects):
+the abort on a negative `/clock` (the same as upstream, so not a
+difference) and the run time of the command path.
 
 Not observable from outside and so not confirmed here: D6(b) (which action
 the core reports for a zero command in a slowdown zone; the published bits
@@ -104,8 +127,9 @@ NaN (accepted, never applied); a disabled source or zone; the default
 upstream's double conversion loses; negative zeros in commands and in
 slowed commands; the clock before the first `/clock` message; a backward
 jump of the clock; quality of service; and how many commands of a burst
-are answered (of 100 sent back to back: Lean 7 to 10, upstream 2 to 10; of
-1000: Lean 22 and 22, upstream 37 and 27).
+are answered (of 100 sent back to back, five times: Lean 10 to 12 and
+upstream 5 to 10 on macOS, both 10 every time on Linux; of 1000: Lean 32
+and 24, upstream 33 and 23 on macOS, 10 for both on Linux).
 
 ## Fixed scenarios
 
@@ -116,7 +140,23 @@ and has no transforms (D11), so the harness was extended: a *profile*
 is expected to differ and the number of the difference, the scenarios the
 node must refuse, and what replaces a transform. Everything else must be
 exactly as upstream, and a stated difference that does not occur is a
-failure as well. With the profile the node passes: {{C_scen}}.
+failure as well. With the profile the node passes on both platforms: 77
+scenarios (54 of the 55, the 5 of the profile and the 18 probes), 318
+checks, 0 failures. The checks that carry a stated difference, by number:
+D1 1, D4 17, D5 3, D6 1, D8 1, D9 2, D10 2, D11 7, D13 1.
+
+What the profile may say was read entry by entry for this document. Every
+entry names a numbered difference; there is no entry that switches a
+scenario off without a replacement (the one scenario not run,
+`boundary-vertices`, is replaced by four). Two things were tightened:
+
+- A refusal must be for the stated reason. The 12 scenarios that the
+  profile expects to be refused name the parameter, and the harness requires
+  the node's message `1 parameter refused: parameter '<name>'`, so a node
+  that exits for another reason, or refuses two parameters, fails (12 of
+  the 318 checks).
+- An entry whose expected answer is upstream's own answer is an error: it
+  would be counted as a difference without being one.
 
 Of the 55 scenarios:
 
@@ -139,9 +179,10 @@ distinguish "one float32 step inside" from "on the boundary", and so pin
 down float32 products and the running sum of angles (finding 13). For the
 Lean node both sides of every such pair are inside (D4), so these scenarios
 no longer test its arithmetic to the last bit. That is done by
-`smoke_conversions.cpp` on the shim's `encode_scan`, and statistically by
-the random test, where a point less than a micrometre outside a boundary
-decided {{R_tiny}} answers.
+`smoke_conversions.cpp` on the shim's `encode_scan` (against a copy of
+upstream's loop, bit for bit), and statistically by the random test, where
+a point less than a micrometre outside a boundary decided 361 answers on
+macOS and 363 on Linux.
 
 ## Random cases, Lean node beside upstream
 
@@ -179,55 +220,96 @@ their answers command by command. For this comparison (`--roslean`):
   outputs, because after a legitimate difference the two nodes can be at
   different points of that period.
 
-Results, seeds 0 to 599:
+  Bound G is asserted as stated, with no allowance beyond the nanometre
+  just mentioned. (The first draft of the test allowed the Lean node a
+  further micrometre, because the node was then built without optimisation
+  and its points could lie one float32 step from upstream's. That allowance
+  is gone.)
 
-| | |
-| --- | --- |
-| Cases outside the bounds | {{R_bad}} |
-| Unsafe divergences (S violated) | {{R_unsafe}} |
-| Cases that passed only on the slow retry | {{R_retried}} |
-| Commands | {{R_cmds}} |
-| Scans; point-in-zone tests | {{R_scans}}; {{R_tests}} |
-| Points within the growth band of a zone | {{R_band_c}} of {{R_pts_c}} for circles, {{R_band_p}} of {{R_pts_p}} for polygons |
-| Commands whose answer depends on such a point | {{R_amb}} ({{R_amb_pct}} %) |
-| Commands for which the two nodes demand different velocities | {{R_differ}} ({{R_differ_pct}} %); in all of them the Lean node is the more restrictive |
-| Commands for which the published messages differ | {{R_pubdiff}} |
+Results, seeds 0 to 599 (the generator is deterministic, so both platforms
+ran the same cases):
 
-So when a point lies in the band and decides, the Lean node gives the more
-restrictive answer in {{R_frac}} % of the cases, and upstream's answer in
-the rest. The last row is larger than the one before because a difference
-shifts the Lean node's stop-publication period: it then goes silent, or
-resumes zero, at other commands than upstream.
+| | macOS | Linux |
+| --- | ---: | ---: |
+| Cases outside the bounds | 0 | 0 |
+| Unsafe divergences (S violated) | 0 | 0 |
+| Cases that passed only on the slow retry | 1 (seed 415) | 0 |
+| Commands | 54,043 | 54,043 |
+| Scans | 32,289 | 32,289 |
+| Point-in-zone tests, circles; of them in the growth band | 104,915; 5,551 | 104,915; 5,526 |
+| Point-in-zone tests, polygons; of them in the growth band | 113,769; 5,459 | 113,769; 5,466 |
+| Commands whose answer depends on a point in a band | 1,590 (2.94 %) | 1,592 (2.95 %) |
+| Commands for which the two nodes demand different velocities | 1,259 (2.33 %) | 1,261 (2.33 %) |
+| Commands for which the published messages differ | 1,610 | 1,612 |
+
+In every command of the second-to-last row the Lean node is the more
+restrictive one: that is bound S, which held for all 54,043 commands on
+both platforms. So when a point lies in the band and decides, the Lean node
+gives the more restrictive answer in 79 % of the cases, and upstream's
+answer in the rest. The last row is larger than the one before because a
+difference shifts the Lean node's stop-publication period: it then goes
+silent, or resumes zero, at other commands than upstream. The two platforms
+differ in a few counts because their C libraries round sine and cosine
+differently, which moves points that lie within nanometres of a boundary
+(first row of the next table).
+
+Seed 415 on macOS: at the first attempt both nodes, at the same command
+(number 67), gave an answer that the test's model does not explain; with
+0.3 s per event instead of 0.05 s the case passed, and on Linux it passed
+at once. Both nodes deviating together at one command is what a message
+that arrived late at both looks like (eight such processes and the Linux
+runs were going at the same time); it was not investigated further, and no
+bound S was violated in the first attempt either.
 
 How far outside upstream's zone the point lay that decided a difference
-(the smallest reach that explains the Lean node's answer):
+(the smallest reach that explains the Lean node's answer), macOS; Linux is
+the same except for the first row (281 and 82):
 
-{{R_reach_table}}
+| Deciding point outside upstream's zone by | Circle | Polygon |
+| --- | ---: | ---: |
+| below 1 µm | 279 | 82 |
+| 1 µm to 0.25 mm | 154 | 192 |
+| 0.25 to 0.5 mm | 93 | 100 |
+| 0.5 to 1 mm | 48 | 61 |
+| 1 to 1.5 mm | 71 | 56 |
+| 1.5 to 2 mm | 10 | 28 |
+| 2 to 2.5 mm | 9 | 46 |
+| 2.5 to 3 mm | 0 | 25 |
+| 3 to 3.5 mm | 0 | 5 |
+| beyond 3.5 mm | 0 | 0 |
+| all | 664 | 595 |
+| farthest | 2.056 mm | 3.106 mm |
 
 With the scan frame turned by π/2, −π/2, 0.3, −2.5, 1.0 or 3.0 rad in half
-of the cases (`--yaw`; upstream gets the quaternion, the Lean node the yaw):
-{{Y_line}}.
+of the cases (`--yaw`, seeds 1000 to 1119; upstream gets the quaternion, the
+Lean node the yaw): 0 cases outside the bounds on either platform, none
+retried, 11,013 commands; the nodes demand different velocities for 303
+(macOS) and 299 (Linux), the deciding point at most 1.791 mm (circle) and
+2.653 mm (polygon) outside.
 
 *Can the test fail?* `--self-test swap` exchanges the two nodes, so that
-upstream is judged as if it were a Lean node that misses points:
-{{T_swap}}. `--self-test shrink` allows a tenth of the growth: {{T_shrink}}.
+upstream is judged as if it were a Lean node that misses points: all 3
+cases (seeds 0 to 2) are reported, each with "ROSlean demands a less
+restrictive velocity than upstream". `--self-test shrink` allows a
+tenth of the growth: seed 0 is reported ("an answer that no set of points
+within the stated growth of the zones explains": the deciding point lies
+1.196 mm outside a polygon and 0.44 mm are allowed); seeds 1 and 2, whose
+deciding points lie at most 0.118 mm outside a circle (0.35 mm allowed),
+pass. The same on both platforms.
 
-*Defects of this test, found and fixed while it was written.* (1) The first
-version collected the possible answers in a Python `set`. `(0.0, -0.0, 0.0)`,
-a command scaled by a ratio of 0, and `(0.0, 0.0, 0.0)`, a stop, are equal
-as tuples, so one of them was lost, and three seeds were reported as
-outside the bounds (26, 387, 389). The answers are now told apart by bit
-pattern. (2) The count of differences was wrong for commands that one node
-leaves unanswered. (3) Upstream's points were computed with `sinf` and
-`cosf`. Upstream's binary calls `__sincosf_stret`, which on this machine
-returns a value one float32 step away for 51,381 of 2,000,000 random
-angles; seed 1057 of the `--yaw` run was reported for it ("upstream is not
-as the model says": five points 15 nm inside a circle by the test's
-arithmetic, outside by upstream's). The test now calls the same routine.
-This is also how defect 4 below was found. The 600 seeds were run three
-times, once after each correction, with the same verdict each time (0
-cases outside the bounds, 54,043 commands); the numbers above are from the
-last run.
+*Defects of this test, found and fixed while it was written* (by the
+session that wrote it, on 2026-11-23; recorded from its notes, not
+reproduced here). (1) The first version collected the possible answers in a
+Python `set`. `(0.0, -0.0, 0.0)`, a command scaled by a ratio of 0, and
+`(0.0, 0.0, 0.0)`, a stop, are equal as tuples, so one of them was lost, and
+three seeds were reported as outside the bounds (26, 387, 389). The answers
+are now told apart by bit pattern. (2) The count of differences was wrong
+for commands that one node leaves unanswered. (3) Upstream's points were
+computed with `sinf` and `cosf`. Upstream's binary calls `__sincosf_stret`
+on macOS, which returns a value one float32 step away for 2.6 % of angles;
+seed 1057 of the `--yaw` run was reported for it. The test now calls the
+routine upstream's binary calls (`sincosf` with glibc). All four seeds
+named here pass in the runs of this document.
 
 ### Point by point
 
@@ -246,7 +328,7 @@ double) and the Lean core through its C interface, as the node does.
 | Points | 16,200,000 | 17,800,000 |
 | Inside for upstream, outside for the core (S) | 0 | 0 |
 | Counted by the core beyond the bound (G) | 0 | 0 |
-| The two tests disagree | 32.7 % | 36.4 % |
+| The two tests disagree | 32.66 % (Linux 32.64 %) | 36.45 % |
 | Farthest point outside upstream's zone that the core counts | 3.409 mm | 4.167 mm |
 | Nearest point outside upstream's zone that the core does not count | 1.000 mm | 0.360 mm |
 
@@ -268,6 +350,11 @@ counted):
 | 4 to 4.5 mm | 0 | 0.02 % (none beyond 4.167 mm) |
 | beyond 4.5 mm | 0 | 0 |
 
+The table above and the one below are from macOS; on Linux the program
+prints the same farthest and nearest points and 0 violations; the number
+of circle points on which the two tests disagree differs by 3,563 of 16.2
+million (the cause was not looked for), that of polygon points is equal.
+
 In words: a zone of the Lean node is upstream's zone grown by 1 mm for
 certain (circle) or about 0.4 mm (polygon), by 2 mm for half of the points,
 and by the stated bound at most. Among random points *within 6 mm of a
@@ -281,8 +368,10 @@ The SPEC was written from upstream's source, UPSTREAM_BEHAVIOUR.md (UB)
 from its binary, without sight of each other. Statements were compared one
 by one. Where only one document speaks, or the two differ, the statement
 was put to the binary: by an existing scenario, or by one of the 18 new
-ones in `test/probes.py` (expectations: what the binary did; all 18 passed
-at the first run, i.e. every prediction made from the SPEC was right).
+ones in `test/probes.py` (expectations: what the binary did; the session
+that wrote them notes that all 18 passed at the first run, i.e. every
+prediction made from the SPEC was right). Here the 18 were run on upstream
+1.3.12 (macOS) and 1.3.14 (Linux): 48 checks, 0 failures on each.
 
 **They disagree.**
 
@@ -348,11 +437,13 @@ stamp (D8, UB 1).
 
 ## Fault injection
 
-`test/fault_injection.py`: 23 cases, each on fresh processes, both nodes on
-the same messages under simulated time (zones: stop circle 0.5 m, slowdown
+`test/fault_injection.py`: 23 cases with 124 checks, each case on fresh
+processes, both nodes on the same messages under simulated time (zones: stop circle 0.5 m, slowdown
 circle 1.0 m, `min_points` 3, `source_timeout` 0.5 s). The script asserts
 the Lean node's answer to every command and that the process is alive at
-the end of each case; upstream's observed answers are asserted too.
+the end of each case; upstream's observed answers are asserted too. The
+table holds for both platforms: the two logs are equal line by line except
+for the number of commands answered in a burst.
 
 | Input | Lean node | Upstream |
 | --- | --- | --- |
@@ -369,7 +460,7 @@ the end of each case; upstream's observed answers are asserted too.
 | 10,000 readings | passes, slows, stops as the readings say | same |
 | 100,000 readings (400 kB) | stop | stop |
 | 1,000,000 and 10,000,000 readings (4 and 40 MB) | the message does not arrive (best-effort subscription): the previous scan stays in force | same |
-| the same sizes handed to the callback in process (`bench_cm`) | handled: 47 ms and 0.48 s per scan, 15 ms and 0.15 s per command; no crash | 2.8 ms and 31 ms per command |
+| the same sizes handed to the callback in process (`bench_cm --readings N --zones circles --scan near`, macOS) | handled: 47 ms and 0.48 s per scan, 15 ms and 0.15 s per command; no crash | 2.8 ms and 30 ms per command |
 | Stamp of −1 s | stop (stamp taken as 0, D8); next good scan passes | **aborts** at the next command |
 | Stamp `sec = -1, nanosec = 2·10⁹`; `sec = -2³¹` | stop | aborts |
 | Clock at 0.25 s, scan stamped −5 s | **used as fresh** (D8): stops for an obstacle scan, passes for a clear one, until the clock passes `source_timeout` | aborts |
@@ -378,30 +469,41 @@ the end of each case; upstream's observed answers are asserted too.
 | Commands with NaN or ±∞ in any of the six components, also with an obstacle in the stop zone | nothing published (R2) | same |
 | Commands of ±1.7·10³⁰⁸ and 5·10⁻³²⁴, no obstacle | pass unchanged | same |
 | The same in a slowdown zone | halved; the subnormal becomes 0.0 (D6) | passed unslowed |
-| 1000 commands back to back | 22 answered, then normal | 37 and 27 answered |
+| 1000 commands back to back, twice | macOS: 32 and 24 answered; Linux: 10 and 10; then normal | macOS: 33 and 23; Linux: 10 and 10 |
 | 500 scans back to back | the last counts | same |
 | Scan in a foreign frame; empty frame name; base frame name with a blank or a slash; a name of 100,000 characters | stop (D11), also discarding the stored scan | stop (no transform) |
 | Clock jumps back 50 s, 100 s, to 0 | an expired scan is used again; a stop period that began "later" publishes zero again (A2) | same |
 | **`/clock` message of −5 s** | **aborts** (defect 1) | aborts |
 
-So one input crashes the Lean node. Everything else is handled, and
-handled as the SPEC says.
+So one input crashes the Lean node, on both platforms (exit by signal 6).
+Everything else is handled, and handled as the SPEC says.
 
 ## Defects
 
-Found in the node, the shim or the model (category c). Not fixed here.
+No case was found in which upstream stops or slows and the Lean node does
+not: not in the fixed scenarios, not in 720 random cases on each platform,
+not under fault injection, not in the point test.
+
+### Open
+
+Found in the node, the shim or the model (category c). Not fixed here; each
+has a registered test that is expected to fail.
 
 1. **A `/clock` message with a negative time ends the process.** With
-   `use_sim_time`, a `rosgraph_msgs/Clock` message with `sec < 0` makes
-   rclcpp throw `cannot store a negative time point in rclcpp::Time` in the
-   thread of its time source; nothing can catch it there, and the process
-   aborts (signal 6). The shim's `std::max(now().nanoseconds(), 0)` is never
-   reached. Upstream dies in the same way, so this is not a difference, but
-   the SPEC's aim is that no input ends the node (D8, "Bad data (c)"), and
-   A2 says nothing is assumed about the clock.
-   Reproduction: `fault_injection.py NODE --only clock-negative`, or
-   `ros2 topic pub --once /clock rosgraph_msgs/msg/Clock "{clock: {sec: -5}}"`
-   at a node started with `-p use_sim_time:=true`.
+   `use_sim_time`, a `rosgraph_msgs/Clock` message with `sec < 0` ends the
+   node with `terminating due to uncaught exception of type
+   std::runtime_error: cannot store a negative time point in rclcpp::Time`
+   (signal 6; the node's own log, both platforms). The exception comes from
+   rclcpp's time source, which by default runs in a thread of its own, where
+   the node cannot catch it (this is rclcpp's design; the thread was not
+   inspected here). The shim's `std::max(now().nanoseconds(), 0)` is never
+   reached. Upstream dies in the same way with the same message, so this is
+   not a difference, but the SPEC's aim is that no input ends the node (D8,
+   "Bad data (c)"), and A2 says nothing is assumed about the clock.
+   Smallest reproduction: a node started with `-p use_sim_time:=true`, then
+   `ros2 topic pub --once /clock rosgraph_msgs/msg/Clock "{clock: {sec: -5}}"`;
+   or `fault_injection.py NODE --only clock-negative`, which prints
+   `FAIL  the node has exited with code -6` and `2 failure(s) in 3 checks`.
    Registered as `roslean_fault_clock_negative`, which asserts that the
    node survives and is marked `WILL_FAIL`. A fix probably needs the node
    option `use_clock_thread(false)` and a `catch` around the spin, or a
@@ -412,45 +514,59 @@ Found in the node, the shim or the model (category c). Not fixed here.
 
 2. **The command path is slow for polygon zones.** Each command tests every
    stored point against every zone in exact integer arithmetic, including
-   the √5 mm band (`nearBoundary`). For circles this costs about 8 ns per
-   reading and zone, for four-vertex polygons about 200 ns; upstream needs 3
-   to 7 ns per reading for everything. See [Per-call latency](#per-call-latency): with two polygons a
-   command costs 0.43 ms at 1080 readings and 4.0 ms at
-   10,000, which at 50 commands a second is 20 % of a core.
-   No test is registered for this: a threshold on run time would fail on a
-   busy machine. The answers are right. What can go wrong is what BENCHMARK.md says of a
+   the √5 mm band (`nearBoundary`). In a hot loop this costs 8 to 14 ns per
+   reading and zone for circles and 190 to 280 ns for four-vertex polygons;
+   upstream needs 3 to 10 ns per reading for everything. With two polygons a
+   command costs 0.41 ms at 1080 readings and 3.9 ms at 10,000 on macOS,
+   0.52 ms and 5.6 ms in the Linux container
+   ([Per-call latency](#per-call-latency)).
+   A node is not called in a hot loop. With one command every 20 ms the
+   same call takes about four times as long (`cmd_cost`: 1.7 ms per command
+   at 1080 readings on macOS, 1.2 to 1.7 ms in the Linux container, against
+   0.4 and 0.5 ms back to back), and that is what shows through the nodes
+   on Linux: the Lean node's median latency is 2.4 ms at 1080 readings and
+   7.5 ms at 10,000, upstream's 0.4 and 0.3 ms
+   ([Through the nodes](#through-the-nodes)).
+   The answers are right. What can go wrong is what BENCHMARK.md says of a
    slow mux: commands queue (keep-last 1, so they are dropped), and a
    command is judged at the time its callback starts. Nothing warns at
-   start-up. Reproduction: `run_cm_bench.py core`.
+   start-up.
+   Smallest reproduction: `build/roslean_collision_monitor/cmd_cost`
+   (no ROS; two boxes of Nav2's example, 1080 stored readings, 400
+   commands). It asserts at most 25 ns per reading and zone back to back,
+   three times what the circle path needs, and prints 185 to 229 ns.
+   Registered as `roslean_cmd_cost`, marked `WILL_FAIL`. The test is a
+   threshold on run time, which is fragile in principle; the margin to the
+   limit is a factor of 8 in both directions that matter (a fix must gain
+   that much, and a busy machine would have to slow the median of 400 calls
+   by that much to hide a regression after the fix).
 
-3. **The shim is compiled without optimisation.** `pixi run build` sets no
-   build type, so `collision_monitor_node.cpp` and `conversions.hpp` are
-   compiled at `-O0` (the Lean core's C is compiled `-O3` by its own
-   `CMakeLists.txt`). `encode_scan` then takes 165 µs for 1080 readings
-   instead of 52 µs. The in-process measurements below use the optimised
-   build; the node-level ones use the node as built.
+### Fixed since the first draft
 
-4. **T2: the shim's points are not always upstream's, to the last bit.**
-   SPEC, "Scan event", says the point of a reading is computed as
-   upstream's `Scan::getData` computes it. The source is the same, the
-   library call is not: the node as built calls `sinf` and `cosf`
-   (`nm -u`), upstream's binary and any optimised build of the same header
-   call `__sincosf_stret`, and Apple's library returns a different float32
-   from that routine for 2.6 % of angles. So for about one reading in forty
-   one coordinate of the node's point differs from upstream's by one
-   float32 step: 6·10⁻⁸ m at 1 m. It cannot change a verdict of the
-   comparison: the margin of D4 is a millimetre, both bounds were checked
-   with points computed upstream's way, and the node passed. But "the same
-   points as upstream" then depends on the optimisation level and the
-   platform, `smoke_conversions.cpp` cannot see it (its reference is
-   compiled with the same flags), and fixing defect 3 changes it. Not
-   checked on Linux, where the two routines are `sincosf` and
-   `sinf`/`cosf` of glibc.
-   Reproduction: `test/t2_point_as_upstream.cpp`, registered on macOS with
-   `WILL_FAIL`: for the angle 1.1233999729156494 the shim's cosine is
-   0.4326196014881134, upstream's 0.4326196312904358. Seen from outside:
-   `random_diff.py NODE UPSTREAM 1057 1058 --roslean --yaw` with the test's
-   points computed by `sinf` and `cosf`.
+The first draft of this document (2026-11-23) listed two more, both about
+the build. The review CM3/CM4 found them independently (finding 5) and the
+package was changed before this document was finished. Re-measured here:
+
+3. **The shim was compiled without optimisation.** `pixi run build` sets no
+   build type, and the node was compiled at `-O0`. Now the package's
+   `CMakeLists.txt` selects `Release` when no build type is given
+   (`CMAKE_BUILD_TYPE:STRING=Release` in the build tree on both platforms).
+   The scan callback at 1080 readings takes 49 µs in process on macOS; the
+   first draft measured 165 µs for the unoptimised node. All measurements
+   below are of the optimised node.
+
+4. **T2: the shim's points were not always upstream's, to the last bit.**
+   Compiled without optimisation the node called `sinf` and `cosf`, upstream's
+   binary `__sincosf_stret`, and Apple's library returns a different float32
+   from the two for 2.6 % of angles. Now both binaries import the same
+   routine: `___sincosf_stret` on macOS, `sincosf` with glibc (`nm -u` on
+   the node and on upstream's library, both platforms).
+   `test/t2_point_as_upstream.cpp`, which the first draft registered as an
+   expected failure, passes and is registered as an ordinary test on macOS
+   (for the angle 1.1233999729156494 the shim's cosine is now upstream's
+   0.4326196312904358). `smoke_conversions` compares 200 scans with a copy
+   of upstream's loop on every platform. And the random comparison no
+   longer allows the Lean node the micrometre it was given for this.
 
 Notes that are not defects of the node:
 
@@ -460,7 +576,9 @@ Notes that are not defects of the node:
   proposes a separate input for a negative `sec`; this run supports it.
 - Scans that consist only of NaN or ∞ pass, as upstream (open decision 1).
 
-Found in the harness (category d), fixed here:
+### Found in the harness and fixed (category d)
+
+By the first session:
 
 - `cm_harness.Side` always passed `state_topic`, which the Lean node
   refuses: now optional per node.
@@ -472,17 +590,46 @@ Found in the harness (category d), fixed here:
 - `bench/roslean_bench` did not run on macOS (`$ORIGIN` in the run path;
   executables linked to the Python generator libraries abort at start).
 
+When this document was finished:
+
+- **A crash of `scenario.py`.** `reference_scenario` once ended with
+  `IndexError` at `get_publishers_info_by_topic('cmd_vel_out')[0]`, right
+  after `wait_connected` had counted one publisher (report of task T01;
+  seen once, under load, not reproduced here). `wait_connected` required
+  its conditions once and then spun for half a second, in which the count
+  can change: the graph can still show the node of the previous run, or the
+  node has died. It now requires the conditions before and after that half
+  second, and the two lists of endpoints are read by a function that waits
+  for an entry and reports a failed check, not a crash, if none comes. In
+  the runs of this document `scenario.py` started more than 600 scenario
+  runs on the two platforms without the error; that does not prove the
+  race is gone, only that the crash cannot occur any more.
+- A refusal passed whatever its reason; see
+  [Fixed scenarios](#fixed-scenarios).
+- The micrometre of slack in bound G; see
+  [Random cases](#random-cases-lean-node-beside-upstream).
+- The two tests that drive the node under fault injection used
+  `ROS_DOMAIN_ID` 97 and 98, outside the range the other tests of the
+  repository use; now 120 and 121.
+
 ## Measurements
 
 In the manner of [BENCHMARK.md](../BENCHMARK.md). Sources:
 `bench/roslean_bench/src/bench_cm.cpp`, `cm_load.cpp`,
-`scripts/run_cm_bench.py`; raw data in `bench/results/cm_*.json`.
+`scripts/run_cm_bench.py`; raw data in `bench/results/cm_*.json` (macOS)
+and `bench/results/cm_comparison/linux/cm_*.json`.
 
-**Environment and its limits.** Apple M5 Pro, 18 cores, macOS; not a robot
-computer, not a real-time system. Other agents ran simulators on the same
-machine throughout, so the tails (p99.9, max) contain their scheduling. The
-two columns of every table were measured in the same process or at the same
-time on the same messages and can be compared with each other.
+**Environment and its limits.** The two platforms of the table at the top:
+an Apple M5 Pro with 18 cores, and a Linux container in Docker's virtual
+machine on that same computer. Neither is a robot computer or a real-time
+system, and the second is not a Linux computer: its processor is the Mac's,
+its scheduler and its C library are Linux's. Another session was working on
+the same machine (Lean builds), so the tails (p99.9, max) may contain its
+scheduling; the latency runs of this section were made one at
+a time, with none of this document's other runs going. The two columns of
+every table were measured in the same process or at the same time on the
+same messages and can be compared with each other; a macOS table and a
+Linux table can not, beyond the order of magnitude.
 
 Upstream converts a scan to points when a command arrives (R3); the Lean
 node converts it when the scan arrives and stores the points. So upstream's
@@ -501,75 +648,125 @@ In one process: the two callback bodies of the Lean node (clock reading,
 upstream's own library, configured and activated, its `Scan::dataCallback`
 and `CollisionMonitor::cmdVelInCallbackUnstamped` called directly. A new
 message object per call; 20,000 calls per row (5,000 for 10,000 readings)
-after a warm-up of a tenth. Microseconds.
+after a warm-up of a tenth, back to back. Microseconds.
+
+macOS:
 
 | Readings | Zones | Call | Lean p50 | p99 | p99.9 | max | Upstream p50 | p99 | p99.9 | max |
 | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | polygons | scan | 17.1 | 18.2 | 28.4 | 75.1 | 0.0 | 0.2 | 0.5 | 2.1 |
-| 360 | polygons | command, clear | 147 | 159 | 172 | 284 | 3.0 | 3.9 | 6.5 | 22.9 |
-| 360 | polygons | command, slowdown | 144 | 155 | 170 | 261 | 3.0 | 3.8 | 7.1 | 16.5 |
-| 360 | polygons | command, stop | 71.8 | 77.8 | 90.0 | 185 | 2.2 | 2.8 | 5.0 | 18.9 |
-| 360 | circles | scan | 17.2 | 18.1 | 25.5 | 50.0 | 0.0 | 0.2 | 0.5 | 1.1 |
-| 360 | circles | command, clear | 6.6 | 7.2 | 9.8 | 25.4 | 1.8 | 2.1 | 3.9 | 34.9 |
-| 360 | circles | command, slowdown | 6.4 | 7.1 | 11.9 | 23.8 | 1.8 | 2.1 | 3.5 | 13.6 |
-| 360 | circles | command, stop | 5.5 | 6.1 | 10.0 | 57.2 | 1.7 | 2.0 | 4.1 | 15.5 |
-| 1080 | polygons | scan | 51.0 | 58.0 | 84.0 | 150 | 0.0 | 0.4 | 0.7 | 1.9 |
-| 1080 | polygons | command, clear | 429 | 452 | 533 | 1 250 | 7.5 | 10.2 | 18.5 | 83.1 |
-| 1080 | polygons | command, slowdown | 428 | 470 | 540 | 1 322 | 7.5 | 9.9 | 19.2 | 31.9 |
-| 1080 | polygons | command, stop | 211 | 228 | 265 | 498 | 5.4 | 7.5 | 12.2 | 38.4 |
-| 1080 | circles | scan | 50.9 | 55.5 | 66.7 | 136 | 0.0 | 0.2 | 0.5 | 0.7 |
-| 1080 | circles | command, clear | 18.1 | 19.8 | 30.2 | 40.1 | 4.2 | 4.9 | 7.0 | 118 |
-| 1080 | circles | command, slowdown | 18.2 | 21.0 | 28.7 | 77.0 | 4.2 | 5.3 | 10.0 | 122 |
-| 1080 | circles | command, stop | 15.8 | 19.5 | 29.1 | 141 | 4.0 | 5.6 | 10.2 | 59.2 |
-| 10000 | polygons | scan | 487 | 548 | 788 | 898 | 0.2 | 1.2 | 3.6 | 12.8 |
-| 10000 | polygons | command, clear | 4 006 | 4 334 | 4 932 | 5 625 | 62.4 | 79.4 | 112 | 164 |
-| 10000 | polygons | command, slowdown | 3 957 | 4 193 | 4 573 | 4 983 | 62.1 | 71.4 | 93.1 | 110 |
-| 10000 | polygons | command, stop | 1 983 | 2 078 | 2 204 | 2 351 | 45.5 | 53.6 | 72.8 | 170 |
-| 10000 | circles | scan | 481 | 504 | 561 | 600 | 0.1 | 0.5 | 1.3 | 3.2 |
-| 10000 | circles | command, clear | 172 | 193 | 212 | 287 | 32.7 | 37.9 | 52.2 | 71.2 |
-| 10000 | circles | command, slowdown | 181 | 204 | 251 | 296 | 32.8 | 37.7 | 49.5 | 104 |
-| 10000 | circles | command, stop | 155 | 172 | 213 | 297 | 30.8 | 35.5 | 48.8 | 55.0 |
+| 360 | polygons | scan | 16.1 | 18.6 | 36.6 | 47.2 | 0.0 | 0.5 | 1.9 | 2.1 |
+| 360 | polygons | command, clear | 135 | 161 | 169 | 230 | 2.8 | 3.6 | 6.9 | 25.9 |
+| 360 | polygons | command, slowdown | 137 | 188 | 198 | 223 | 2.8 | 4.1 | 7.8 | 30.4 |
+| 360 | polygons | command, stop | 66.8 | 77.7 | 96.8 | 104 | 2.0 | 2.6 | 6.1 | 21.7 |
+| 360 | circles | scan | 16.2 | 18.3 | 35.8 | 43.1 | 0.0 | 0.3 | 0.5 | 0.6 |
+| 360 | circles | command, clear | 6.0 | 6.7 | 15.3 | 29.8 | 1.7 | 1.9 | 3.6 | 22.5 |
+| 360 | circles | command, slowdown | 6.0 | 6.8 | 13.2 | 39.4 | 1.7 | 2.0 | 5.6 | 86.5 |
+| 360 | circles | command, stop | 5.4 | 6.0 | 10.4 | 29.5 | 1.6 | 1.9 | 3.9 | 21.9 |
+| 1080 | polygons | scan | 48.9 | 57.5 | 80.2 | 93.3 | 0.0 | 0.5 | 1.8 | 2.8 |
+| 1080 | polygons | command, clear | 406 | 443 | 456 | 538 | 7.0 | 8.4 | 19.6 | 73.2 |
+| 1080 | polygons | command, slowdown | 408 | 446 | 457 | 475 | 7.0 | 8.2 | 24.7 | 43.7 |
+| 1080 | polygons | command, stop | 202 | 231 | 239 | 259 | 5.1 | 6.2 | 10.6 | 26.9 |
+| 1080 | circles | scan | 48.3 | 56.1 | 76.8 | 83.3 | 0.0 | 0.9 | 1.9 | 2.2 |
+| 1080 | circles | command, clear | 17.6 | 20.1 | 41.8 | 47.2 | 4.0 | 5.0 | 12.9 | 29.2 |
+| 1080 | circles | command, slowdown | 18.4 | 20.9 | 41.5 | 58.8 | 4.0 | 5.0 | 9.3 | 26.9 |
+| 1080 | circles | command, stop | 14.9 | 17.3 | 34.4 | 50.1 | 3.8 | 4.3 | 6.3 | 28.3 |
+| 10000 | polygons | scan | 474 | 517 | 551 | 565 | 0.2 | 0.4 | 1.6 | 11.5 |
+| 10000 | polygons | command, clear | 3 878 | 4 058 | 4 127 | 4 235 | 60.2 | 70.2 | 86.5 | 87.6 |
+| 10000 | polygons | command, slowdown | 3 879 | 4 063 | 4 137 | 4 173 | 60.4 | 66.0 | 85.5 | 92.6 |
+| 10000 | polygons | command, stop | 1 952 | 2 051 | 2 413 | 2 463 | 44.1 | 51.3 | 83.2 | 131 |
+| 10000 | circles | scan | 473 | 507 | 544 | 548 | 0.1 | 0.4 | 0.5 | 0.6 |
+| 10000 | circles | command, clear | 170 | 196 | 210 | 215 | 32.2 | 35.2 | 55.0 | 117 |
+| 10000 | circles | command, slowdown | 175 | 203 | 211 | 215 | 32.2 | 35.2 | 55.1 | 56.3 |
+| 10000 | circles | command, stop | 151 | 173 | 187 | 205 | 30.0 | 33.2 | 53.2 | 65.6 |
+
+Linux (container):
+
+| Readings | Zones | Call | Lean p50 | p99 | p99.9 | max | Upstream p50 | p99 | p99.9 | max |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 360 | polygons | scan | 25.4 | 31.0 | 53.0 | 59.6 | 0.1 | 0.2 | 0.4 | 3.5 |
+| 360 | polygons | command, clear | 154 | 184 | 193 | 239 | 3.2 | 4.6 | 8.4 | 29.1 |
+| 360 | polygons | command, slowdown | 154 | 184 | 193 | 250 | 3.3 | 4.8 | 10.0 | 41.9 |
+| 360 | polygons | command, stop | 77.5 | 93.8 | 111 | 178 | 2.5 | 3.8 | 7.1 | 25.8 |
+| 360 | circles | scan | 25.2 | 31.7 | 50.9 | 61.2 | 0.0 | 0.1 | 0.4 | 6.7 |
+| 360 | circles | command, clear | 8.7 | 12.2 | 23.8 | 38.1 | 2.0 | 2.8 | 6.1 | 31.4 |
+| 360 | circles | command, slowdown | 8.9 | 12.5 | 26.2 | 39.0 | 2.0 | 2.8 | 6.3 | 30.8 |
+| 360 | circles | command, stop | 7.5 | 10.7 | 19.6 | 35.6 | 2.0 | 2.6 | 6.1 | 31.6 |
+| 1080 | polygons | scan | 81.4 | 100 | 117 | 193 | 0.1 | 0.4 | 0.5 | 77.6 |
+| 1080 | polygons | command, clear | 519 | 630 | 663 | 734 | 8.4 | 12.6 | 28.2 | 44.5 |
+| 1080 | polygons | command, slowdown | 530 | 632 | 671 | 752 | 8.5 | 12.7 | 29.2 | 54.1 |
+| 1080 | polygons | command, stop | 270 | 330 | 341 | 405 | 6.2 | 10.2 | 17.0 | 396 |
+| 1080 | circles | scan | 80.4 | 99.2 | 114 | 129 | 0.1 | 0.1 | 0.5 | 5.6 |
+| 1080 | circles | command, clear | 26.9 | 33.0 | 55.4 | 65.0 | 5.2 | 9.4 | 15.5 | 45.5 |
+| 1080 | circles | command, slowdown | 27.9 | 34.7 | 56.1 | 147 | 5.2 | 9.4 | 18.0 | 44.4 |
+| 1080 | circles | command, stop | 24.0 | 29.6 | 50.3 | 57.1 | 4.7 | 8.7 | 13.8 | 45.0 |
+| 10000 | polygons | scan | 802 | 858 | 896 | 1 918 | 0.3 | 0.6 | 1.5 | 1.8 |
+| 10000 | polygons | command, clear | 5 579 | 5 810 | 6 108 | 6 159 | 98.4 | 128 | 146 | 170 |
+| 10000 | polygons | command, slowdown | 5 540 | 5 789 | 5 978 | 6 074 | 100 | 131 | 155 | 157 |
+| 10000 | polygons | command, stop | 2 631 | 2 727 | 2 863 | 3 670 | 84.1 | 112 | 135 | 322 |
+| 10000 | circles | scan | 789 | 841 | 867 | 967 | 0.1 | 0.4 | 0.7 | 4.0 |
+| 10000 | circles | command, clear | 278 | 317 | 338 | 352 | 70.5 | 106 | 120 | 183 |
+| 10000 | circles | command, slowdown | 257 | 295 | 307 | 320 | 72.0 | 107 | 119 | 124 |
+| 10000 | circles | command, stop | 228 | 280 | 502 | 1 736 | 70.0 | 117 | 247 | 336 |
 
 "clear", "slowdown" and "stop" are the scenes; in the stop scene the first
 zone decides and the second is not evaluated, and after `stop_pub_timeout`
-nothing is published. Sum of the two medians, clear scene:
+nothing is published. Sum of the two medians, clear scene, macOS:
 
 | Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
 | ---: | --- | ---: | ---: | ---: |
-| 360 | polygons | 164 | 3.0 | 54 |
-| 360 | circles | 23.8 | 1.8 | 13 |
-| 1080 | polygons | 480 | 7.5 | 64 |
-| 1080 | circles | 69.0 | 4.3 | 16 |
-| 10000 | polygons | 4 493 | 62.7 | 72 |
-| 10000 | circles | 653 | 32.8 | 20 |
+| 360 | polygons | 151 | 2.8 | 54 |
+| 360 | circles | 22.2 | 1.7 | 13 |
+| 1080 | polygons | 455 | 7.0 | 65 |
+| 1080 | circles | 65.9 | 4.0 | 16 |
+| 10000 | polygons | 4 352 | 60.3 | 72 |
+| 10000 | circles | 643 | 32.3 | 20 |
+
+and Linux:
+
+| Readings | Zones | Lean, scan + command | Upstream, scan + command | Ratio |
+| ---: | --- | ---: | ---: | ---: |
+| 360 | polygons | 179 | 3.3 | 54 |
+| 360 | circles | 33.9 | 2.1 | 16 |
+| 1080 | polygons | 601 | 8.5 | 71 |
+| 1080 | circles | 107 | 5.3 | 20 |
+| 10000 | polygons | 6 381 | 98.7 | 65 |
+| 10000 | circles | 1 067 | 70.7 | 15 |
 
 Reading:
 
-- **Scan path.** The Lean node spends 47 to 49 ns per reading when a scan
-  arrives: computing the point (`encode_scan`), copying 20 bytes per
-  reading into the core, and converting to millimetres. Upstream spends
-  that time when the command arrives. As built by `pixi run build` the
-  shim is not optimised (defect 3) and the scan callback takes 165 µs
-  instead of 51 µs at 1080 readings.
-- **Command path, circles.** 17 ns per reading for the two zones, against
-  upstream's 3 to 4 ns including its conversion of the scan: 4 to 5 times
-  slower, 18 µs at 1080 readings.
-- **Command path, polygons.** 400 ns per reading for the two four-vertex
-  polygons, i.e. 200 ns per reading and zone, about 50 ns per edge:
-  0.43 ms at 1080 readings and 4.0 ms at 10,000, where upstream needs 7.5 µs
-  and 62 µs. This is defect 2. The cost is the exact integer test with its
-  band, done for every point against every edge; most points of a real
-  scan are metres away from every zone and could be excluded by one
-  comparison with a bounding box.
-- **Tail.** The Lean callbacks are steady: p99 within 1.1 times the median,
-  p99.9 within 1.7 times, and the largest of 20,000 calls within 3 times
-  (1.3 ms at 1080 readings), on a machine that was not idle. As with
-  twist_mux there is no collector that pauses the node.
+- **Scan path.** The Lean node spends 45 to 47 ns per reading on macOS (70
+  to 80 in the container) when a scan arrives: computing the point
+  (`encode_scan`), copying 20 bytes per reading into the core, and
+  converting to millimetres. Upstream spends that time when the command
+  arrives.
+- **Command path, circles.** 16 to 17 ns per reading for the two zones on
+  macOS (24 to 28 in the container), against upstream's 3 to 5 ns (5 to 7)
+  including its conversion of the scan: 3.5 to 5 times slower, 18 µs at
+  1080 readings on macOS.
+- **Command path, polygons.** 376 to 388 ns per reading for the two
+  four-vertex polygons on macOS (426 to 558 in the container), i.e. about
+  200 ns per reading and zone, 50 ns per edge: 0.41 ms at 1080 readings and
+  3.9 ms at 10,000 on macOS, where upstream needs 7 µs and 60 µs. This is
+  defect 2. The cost is the exact integer test with its band, done for
+  every point against every edge; most points of a real scan are metres
+  away from every zone and could be excluded by one comparison with a
+  bounding box.
+- **Tail.** The Lean callbacks are steady: on macOS p99 is within 1.4 times
+  the median, and the largest call exceeds its median by less than 0.15 ms
+  up to 1080 readings and by at most 0.5 ms at 10,000; in the container the
+  largest excess in the table is 1.5 ms (one call of 1.7 ms against a
+  median of 0.23 ms). As with twist_mux there is no collector that pauses
+  the node.
+- **These are hot-loop figures.** Called every 20 ms, as a node is, the
+  same command costs about four times as much (defect 2, `cmd_cost`): 1.7 ms
+  instead of 0.4 ms at 1080 readings with two polygons on macOS.
 - **What it costs.** With 1080 readings at 25 Hz, commands at 50 Hz and two
-  polygon zones: 25 × 0.05 ms + 50 × 0.43 ms = 23 ms of work per second,
-  2.3 % of a core (upstream: 0.04 %). With 10,000 readings: 212 ms per
-  second, 21 % of a core, and each command blocks the node for 4 ms. With
-  circle zones: 0.2 % and 2 %.
+  polygon zones, from the hot-loop medians on macOS: 25 × 0.05 ms + 50 ×
+  0.41 ms = 22 ms of work per second, 2.2 % of a core (upstream: 0.04 %);
+  with the 1.7 ms of a paced command, 86 ms per second, 9 % of a core. With
+  10,000 readings: 206 ms per second from the hot-loop medians, 21 % of a
+  core, and each command blocks the node for 4 ms or more. With circle
+  zones: 0.2 % and 2 %.
 
 ### Through the nodes
 
@@ -579,27 +776,47 @@ zones. `cm_load` publishes scans at 25 Hz and commands at 50 Hz for 20 s;
 the scene changes every 2.5 s. Latency from `publish` of a command to the
 callback of a subscriber on the node's output. Microseconds.
 
+macOS:
+
 | Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max | Answers that differ |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 360 | lean | 852 / 1000 | 6 341 | 9 348 | 10 659 | 11 264 | 11 264 | 0 of 850 |
-| 360 | upstream | 850 / 1000 | 5 661 | 9 059 | 10 539 | 11 142 | 11 142 | 0 of 850 |
-| 1080 | lean | 851 / 1000 | 5 867 | 8 918 | 10 770 | 13 571 | 13 571 | 0 of 850 |
-| 1080 | upstream | 851 / 1000 | 5 988 | 8 931 | 10 710 | 19 112 | 19 112 | 0 of 850 |
-| 10000 | lean | 841 / 1000 | 9 249 | 12 319 | 14 350 | 28 503 | 28 503 | 0 of 841 |
-| 10000 | upstream | 846 / 1000 | 5 807 | 9 118 | 11 127 | 105 580 | 105 580 | 0 of 841 |
+| 360 | lean | 851 / 1000 | 6 316 | 9 745 | 11 318 | 11 493 | 11 493 | 0 of 851 |
+| 360 | upstream | 851 / 1000 | 5 930 | 9 387 | 11 317 | 11 393 | 11 393 | 0 of 851 |
+| 1080 | lean | 851 / 1000 | 7 136 | 11 204 | 12 428 | 12 929 | 12 929 | 0 of 850 |
+| 1080 | upstream | 850 / 1000 | 5 921 | 9 046 | 11 299 | 11 362 | 11 362 | 0 of 850 |
+| 10000 | lean | 852 / 1000 | 11 728 | 14 802 | 16 532 | 19 021 | 19 021 | 0 of 852 |
+| 10000 | upstream | 852 / 1000 | 6 041 | 9 397 | 10 936 | 11 356 | 11 356 | 0 of 852 |
+
+Linux (container):
+
+| Readings | Node | Answered / sent | p50 | p90 | p99 | p99.9 | max | Answers that differ |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 360 | lean | 851 / 1000 | 985 | 1 190 | 1 449 | 1 670 | 1 670 | 0 of 851 |
+| 360 | upstream | 851 / 1000 | 410 | 690 | 937 | 1 439 | 1 439 | 0 of 851 |
+| 1080 | lean | 851 / 1000 | 2 418 | 2 636 | 2 889 | 3 159 | 3 159 | 0 of 851 |
+| 1080 | upstream | 851 / 1000 | 371 | 559 | 840 | 1 030 | 1 030 | 0 of 851 |
+| 10000 | lean | 852 / 1000 | 7 540 | 7 812 | 9 049 | 12 448 | 12 448 | 0 of 850 |
+| 10000 | upstream | 850 / 1000 | 312 | 362 | 423 | 1 110 | 1 110 | 0 of 850 |
 
 About 850 of 1000 commands are answered by either node: the rest fall into
 the silence after `stop_pub_timeout` in the stop scene. The two nodes gave
-the same answer to every command that both answered.
+the same answer to every command that both answered, on both platforms.
 
-The latencies are those of the middleware on this machine, not of the
-nodes: they spread evenly between about 1 and 11 ms for both nodes, as if
-messages were picked up on a 10 ms tick (BENCHMARK.md measured 0.1 to
-0.3 ms on Linux). Against that, the Lean node's extra work does not show at
-360 and 1080 readings (medians 6.3 against 5.7 ms, and 5.9 against 6.0 ms).
-At 10,000 readings its median is 3.4 ms above upstream's, which is its scan
-callback (about 1.5 ms as built) and its command callback (4 ms) queuing
-behind each other. The node-level comparison should be repeated on Linux.
+On macOS the latencies are mostly those of the middleware: upstream's
+median is 6 ms and its maximum 11 ms at every size, as if messages were
+picked up on a 10 ms tick, and the Lean node's extra work shows as 0.4 ms
+of the median at 360 readings, 1.2 ms at 1080 and 5.7 ms at 10,000.
+
+In the Linux container the middleware takes 0.3 to 0.4 ms, and the node's
+own time is what is left: the Lean node's median is 0.6 ms above upstream's
+at 360 readings, 2.0 ms at 1080 and 7.2 ms at 10,000. Its p99 stays within
+1.5 times its median (1.4, 2.9 and 9.0 ms), so it is slow and steady, not
+erratic. These differences are larger than the sum of the hot-loop medians
+of the table before (0.18, 0.60 and 6.4 ms); the paced measurement of
+`cmd_cost` accounts for it at 1080 readings (1.2 to 1.7 ms for the command
+alone; the other sizes were not measured that way). For a robot this is the number to look at: with a
+1080-reading scanner and two polygon zones the Lean node delays every
+command by about 2 ms more than upstream does, on this processor.
 
 ### Memory
 
@@ -648,9 +865,10 @@ In process, 2 million events (`bench_cm --soak`, 1080 readings):
 
 ## What was not tested
 
-- **Linux.** Everything ran on macOS arm64 against upstream 1.3.12. The
-  harness authors ran upstream 1.3.14 in Docker; the Lean node was not built
-  or run there in this work.
+- **Linux on its own hardware, x86-64.** The Linux runs are a container in
+  Docker's virtual machine on an Apple processor. Behaviour is covered by
+  them (upstream 1.3.14 from the ROS apt repository, glibc, gcc); run times
+  and memory on a Linux computer are not.
 - **Wall-clock decisions.** All behavioural tests run under simulated time.
   Under wall-clock time only the load runs were made; no boundary of a
   timeout was probed there, and D7 remains unobserved.
@@ -663,44 +881,63 @@ In process, 2 million events (`bench_cm --soak`, 1080 readings):
 - **Ratios one rounding apart** (D6) and commands at exactly the under- and
   overflow limits: not generated. Single values far beyond the limits were.
 - **Scans above 100,000 readings through the middleware**: they did not
-  reach either node. In process the core took 10 million readings.
+  reach either node, on either platform. In process the core took 10
+  million readings (macOS).
 - **The wall-clock assumption of the harness**: one event at a time, 50 ms
   (random) or 200 ms (scenarios) apart. Nothing was done about the order of
   a scan and a command that arrive together, in either node.
 - **Long runs.** 32 minutes; not hours or days.
 - **Other middlewares, a real-time kernel, a robot computer, a robot.**
-- **`pixi run test` as a whole** was not re-run; the new tests were run
-  through `ctest` one at a time ({{C_line}}), the three changed ones
-  (`upstream_scenario`, `reference_scenario` and the two random tests of
-  upstream) by their commands or not at all: `upstream_random_diff` and
-  `reference_random_diff` were not re-run after the changes to
-  `random_diff.py`.
+- **The cost of a paced command at sizes other than 1080 readings**, and
+  why a paced command costs four times a hot one (caches and the
+  processor's idle states are the likely cause; not examined).
+- **`pixi run test` as a whole** was not run for this document (the rule of
+  the task: the orchestrator runs it once at the end). What was run instead
+  is in the last line of the table at the top and under
+  [Running it](#running-it).
 
 ## Running it
 
 ```
 pixi run build
-pixi run test          # registers, for this comparison:
+pixi run test-quick    # without the tests labelled long
+pixi run test          # everything
 ```
 
-| Test | What | Time |
-| --- | --- | --- |
-| `band_bounds` | core against upstream's zone tests, 6.8 million points | {{C_t_band}} |
-| `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | {{C_t_scen}} |
-| `roslean_fault_injection` | 19 fault cases, upstream beside the node | {{C_t_fault}} |
-| `roslean_fault_clock_negative` | **expected to fail** (defect 1); passes once the node survives a negative `/clock`, then remove `WILL_FAIL` | {{C_t_clock}} |
-| `upstream_probes` | the 18 probes on upstream's binary | {{C_t_probes}} |
-| `roslean_random_diff` | seeds 0 to 5 of the random comparison | {{C_t_rand}} |
-| `t2_point_as_upstream` | macOS only, **expected to fail** (defect 4): the shim's point for one reading against upstream's value | under 1 s |
+The tests of `roslean_collision_monitor` that belong to this comparison,
+with the time each took in `colcon test` on macOS and in the Linux
+container:
 
-Those that use topics have `ROS_DOMAIN_ID` 91, 97, 98, 92 and 93. Together
-they add about nine minutes to `pixi run test`.
+| Test | What | macOS | Linux | Label |
+| --- | --- | ---: | ---: | --- |
+| `band_bounds` | core against upstream's zone tests, 6.8 million points | @@T_band@@ | |
+| `roslean_cmd_cost` | **expected to fail** (defect 2): a command costs at most 25 ns per stored reading and zone | @@T_cost@@ | |
+| `t2_point_as_upstream` | macOS only: the shim's point for one reading against upstream's bits | @@T_t2@@ | |
+| `roslean_fault_clock_negative` | **expected to fail** (defect 1); passes once the node survives a negative `/clock`, then remove `WILL_FAIL` | @@T_clock@@ | |
+| `upstream_probes` | the 18 probes on upstream's binary | @@T_probes@@ | |
+| `roslean_scenario` | the Lean node through all scenarios and probes, differences stated per check | @@T_scen@@ | long |
+| `roslean_fault_injection` | 19 fault cases, upstream beside the node | @@T_fault@@ | long |
+| `roslean_random_diff` | seeds 0 to 5 of the random comparison | @@T_rand@@ | long |
+
+Those that use topics have `ROS_DOMAIN_ID` 121, 92, 91, 120 and 93. A test
+marked `WILL_FAIL` passes while the defect is there; `WILL_FAIL` cannot
+tell why a test fails, so after a change to the harness run the two
+programs by hand once and look for the lines quoted under
+[Defects](#defects).
+
+@@T_total@@
 
 ```
-pixi run cm-diff               # 600 random cases beside upstream; cm-diff 0 50 for fewer
+pixi run cm-diff               # 600 random cases beside upstream, one process; cm-diff 0 50 for fewer
 pixi run cm-faults             # all fault cases, the very large scans included
 pixi run bench-cm              # latency in process and through the nodes, and the soak
+pixi run cm-linux-image        # the Linux image; then bench/cm_linux/run.sh OUT_DIR STEP...
 ```
+
+`bench/cm_linux/run.sh` names its steps (`versions`, `scenarios`,
+`selftest`, `random`, `points`, `faults`, `qos`, `bench`, `soak`, `ctest`);
+each is one container. Several runs of `random_diff.py --roslean --stats
+FILE` are added up by `test/diff_stats.py`.
 
 Single scripts, from `ros/roslean_collision_monitor/test` with the workspace
 sourced: see the table at the top. `scenario.py --profile profile_roslean
