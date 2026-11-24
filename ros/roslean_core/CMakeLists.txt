@@ -128,13 +128,19 @@ else()
   find_library(LEAN_SHARED_LIBRARY NAMES leanshared
     HINTS "${LEAN_SYSROOT}/lib/lean" NO_DEFAULT_PATH REQUIRED)
   set(_leanshared "${CMAKE_CURRENT_BINARY_DIR}/libleanshared.so")
-  # CMAKE_STRIP is not found in a pixi (conda) environment on Linux, whose
-  # strip has a prefixed name (`aarch64-conda-linux-gnu-strip`) that the
-  # environment exports as $STRIP (audit T12, finding 1). Without any strip
-  # the library is copied as it is: larger, otherwise the same.
+  # CMAKE_STRIP is not found in a pixi (conda) environment on Linux: its
+  # binutils have prefixed names only (`aarch64-conda-linux-gnu-strip`), next
+  # to the compiler (audit T12, finding 1). The name is taken from the
+  # compiler's. Without any strip the library is copied as it is: larger,
+  # otherwise the same.
   set(_strip "${CMAKE_STRIP}")
   if(NOT _strip OR NOT EXISTS "${_strip}")
-    find_program(ROSLEAN_STRIP NAMES "$ENV{STRIP}" strip llvm-strip)
+    get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_cxx_name "${CMAKE_CXX_COMPILER}" NAME)
+    string(REGEX REPLACE "(c\\+\\+|g\\+\\+|clang\\+\\+)$" "strip" _strip_name "${_cxx_name}")
+    find_program(ROSLEAN_STRIP
+      NAMES "${_strip_name}" "${CMAKE_SYSTEM_PROCESSOR}-conda-linux-gnu-strip" strip llvm-strip
+      HINTS "${_cxx_dir}")
     set(_strip "${ROSLEAN_STRIP}")
   endif()
   if(_strip)
