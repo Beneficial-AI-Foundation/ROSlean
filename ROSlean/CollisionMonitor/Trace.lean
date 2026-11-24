@@ -886,8 +886,8 @@ start-up, over events of all kinds, if a command is processed and gets no
 velocity (the output is `answer none _`), then the velocity published last
 before it was a zero: an earlier command was answered with an action that
 yields zero for it (a stop, a zero command passed on, or a zero ratio), and
-no velocity has been published since, nor has the node been deactivated
-since.
+no velocity has been published since (`ZeroPublishedLast`, which says
+nothing about lifecycle transitions in between).
 
 This is what the robot's base has received when the node withholds under
 R15, also when the cause of the zero changes in between: after a zero
