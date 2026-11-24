@@ -176,7 +176,7 @@ if(BUILD_TESTING)
   # thread. The test asserts that the node survives. When the node is fixed
   # this test "unexpectedly passes": remove WILL_FAIL then. (WILL_FAIL
   # cannot tell why a test fails. Run by hand, the script prints
-  # "FAIL  the node has exited with code -6" and "1 failure(s) in 3 checks".)
+  # "FAIL  the node has exited with code -6" and "2 failure(s) in 3 checks".)
   add_test(NAME roslean_fault_clock_negative
     COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}"
       --only clock-negative)
