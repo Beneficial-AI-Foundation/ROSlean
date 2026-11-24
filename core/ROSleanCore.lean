@@ -1,6 +1,7 @@
 import ROSleanCore.Noop
 import ROSleanCore.Mux
 import ROSleanCore.FFI
+import ROSleanCore.CollisionMonitorXform
 import ROSleanCore.CollisionMonitor
 import ROSleanCore.CollisionMonitorConvert
 import ROSleanCore.CollisionMonitorFFI
