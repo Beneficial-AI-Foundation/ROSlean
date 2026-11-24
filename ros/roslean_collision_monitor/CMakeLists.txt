@@ -198,6 +198,53 @@ if(BUILD_TESTING)
     set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800
       LABELS long)
   endif()
+
+  # ---- The Nav2 extension (tasks/T07): lifecycle, state topic, polygon
+  # topics, transforms, base shift correction, zones fed by a topic --------
+  # What the tests pin down: docs/collision_monitor/UPSTREAM_BEHAVIOUR.md,
+  # "The Nav2 extension"; the plan they follow: SPEC_NAV2.md, section 10.
+  if(nav2_collision_monitor_FOUND)
+    # Fixed scenarios with the outputs observed from upstream.
+    add_test(NAME upstream_nav2_scenario
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario_nav2.py" ${_upstream})
+    set_tests_properties(upstream_nav2_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=140"
+      TIMEOUT 1800 LABELS long)
+    # The bond and Nav2's lifecycle manager, on the wall clock (half a minute).
+    add_test(NAME upstream_nav2_bond
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/bond_manager.py" ${_upstream})
+    set_tests_properties(upstream_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=141" TIMEOUT 300)
+    # Random configurations and event sequences against the Python model of
+    # random_nav2.py.
+    add_test(NAME upstream_nav2_random
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/random_nav2.py" ${_upstream} 0 10)
+    set_tests_properties(upstream_nav2_random PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=142"
+      TIMEOUT 1800 LABELS long)
+  endif()
+
+  # The ROSlean node through the same three tests. EXPECTED TO FAIL until the
+  # node has the extension (tasks/T06): today it is not a lifecycle node, and
+  # each script stops at its first check ("the node offers no lifecycle
+  # services"), within seconds. T08 removes WILL_FAIL, adds LABELS long to the
+  # first and the third, and completes test/profile_roslean_nav2.py, which
+  # states the differences from upstream that a scenario can see (ND4, ND5,
+  # ND6, ND11). (WILL_FAIL cannot tell why a test fails; run by hand, the
+  # scripts print that line.)
+  add_test(NAME roslean_nav2_scenario
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario_nav2.py" "${_lean}"
+      --profile profile_roslean_nav2 --first-failure)
+  set_tests_properties(roslean_nav2_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=143"
+    TIMEOUT 1800 WILL_FAIL TRUE)
+  add_test(NAME roslean_nav2_bond
+    COMMAND "${Python3_EXECUTABLE}" "${_test}/bond_manager.py" "${_lean}")
+  set_tests_properties(roslean_nav2_bond PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=144" TIMEOUT 300
+    WILL_FAIL TRUE)
+  if(nav2_collision_monitor_FOUND)
+    # Beside upstream on the same messages; both must give the model's answer.
+    add_test(NAME roslean_nav2_random
+      COMMAND "${Python3_EXECUTABLE}" "${_test}/random_nav2.py" "${_lean}" ${_upstream} 0 3)
+    set_tests_properties(roslean_nav2_random PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=145"
+      TIMEOUT 1800 WILL_FAIL TRUE)
+  endif()
 endif()
 
 # ---- begin: fixes after the review CM3/CM4 (docs/REVIEWS.md) ---------------
