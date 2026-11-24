@@ -56,6 +56,6 @@ Publish zero for every command that meets a demanded stop (obstacle or invalid s
 - Gain: "a demanded stop is published" becomes a theorem, and A3 is no longer needed for stops.
 - Cost: a deliberate difference from upstream. An outside system can no longer take over the velocity topic while the obstacle is in the stop zone and the planner is still commanding. The comparison tests against upstream must leave these cases out.
 
-Open decision in `tasks/PLAN.md`; until decided, as upstream. A parameter with upstream's behaviour as the default would keep the node a drop-in replacement and offer the stronger guarantee on request.
+Decided by the user on 2026-11-24 (`tasks/PLAN.md`, "Decisions"): as upstream. A parameter with upstream's behaviour as the default would keep the node a drop-in replacement and offer the stronger guarantee on request.
 
 It does not make the node publish without an incoming command. A zero when commands cease altogether is a separate decision (a timer).

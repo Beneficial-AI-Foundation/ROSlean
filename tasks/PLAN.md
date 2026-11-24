@@ -57,7 +57,7 @@ same row group can run at the same time.
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | merged 363ce85 |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | merged f7fa7cf |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | running |
-| [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | running |
+| [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | merged; the spots that point to T10's results are checked when T10 is merged |
 | [T12](T12-fresh-machine-audit.md) | Someone with nothing but the README builds and runs it | T11 | yes | open |
 
 ```
@@ -128,19 +128,14 @@ Decided by the user on 2026-11-24:
 | (T06) The old scenario profile does not compare state messages for the Lean node (`STATE_TOPIC = False`). | T08 decides in its review whether the 32 differing checks are stated differences or defects, and turns the comparison on where it can |
 | (T06) The component's plugin name is `roslean_collision_monitor::CollisionMonitorNode`; SPEC_NAV2.md proposed `…::CollisionMonitor`. | Keep the name that is built; T09 corrects the document |
 | (T06) `test-quick` takes 6 minutes with `smoke_component` (9 s) and `roslean_nav2_bond` (21 s) in it. | Leave them in |
-| (T08, finding 1) A polygon message with a non-finite or out-of-range vertex: upstream accepts it and its zone can still stop; our node refuses the message (ND6) and can pass where upstream stops. Stop until a usable message arrives, or reproduce upstream's NaN arithmetic? | Stop: after such a message the zone demands its action (a stop zone stops) until a usable message arrives. Never less restrictive than upstream; a numbered difference. **Default chosen by the orchestrator; the user has not confirmed it** |
 | (T08, finding 2) Under simulated time a backward clock jump during the wait for a transform hangs the node until the clock is back. Add tf2's rule to the node's loop, or give rclcpp its clock thread back and call tf2? | Add tf2's rule (give up when the clock jumps back) to the loop, and clear the TF buffer as upstream's clock thread does |
 | (T08, finding 3) Unrecorded differences: disabled visualised zones are published; unusable `points` with `polygon_sub_topic`, an empty `polygon_sub_topic` and a wrongly typed `slowdown_ratio` on a stop zone are refused where upstream configures. | Follow upstream in each (publish only enabled zones; fall back to the topic; ignore the unused parameter). 3d, 3e, 3f: correct the document or the code as the finding says |
 | (T08, finding 4) After a processed no-clock command no theorem stated from start-up applies. Take the review's `mixed_from_init` into `NoClock.lean`, or make the no-clock command an `Event`? | Take `mixed_from_init` in and correct THEOREMS.md |
 | (T08, finding 5) `lean_initialize_thread` is never called. | Call it where the runtime requires it (the component's executor threads); say in the SPEC what was checked |
 | (T08) The component dies with its container on a negative `/clock`, as upstream's does. | "As upstream" for the component; D15 is promised for the executable only, and the documentation says so |
 | (T08) State messages in the old scenario suite are not compared for the Lean node. | Leave it to `scenario_nav2.py` and `random_nav2.py`; T09 adds boundary cases for state messages there if cheap |
-| (T09) A zone marked unusable does its own action: a marked slowdown zone slows, it does not stop. Should a marked zone always stop? | No: its own action. **Not confirmed by the user** |
-| (T09) ND13: a refused refresh of a topic zone in another frame leaves the zone where it was; the one place left where the node can in principle be less restrictive than upstream (points about a kilometre from the base). Should it also make the zone demand its action? | Left as built for now. **Open for the user; the orchestrator recommends yes** |
 | (T09) The TF buffer has a clock of its own and the node clears it at a backward clock jump (trusted node code instead of tf2's hook). | Keep; it matches upstream in every scenario |
 | (T02) Negative `/clock`: fix it (T03 item 1) or accept "as upstream"? | Fix, as T03 says: no topic content may end the node |
-| (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
-| (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
 | (T04) A footprint zone fed from odom is left behind when its publisher stops: accept, give shapes a maximum age, or document only the fixed polygon? | Accept, as upstream; document the fixed polygon as the recommended edit |
@@ -151,6 +146,17 @@ Decided by the user on 2026-11-24:
 | (T05) Should `shutdown` also clear `prevZero` and `prevReport`, so that the lifecycle invariant holds in the finalized phase too? Nothing observable depends on it. | No: as SPEC_NAV2 E5 |
 | (T05) `test_cm_ffi` now takes 169 s (its leak test places a scan 650,000 times through the exact transform). | T06 reworks the C interface: it reduces the rounds or moves the leak test under `LABELS long`, so that `test-quick` stays short |
 | (T04) Which Nav2 parameter edit to document? | The footprint as a fixed polygon; the two-line `polygon_sub_topic` change is mentioned |
+
+Open or not confirmed (the rows are unchanged; they stood in the table above until
+task T11 grouped them). Each is built as its row says until the user decides:
+
+| Question | Decision |
+| --- | --- |
+| (T08, finding 1) A polygon message with a non-finite or out-of-range vertex: upstream accepts it and its zone can still stop; our node refuses the message (ND6) and can pass where upstream stops. Stop until a usable message arrives, or reproduce upstream's NaN arithmetic? | Stop: after such a message the zone demands its action (a stop zone stops) until a usable message arrives. Never less restrictive than upstream; a numbered difference. **Default chosen by the orchestrator; the user has not confirmed it** |
+| (T09) A zone marked unusable does its own action: a marked slowdown zone slows, it does not stop. Should a marked zone always stop? | No: its own action. **Not confirmed by the user** |
+| (T09) ND13: a refused refresh of a topic zone in another frame leaves the zone where it was; the one place left where the node can in principle be less restrictive than upstream (points about a kilometre from the base). Should it also make the zone demand its action? | Left as built for now. **Open for the user; the orchestrator recommends yes** |
+| (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
+| (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
 
 ## Watching the tasks
 

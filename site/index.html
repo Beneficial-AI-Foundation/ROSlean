@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ROSlean: ROS 2 packages written and verified in Lean</title>
-<meta name="description" content="ROS 2 packages whose decision logic is written in Lean, compiled into ordinary ROS nodes, and backed by machine-checked theorems.">
+<meta name="description" content="ROS 2 packages whose decision logic is written in Lean, compiled into ordinary ROS nodes, and backed by machine-checked theorems: twist_mux, and the stop and slowdown core of Nav2's collision monitor.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
@@ -19,6 +19,8 @@
       <a href="./" aria-current="page">Overview</a>
       <a href="#packages">Packages</a>
       <a href="details.html">twist_mux details</a>
+      <a href="details.html#collision-monitor">Collision monitor</a>
+      <a href="gaps.html">What is missing</a>
       <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
     </nav>
   </div>
@@ -36,6 +38,7 @@
       <h2>The goal</h2>
       <p>Robots run on ROS packages that decide which command reaches the motors, when to stop, and who is in control. Today those rules live in C++ and in documentation that does not always match it. Tests cover the cases someone thought of.</p>
       <p>We want ROS packages where the rules are stated once, in Lean, and hold for every input and every sequence of events. A package built this way is used like any other: same topics, same parameter files, same <code>ros2 run</code>. Lean is needed to build it, not to run it.</p>
+      <p>The theorems are about the messages a node publishes for the messages it receives. They are not about what the robot then does.</p>
       <ol class="pipeline">
         <li><span class="tag">Write</span><b>Logic in Lean</b>The node's decisions are one pure function: state and event in, new state and decision out.</li>
         <li><span class="tag ok">Prove</span><b>Theorems in Lean</b>Lean checks statements about that function for all configurations and all event histories.</li>
@@ -45,7 +48,7 @@
 
     <section id="packages">
       <h2>Packages</h2>
-      <p>Each package is a drop-in replacement for an existing ROS 2 package. <code>twist_mux</code> is the first; others will be listed here as they are done.</p>
+      <p>Each package replaces the decision logic of an existing ROS 2 package. <code>twist_mux</code> is a drop-in replacement. The collision monitor covers the stop and slowdown zones of Nav2's monitor and not its other actions; <a href="gaps.html">what is missing</a> is listed in full.</p>
       <ul class="packages">
         <li>
           <a href="#twist_mux"><code>twist_mux</code></a>
@@ -58,6 +61,20 @@
               <p><b>Run</b>The node on the robot runs that same function, compiled by Lean to C. A thin C++ shim handles topics, parameters and the clock, and makes no decisions.</p>
               <p><b>How they connect</b>A further theorem, <code>muxForward_after</code>, shows that the decision the node reads through the C interface is the one <code>step</code> makes. The shim, Lean's compiler and runtime, and ROS are trusted, not proved.</p>
               <p><b>Not proved</b>That it behaves like the original C++ <code>twist_mux</code>. This is tested by running both side by side. <a href="details.html#theorems">Full account</a></p>
+            </div>
+          </div>
+        </li>
+        <li>
+          <a href="#collision_monitor">collision monitor</a>
+          <span>The stop and slowdown core of Nav2's <code>nav2_collision_monitor</code>: passes a velocity command on, scales it down or replaces it by zero, depending on what a laser scan shows in configured zones.</span>
+          <div class="status">
+            <span class="tag ok">Verified, in part</span>
+            <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="cm-verified">i</button>
+            <div class="pop" id="cm-verified" role="note">
+              <p><b>Proved</b>Theorems about one function, <code>step</code>, which decides for every command whether it passes, is slowed, is stopped or is withheld. They hold for every configuration and every sequence of events.</p>
+              <p><b>Run</b>The node runs that function, compiled by Lean to C. A further theorem, <code>cm_readBack_after_fast</code>, shows that what the node reads through the C interface is the output of <code>step</code>.</p>
+              <p><b>Trusted, not proved</b>The C++ shim computes the scan's points and their transform in floating point, and multiplies the command by the ratio in a slowdown. Lean's compiler and runtime, tf2 and ROS.</p>
+              <p><b>Not covered</b>Nav2's <code>approach</code> and <code>limit</code> actions, point clouds, several sources. Nav2's default configuration uses <code>approach</code>. <a href="gaps.html">Full account</a></p>
             </div>
           </div>
         </li>
@@ -109,13 +126,48 @@
         <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">Source on GitHub</a>
       </div>
     </section>
+
+    <section id="collision_monitor">
+      <p class="eyebrow">Package 2</p>
+      <h2>Collision monitor</h2>
+      <p>Nav2's <a href="https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor"><code>nav2_collision_monitor</code></a> sits between Nav2's velocity smoother and the robot's base: it reads a laser scan, and when enough points lie in a configured zone it scales the velocity command down or replaces it by zero. The Lean version covers one laser scan source, circle and polygon zones, and the actions <code>stop</code> and <code>slowdown</code>. It is a lifecycle node with the same parameter format, topics and bond, so Nav2's lifecycle manager can launch it in place of Nav2's own monitor.</p>
+      <p class="note">It is not a drop-in replacement for Nav2's default configuration. That configuration's only zone uses the <code>approach</code> action, which this node refuses; the zone has to be replaced by a stop zone, and the robot then stops where stock Nav2 would slow down gradually. <a href="gaps.html#nav2">The edit, and everything else that is missing</a>.</p>
+
+      <h3 id="cm-theorem">Two of the theorems</h3>
+      <p>The node demands a stop for a command <strong>if and only if</strong> the scan source is invalid (no scan, a scan older than the timeout, or no transform for it) or some stop zone is triggered by the scan's points:</p>
+<pre><code><span class="k">theorem</span> evaluate_isStop_iff (cfg : Config) (st : State) (now : Nat)
+    (scanPts : Option (List Coords)) (zoneVerts : List (Option (List Coords))) :
+    (evaluate cfg st now scanPts zoneVerts).isStop = true ↔
+      sourcePoints cfg st now scanPts = none ∨
+      ∃ pts, sourcePoints cfg st now scanPts = some pts ∧
+        ∃ z ∈ (liveConfig cfg st zoneVerts).zones, z.action = .stop ∧ z.triggered pts = true</code></pre>
+      <p>And whatever the node publishes, for whatever event, in whatever state, is the command unchanged, a stop, or a slowdown by the configured ratio of the zone named, a number in [0, 1):</p>
+<pre><code><span class="k">theorem</span> no_amplification (cfg : Config) (st : State) (e : Event) (a : Action)
+    (h : (step cfg st e).2.velocity = some a) :
+    a = .pass ∨ (∃ k, a = .stopZone k) ∨ a = .stopSource ∨
+      ∃ k r, a = .slowdown k r ∧ r &lt; F64.one ∧
+        ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r</code></pre>
+      <p class="caption"><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L707"><code>ROSlean/CollisionMonitor/Properties.lean</code></a>, lines 707 and 940. Checked by Lean with no <code>sorry</code> and only Lean's three standard axioms.</p>
+      <p>These are statements about commands, not about physics. A demanded stop is published as zero or, once zero has been published for <code>stop_pub_timeout</code>, not published at all, as in Nav2's monitor; a further theorem, <code>run_withheld_last_published_zero</code>, says that the last velocity the node published is then a zero. That the multiplication of a slowdown does not enlarge the command is IEEE-754 arithmetic in the C++ shim, trusted and not proved. Whether the robot stops in front of an obstacle depends also on the sensor, the zone sizes, the transforms and the base.</p>
+
+      <h3>Tested beside the original</h3>
+      <p>Both nodes were run on the same messages under a simulated clock. In 318 checks of 73 scenario runs, 289 checks of the Nav2 scenarios, and 600 random cases with 43,748 commands, every difference was one of the numbered differences of the specification, and in none did the original stop or slow where the Lean node did not. Where the two differ, the Lean node's zones are larger by up to 3.5 mm (circle) or 4.4 mm (polygon). A command costs 6 to 9 times the original's processor time in process (49 µs against 7 µs for 1080 readings and two polygon zones) and stays inside a stated budget.</p>
+      <p class="note">Run on macOS arm64 and, in part, in a Linux arm64 container on the same machine. Not run on x86-64, on Linux on its own hardware, or on a robot.</p>
+
+      <h3>The demo</h3>
+      <p>In Gazebo a TurtleBot3 drives through an apartment with the mux and the collision monitor in series. A script drops a box in its path; the robot continues at 40 % of its speed while the box is in the slowdown zone, stops when it reaches the stop zone, and drives on when the box is removed. An automated check measures the run against the simulator's ground truth. It shows one head-on approach in simulation. <!-- T10: the next sentence points to the tutorial for the Nav2 variant and states no result. Check at the merge. -->The <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">tutorial</a> has the steps, the numbers, and the variant in which Nav2 launches the Lean node.</p>
+      <div class="links">
+        <a class="cta" href="details.html#collision-monitor">The collision monitor in detail</a>
+        <a href="gaps.html">What is missing</a>
+      </div>
+    </section>
   </div>
 </main>
 
 <footer>
   <div class="wrap wide">
     <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
-    <span><a href="details.html">twist_mux: implementation, theorems, correspondence, performance</a></span>
+    <span><a href="details.html">Details</a> · <a href="gaps.html">Collision monitor: what is missing</a></span>
   </div>
 </footer>
 
