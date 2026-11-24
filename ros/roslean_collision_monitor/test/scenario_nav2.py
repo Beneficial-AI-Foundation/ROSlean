@@ -426,6 +426,25 @@ TF_CLOCK_JUMP_BACK = [
             'until the transform is published again', state=SC),
 ]
 
+# Transforms tf2 does not take (N25): a zero quaternion and a NaN. The frame
+# stays unknown. (If one got through, the ROSlean node would count it as a
+# failed lookup, ND7: the same answers.)
+TF_BAD_QUATERNION = [
+    clock(T), scan(ray(0.25, **LASER)),
+    static(xf(BASE, 'laser', q=(0.0, 0.0, 0.0, 0.0))),
+    cmd(V, None, 'the transform was published with the quaternion (0, 0, 0, 0): the frame is '
+        'still unknown, the command waits'),
+    late(T + s(0.5), ZERO, 'after the tolerance: invalid source', state=INVALID),
+    static(xf(BASE, 'laser', q=(0.0, 0.0, NAN, 1.0))),
+    cmd(V, None, 'published with a NaN in the quaternion: still unknown'),
+    late(T + s(1), ZERO, 'after the tolerance: invalid source'),
+    static(xf(BASE, 'laser', x=NAN)),
+    cmd(V, None, 'published with a NaN translation: still unknown'),
+    late(T + s(1.5), ZERO, 'after the tolerance: invalid source'),
+    static(xf(BASE, 'laser')),
+    cmd(V, ZERO, 'published properly: the point is in the circle', state=SC),
+]
+
 # ---- base shift correction (N24; rows 15 to 19) --------------------------------
 
 SHIFT_STRAIGHT = [
@@ -818,6 +837,9 @@ SCENARIOS = {
 
     'tf-clock-jump-back': dict(family='transforms', params=[P('StopCircle')],
                                steps=TF_CLOCK_JUMP_BACK, tf=[xf(BASE, 'laser')]),
+
+    'tf-bad-quaternion': dict(family='transforms', params=[P('StopCircle')],
+                              steps=TF_BAD_QUATERNION),
 
     'shift-straight': dict(family='shift', params=[P('StopCircle'), 'base_shift_correction:=true'],
                            steps=SHIFT_STRAIGHT),

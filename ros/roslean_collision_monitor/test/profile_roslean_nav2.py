@@ -15,8 +15,12 @@ can see and that do not depend on where the transform is applied are stated
 (ND4, ND5, ND6, and the wording of the refusal, ND11). T08 runs the node
 through the scenarios and completes this file: what the node does at a zone
 boundary after a transform (ND1, and D3/D4 of SPEC.md) is deliberately not
-stated here; the scenarios keep every point at least 0.125 m from every
-zone edge except where a label says "on" an edge.
+stated here. The scenarios keep every point at least 0.125 m from every
+zone edge, with one exception: `shift-interpolation` puts points exactly on
+a circle and one float32 step inside it, to pin upstream's interpolation.
+The two nodes are not expected to agree there (the ROSlean node's points are
+a second floating-point evaluation of upstream's formula, and its zones are
+in millimetres), so that scenario is not run for this node.
 
 EXPECT maps a scenario name to a dict with any of
 
@@ -54,6 +58,8 @@ EXPECT = {
     'state-name-collision': {'refused': (
         'ND5', 'a zone named "invalid source" is refused: the state topic could not tell it '
                'from an invalid source')},
+    'shift-interpolation': {'skip': (
+        'ND1', 'points exactly on a zone boundary: the two nodes are not expected to agree')},
     'footprint-approach-unchanged': {'skip': (
         'D1', 'action_type approach is outside the subset; the node refuses it')},
     'footprint-edit-stop': {'log': ('ND11', ND11, ['polygon_sub_topic'])},

@@ -520,8 +520,12 @@ mounted upside down mirrors left and right; a sensor 5 m above the base
 gives the same points as one on it; a quaternion that is not normalised,
 (0, 0, 0, 2), acts as the identity; with the sensor pitched by a quarter
 turn a point 3 m along its x axis lands on the base and triggers a 0.5 m
-stop circle, while a ray to its side keeps its place. Scenarios `tf-tilt`,
-`tf-pitch-circle`. (N25.)
+stop circle, while a ray to its side keeps its place. A transform
+published with the quaternion (0, 0, 0, 0), with a NaN in the quaternion or
+with a NaN translation is not taken by tf2 (`TF_DENORMALIZED_QUATERNION`,
+`TF_NAN_INPUT` in the node's output): the frame stays unknown and commands
+wait and stop as in finding 33 (new). Scenarios `tf-tilt`,
+`tf-pitch-circle`, `tf-bad-quaternion`. (N25.)
 
 ### 33. `transform_tolerance` is a wait, exact to the nanosecond
 
@@ -733,7 +737,7 @@ The extension's tests take the node as their first argument in the same
 way (default: upstream), and need a lifecycle node:
 
 ```
-python3 scenario_nav2.py                                  # upstream, 36 scenarios
+python3 scenario_nav2.py                                  # upstream, 37 scenarios
 python3 scenario_nav2.py --only transforms,shift          # families, or scenario names
 python3 scenario_nav2.py NODE --profile profile_roslean_nav2
 python3 random_nav2.py 0 20                               # upstream against the model
