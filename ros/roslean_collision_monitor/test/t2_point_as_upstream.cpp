@@ -1,16 +1,18 @@
 // T2 on macOS: is the point of a reading the one upstream computes?
 //
-// EXPECTED TO FAIL at present (docs/collision_monitor/COMPARISON.md,
-// defect 4), and registered with WILL_FAIL on macOS only.
+// Registered on macOS only. It failed while `pixi run build` compiled the
+// node without optimisation; since the package builds as Release by default
+// (review CM3/CM4, finding 5) it passes, and it fails again in a Debug
+// build. smoke_conversions makes the same comparison on 200 scans against a
+// copy of upstream's loop; this test holds one angle and upstream's bits.
 //
 // docs/collision_monitor/SPEC.md, "Scan event": the point of a reading is
 // computed as upstream's Scan::getData computes it, range * cos(angle) and
 // range * sin(angle) in single precision. Upstream's binary (RoboStack,
 // nav2_collision_monitor 1.3.12, arm64) obtains sine and cosine from one
-// call of Apple's __sincosf_stret. The node as built by `pixi run build`,
-// without optimisation, calls cosf and sinf, and for 2.6 % of angles Apple's
-// library returns a cosine or a sine from those that is one float32 step
-// away.
+// call of Apple's __sincosf_stret. A build of the node without optimisation
+// calls cosf and sinf, and for 2.6 % of angles Apple's library returns a
+// cosine or a sine from those that is one float32 step away.
 //
 // The angle below is the one of the random case that showed it
 // (random_diff.py --roslean --yaw, seed 1057): five readings of

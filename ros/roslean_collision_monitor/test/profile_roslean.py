@@ -12,7 +12,9 @@ with it.
 
 EXPECT maps a scenario name to a dict with any of
 
-  refused   (D, why)           the node must refuse to start
+  refused   (D, why, parameter)
+                               the node must refuse to start, and its log must
+                               say that this one parameter was refused
   diffs     {text: (out, D, why)}
                                the check whose label contains `text` gives
                                `out` (None: nothing published) instead of
@@ -44,7 +46,8 @@ TF = False
 
 D4_CIRCLE = 'the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it'
 D4_POLY = 'the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside'
-D11_SHIFT = 'base_shift_correction must be false: scan points are not corrected for motion'
+SHIFT_REFUSED = ('D11', 'base_shift_correction must be false: scan points are not corrected '
+                        'for motion', 'base_shift_correction')
 
 
 def pose(x, y, yaw=0.0):
@@ -98,10 +101,13 @@ EXPECT = {
     }},
 
     # ---- configurations upstream accepts and this node refuses --------------
-    'ratio-negative': {'refused': ('D5', 'a slowdown ratio with the sign bit set is refused')},
-    'ratio-minus-one': {'refused': ('D5', 'a slowdown ratio with the sign bit set is refused')},
-    'timeout-negative': {'refused': ('D9', 'a negative source_timeout is refused')},
-    'action-none': {'refused': ('D1', 'action_type none is outside the subset')},
+    'ratio-negative': {'refused': ('D5', 'a slowdown ratio with the sign bit set is refused',
+                                   'SlowNegative.slowdown_ratio')},
+    'ratio-minus-one': {'refused': ('D5', 'a slowdown ratio with the sign bit set is refused',
+                                    'SlowMinusOne.slowdown_ratio')},
+    'timeout-negative': {'refused': ('D9', 'a negative source_timeout is refused', 'source_timeout')},
+    'action-none': {'refused': ('D1', 'action_type none is outside the subset',
+                                'NoAction.action_type')},
 
     # ---- transforms: D11 ----------------------------------------------------
     # The four corners need four sensor poses, hence four runs of the node:
@@ -116,9 +122,9 @@ EXPECT = {
         'params': pose(0.25, 0.0, math.pi),
         'diffs': {'on the circle: outside': (ZERO, 'D4', D4_CIRCLE + ' (500 mm < 501 mm)')},
     },
-    'offset-shift-correction': {'refused': ('D11', D11_SHIFT)},
-    'shift-correction-same-frame': {'refused': ('D11', D11_SHIFT)},
-    'no-odom': {'refused': ('D11', D11_SHIFT)},
+    'offset-shift-correction': {'refused': SHIFT_REFUSED},
+    'shift-correction-same-frame': {'refused': SHIFT_REFUSED},
+    'no-odom': {'refused': SHIFT_REFUSED},
     # A scan in a frame that is not the base frame, without a sensor pose,
     # is not used: the same answers as upstream without a transform.
     'no-transform': {'no_tf': ('D11', 'no lookup; a scan in a foreign frame is not used')},
@@ -169,17 +175,20 @@ EXPECT.update({
     'roslean-vertex-tr': {'diffs': {'corner (0.5, 0.5)': (ZERO, 'D4', D4_POLY)}},
     'roslean-vertex-br': {'diffs': {'corner (0.5, -0.5)': (ZERO, 'D4', D4_POLY)}},
     'roslean-vertex-bl': {'diffs': {'corner (-0.5, -0.5)': (ZERO, 'D4', D4_POLY)}},
-    'roslean-state-topic': {'refused': ('D13', 'the state topic is not provided')},
+    'roslean-state-topic': {'refused': ('D13', 'the state topic is not provided', 'state_topic')},
 })
 
 # The scenarios of probes.py: statements of the SPEC put to upstream's
 # binary. This node must answer them as upstream does, except:
 SCENARIOS.update(PROBES)
 EXPECT.update({
-    'probe-stop-pub-negative': {'refused': ('D9', 'a negative stop_pub_timeout is refused')},
-    'probe-max-points': {'refused': ('D10', 'max_points is refused')},
+    'probe-stop-pub-negative': {
+        'refused': ('D9', 'a negative stop_pub_timeout is refused', 'stop_pub_timeout')},
+    'probe-max-points': {'refused': ('D10', 'max_points is refused', 'StopCircle.max_points')},
     'probe-min-points-wraps': {
-        'refused': ('D10', 'min_points outside the range of a 32-bit int is refused')},
+        'refused': ('D10', 'min_points outside the range of a 32-bit int is refused',
+                    'StopCircle.min_points')},
     'probe-ratio-negative-zero': {
-        'refused': ('D5', 'a slowdown ratio with the sign bit set is refused')},
+        'refused': ('D5', 'a slowdown ratio with the sign bit set is refused',
+                    'SlowZero.slowdown_ratio')},
 })

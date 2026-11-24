@@ -72,16 +72,24 @@ if(BUILD_TESTING)
   target_link_libraries(band_bounds roslean_core::roslean_core)
   add_test(NAME band_bounds COMMAND band_bounds 20000)
 
+  # EXPECTED TO FAIL (COMPARISON.md, defect 2): what a command costs per
+  # stored reading and zone. Polygon zones cost about 200 ns, the limit
+  # asserted is 25 ns. The answers are right; the time is the defect. When
+  # the test "unexpectedly passes", remove WILL_FAIL.
+  add_executable(cmd_cost test/cmd_cost.cpp)
+  target_include_directories(cmd_cost PRIVATE include)
+  target_link_libraries(cmd_cost roslean_core::roslean_core)
+  add_test(NAME roslean_cmd_cost COMMAND cmd_cost)
+  set_tests_properties(roslean_cmd_cost PROPERTIES WILL_FAIL TRUE)
+
   if(APPLE)
-    # EXPECTED TO FAIL (COMPARISON.md, defect 4): compiled as the node is,
-    # the shim takes cosine and sine from cosf and sinf, upstream's binary
-    # from __sincosf_stret, and for 2.6 % of angles Apple's library returns
-    # values one float32 step apart. The test asserts upstream's value for
-    # one such angle. When it "unexpectedly passes", remove WILL_FAIL.
+    # T2 on macOS: for one angle at which Apple's cosf and __sincosf_stret
+    # differ, the shim's point is the one upstream's binary computes. It
+    # failed while the node was built without optimisation (review CM3/CM4,
+    # finding 5; fixed since) and fails again in such a build.
     add_executable(t2_point_as_upstream test/t2_point_as_upstream.cpp)
     target_include_directories(t2_point_as_upstream PRIVATE include)
     add_test(NAME t2_point_as_upstream COMMAND t2_point_as_upstream)
-    set_tests_properties(t2_point_as_upstream PROPERTIES WILL_FAIL TRUE)
   endif()
 
   # The node over real topics under simulated time: pass-through, slowdown,
@@ -148,7 +156,9 @@ if(BUILD_TESTING)
   # the node must refuse. A stated difference that does not occur fails too.
   add_test(NAME roslean_scenario
     COMMAND "${Python3_EXECUTABLE}" "${_test}/scenario.py" "${_lean}" --profile profile_roslean)
-  set_tests_properties(roslean_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=91" TIMEOUT 3600)
+  # LABELS long (five minutes): not part of `pixi run test-quick`.
+  set_tests_properties(roslean_scenario PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=91" TIMEOUT 3600
+    LABELS long)
 
   # Malformed and hostile input. Without upstream the node is driven alone.
   if(nav2_collision_monitor_FOUND)
@@ -160,16 +170,18 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}" ${_beside}
       --skip clock-negative)
   set_tests_properties(roslean_fault_injection PROPERTIES
-    ENVIRONMENT "ROS_DOMAIN_ID=97" TIMEOUT 1800)
+    ENVIRONMENT "ROS_DOMAIN_ID=120" TIMEOUT 1800 LABELS long)
   # EXPECTED TO FAIL (COMPARISON.md, defect 1): a /clock message with a
   # negative time aborts the node; the exception is thrown in rclcpp's clock
   # thread. The test asserts that the node survives. When the node is fixed
-  # this test "unexpectedly passes": remove WILL_FAIL then.
+  # this test "unexpectedly passes": remove WILL_FAIL then. (WILL_FAIL
+  # cannot tell why a test fails. Run by hand, the script prints
+  # "FAIL  the node has exited with code -6" and "1 failure(s) in 3 checks".)
   add_test(NAME roslean_fault_clock_negative
     COMMAND "${Python3_EXECUTABLE}" "${_test}/fault_injection.py" "${_lean}"
       --only clock-negative)
   set_tests_properties(roslean_fault_clock_negative PROPERTIES
-    ENVIRONMENT "ROS_DOMAIN_ID=98" TIMEOUT 600 WILL_FAIL TRUE)
+    ENVIRONMENT "ROS_DOMAIN_ID=121" TIMEOUT 600 WILL_FAIL TRUE)
 
   if(nav2_collision_monitor_FOUND)
     # Statements that only the SPEC makes, put to upstream's binary.
@@ -183,7 +195,8 @@ if(BUILD_TESTING)
     add_test(NAME roslean_random_diff
       COMMAND "${Python3_EXECUTABLE}" "${_test}/random_diff.py" "${_lean}" ${_upstream} 0 6
         --roslean)
-    set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800)
+    set_tests_properties(roslean_random_diff PROPERTIES ENVIRONMENT "ROS_DOMAIN_ID=93" TIMEOUT 1800
+      LABELS long)
   endif()
 endif()
 

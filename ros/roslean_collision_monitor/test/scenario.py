@@ -37,6 +37,7 @@ import argparse
 import math
 import os
 import sys
+import tempfile
 
 import rclpy
 
@@ -807,6 +808,9 @@ def run_scenario(exe, name, opts):
     side = Side(exe, 'collision_monitor', 'cmd_vel_out',
                 'cm_state' if opts.state_topic else None)
     log = os.path.join(opts.logs, f'{name}.log') if opts.logs else None
+    if 'refused' in expect and not log:
+        # The node's output is needed: it must name the refused parameter.
+        log = os.path.join(tempfile.mkdtemp(prefix='roslean_cm_scenario_'), f'{name}.log')
     side.start(os.path.join(HERE, 'zones.yaml'), params, log)
     d = Driver('scenario_driver', [side], stamped, scan_frame=sc.get('scan_frame', 'base_footprint'))
     check_state = not opts.ignore_state
@@ -823,6 +827,10 @@ def run_scenario(exe, name, opts):
             return out, ''
         used.add(id(ov))
         tags.append(ov[1])
+        if repr(ov[0]) == repr(out):
+            # repr tells -0.0 from 0.0. An entry that states upstream's own
+            # answer is not a difference and would only inflate the count.
+            note(False, f'profile: the expected difference {label!r} is upstream\'s answer')
         return ov[0], f'[{ov[1]}: {ov[2]}] '
 
     try:
@@ -832,9 +840,18 @@ def run_scenario(exe, name, opts):
         if must_refuse:
             mark = ''
             if 'refused' in expect:
-                tags.append(expect['refused'][0])
-                mark = '[%s: %s] ' % expect['refused']
+                tag, why, param = expect['refused']
+                tags.append(tag)
+                mark = f'[{tag}: {why}] '
             note(status == 'refused', f'{mark}configuration is refused (node is {status})')
+            if 'refused' in expect and status == 'refused':
+                # Refused for the stated reason and for nothing else: a node
+                # that exits for another reason would pass the check above.
+                side.stop()
+                with open(log) as f:
+                    text = f.read()
+                want = f"1 parameter refused: parameter '{param}'"
+                note(want in text, f'{mark}the node names the reason: "{want}"')
         elif status != 'active':
             note(False, 'node refused its configuration')
         else:
