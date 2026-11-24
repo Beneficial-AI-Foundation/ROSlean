@@ -436,7 +436,7 @@ FootprintStop:
         </table>
       </div>
       <p class="note">Median per command, the callback bodies of both nodes in one process on the same messages, nothing in a zone, the identity as the transform and no TF buffer; one Apple M5, macOS arm64 (task T06). That is 6 to 9 times upstream's. In the Linux arm64 container an earlier version of the command path measured 4.2 to 6.4 times upstream's (task T03); the final node was not timed there. The budget is a line drawn in this project (150 µs is 0.75 % of the 20 ms between two commands at 50 Hz), not upstream's speed; the test <code>roslean_cmd_cost</code> asserts it for the Lean core alone.</p>
-      <p>Not measured: a transform from the TF buffer in the loop, base shift correction, topic zones, any x86-64 machine. Through the two node binaries over topics at 50 commands a second, both answered every command and the median latencies were within the noise of the measuring program and the middleware (5.8 to 7.5 ms for the Lean node, 6.3 to 6.6 ms for upstream, macOS).</p>
+      <p>Not measured: a transform from the TF buffer in the loop, base shift correction, topic zones, any x86-64 machine. Through the two node binaries over topics at 50 commands a second, both answered every command; the median latency, most of it the measuring program's and the middleware's, was 5.8, 6.7 and 7.5 ms for the Lean node and 6.3, 6.6 and 6.4 ms for upstream at 360, 1080 and 10,000 readings (macOS).</p>
       <p>Whether upstream's speed is wanted is the user's to say; until then the budget is the target (tasks/PLAN.md). The scan callback costs about 10 ns per reading, where upstream stores a pointer.</p>
     </section>
 
