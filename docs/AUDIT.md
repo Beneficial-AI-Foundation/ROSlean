@@ -249,7 +249,9 @@ Matters of substance, left as they are. Numbered for reference.
    random decisions were compared with ("`ros-jazzy-twist-mux` from apt").
 9. **Three statements leave out a hypothesis of their theorem.** None is
    false as a description of the node; each is narrower in Lean than in
-   the sentence.
+   the sentence. (Corrected in README.md and `details.html` after
+   the audit, by the orchestrator; the description below is of the audited
+   commit.)
    - README, "Stale data, no transform" (`stale`, `no_transform`,
      `run_stale`, `run_no_transform`): "With a non-zero `source_timeout`".
      The theorems also require the source to be enabled
