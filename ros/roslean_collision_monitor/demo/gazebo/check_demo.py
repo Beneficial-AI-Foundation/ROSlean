@@ -21,7 +21,13 @@ It prints the measured speeds, the stopping distance and the gap to the box.
 static, so its pose is the one it was created with.
 
     check_demo.py [--monitor nav2_collision_monitor] [--mux twist_mux] [--log FILE]
-                  [--no-furniture]
+                  [--no-furniture] [--nav2]
+
+With --nav2 it checks the variant in which Nav2's own bring-up starts the
+monitor (cm_nav2_launch.py with driver:=patrol): the same scenario on Nav2's
+topics and with the zones of nav2_monitor.yaml, and in addition that Nav2's
+lifecycle manager activated the monitor, that exactly one monitor runs and
+from which package, and what the monitor's state topic said.
 
 Not a colcon test: Gazebo renders the lidar, so the check needs a machine
 with a display (docs/TUTORIAL_GAZEBO.md), and the world needs the furniture
@@ -47,13 +53,25 @@ os.environ.setdefault('GZ_PARTITION', f'roslean_cm_check_{os.getpid()}')
 import rclpy  # noqa: E402
 from ament_index_python.packages import get_package_share_directory  # noqa: E402
 from geometry_msgs.msg import TwistStamped  # noqa: E402
+from lifecycle_msgs.srv import GetState  # noqa: E402
+from nav2_msgs.msg import CollisionMonitorState  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import obstacle  # noqa: E402
 
 PLANNER_SPEED = 0.18   # m/s, SPEED in patrol.py
-RATIO = 0.4            # slowdown_ratio in monitor.yaml
-STOP_EDGE = 0.30       # m ahead of the robot's origin: front edge of the stop zone, monitor.yaml
+RATIO = 0.4            # slowdown_ratio in monitor.yaml and in nav2_monitor.yaml
+
+# The two variants: the launch file, the monitor's input and output topics,
+# and the front edge of the stop zone in metres ahead of the robot's origin.
+VARIANTS = {
+    'mux': dict(launch='cm_gazebo_launch.py', cmd_in='cmd_vel_mux', cmd_out='cmd_vel_monitored',
+                stop_edge=0.30, node='cm_gate'),                # monitor.yaml
+    'nav2': dict(launch='cm_nav2_launch.py', cmd_in='cmd_vel_smoothed', cmd_out='cmd_vel',
+                 stop_edge=0.305, node='collision_monitor'),    # nav2_monitor.yaml
+}
+STOP_EDGE = VARIANTS['mux']['stop_edge']
+STATE_ACTIONS = {0: 'do nothing', 1: 'stop', 2: 'slowdown', 3: 'approach', 4: 'limit'}
 
 
 def planar(twist):
@@ -62,10 +80,12 @@ def planar(twist):
 
 class Recorder(obstacle.Observer):
 
-    def __init__(self):
+    def __init__(self, variant=VARIANTS['mux']):
         super().__init__('demo_check')
         self.track = []      # (t, x, y, yaw), every pose
-        self.commands = {}   # header stamp -> velocity, monitor input
+        self.commands = {}   # header stamp -> velocities, monitor input
+        self.states = []     # (t, action, zone): the monitor's state topic
+        self.bringup = {}    # what was seen of the running system (--nav2)
         self.outputs = []    # (t, command, published), monitor output paired with its input
         self.raw_outputs = []
         self.unpaired = 0
@@ -73,14 +93,20 @@ class Recorder(obstacle.Observer):
         self.box = None
         self.rest_gap = None
         self.still = None
-        self.create_subscription(TwistStamped, 'cmd_vel_mux', self.on_in, 100)
-        self.create_subscription(TwistStamped, 'cmd_vel_monitored', self.on_out, 100)
+        self.create_subscription(TwistStamped, variant['cmd_in'], self.on_in, 100)
+        self.create_subscription(TwistStamped, variant['cmd_out'], self.on_out, 100)
+        self.create_subscription(
+            CollisionMonitorState, 'collision_monitor_state',
+            lambda m: self.states.append((self.now(), m.action_type, m.polygon_name)), 100)
 
     def on_pose(self, t):
         self.track.append(self.poses[-1])
 
     def on_in(self, msg):
-        self.commands[(msg.header.stamp.sec, msg.header.stamp.nanosec)] = planar(msg.twist)
+        # Nav2's velocity smoother sends several messages with the stamp of
+        # the command it is smoothing, so a stamp can have several velocities.
+        self.commands.setdefault(
+            (msg.header.stamp.sec, msg.header.stamp.nanosec), []).append(planar(msg.twist))
 
     def on_out(self, msg):
         self.raw_outputs.append(
@@ -88,13 +114,57 @@ class Recorder(obstacle.Observer):
 
     def pair(self):
         """Pairs each published message with the command of the same stamp.
-        Done at the end, since a command may reach this node after its answer."""
+        Done at the end, since a command may reach this node after its answer.
+        If several commands carry that stamp, the one the published velocity
+        equals is taken, else one it is RATIO times, else the newest."""
         for t, stamp, published in self.raw_outputs:
-            command = self.commands.get(stamp)
-            if command is None:
+            commands = self.commands.get(stamp)
+            if commands is None:
                 self.unpaired += 1
+                continue
+            command = commands[-1]
+            for candidate in commands:
+                if candidate == published:
+                    command = candidate
+                    break
             else:
-                self.outputs.append((t, command, published))
+                for candidate in commands:
+                    if scaled(candidate, published, RATIO):
+                        command = candidate
+                        break
+            self.outputs.append((t, command, published))
+
+    def lifecycle_state(self, node_name):
+        client = self.create_client(GetState, f'/{node_name}/get_state')
+        if not client.wait_for_service(timeout_sec=3.0):
+            return 'no lifecycle service'
+        future = client.call_async(GetState.Request())
+        end = time.monotonic() + 5.0
+        while not future.done() and time.monotonic() < end:
+            rclpy.spin_once(self, timeout_sec=0.02)
+        return future.result().current_state.label if future.done() else 'no answer'
+
+    def look_at_bringup(self, demo_pid, node_name):
+        """What runs, seen from outside while the demo is still up."""
+        names = sorted(name for name, _ in self.get_node_names_and_namespaces())
+        listing = subprocess.run(['ps', '-axo', 'pgid=,command='],
+                                 capture_output=True, text=True).stdout
+        executables = []
+        for line in listing.splitlines():
+            fields = line.split()
+            if (len(fields) >= 2 and fields[0] == str(demo_pid)
+                    and fields[1].endswith('/collision_monitor')):
+                executables.append(fields[1])
+        self.bringup = dict(
+            state=self.lifecycle_state(node_name),
+            monitors=[n for n in names if 'collision_monitor' in n or n == 'cm_gate'],
+            lifecycle_managers=[n for n in names if n.startswith('lifecycle_manager')],
+            nodes=names,
+            executables=executables,
+            publishers=sorted({i.node_name for i in
+                               self.get_publishers_info_by_topic('cmd_vel')}),
+            subscribers=sorted({i.node_name for i in
+                                self.get_subscriptions_info_by_topic('cmd_vel_smoothed')}))
 
     def on_event(self, name, **details):
         self.events[name] = self.now()
@@ -133,7 +203,34 @@ def scaled(command, published, ratio):
     return all(abs(p - ratio * c) <= 1e-12 for c, p in zip(command, published))
 
 
-def analyse(rec):
+def analyse_bringup(rec, package, log_text, check):
+    """--nav2: who started the monitor, and is it the only one."""
+    b = rec.bringup
+    print('\n0. Nav2\'s bring-up')
+    if not b:
+        check(False, 'the running system was not looked at (the scenario ended early)')
+        return
+    check(b['state'] == 'active', f"the node collision_monitor is in the lifecycle state "
+          f"'{b['state']}'")
+    activated = [line for line in log_text.splitlines()
+                 if 'lifecycle_manager_navigation' in line and 'Managed nodes are active' in line]
+    check(bool(activated), "Nav2's lifecycle_manager_navigation reported 'Managed nodes are "
+          "active'")
+    check(b['monitors'] == ['collision_monitor'],
+          f"one collision monitor node runs: {b['monitors']}")
+    check(len(b['executables']) == 1 and f'/{package}/' in b['executables'][0],
+          f"its executable: {b['executables']}")
+    print(f"        publishers of cmd_vel: {b['publishers']}")
+    print(f"        subscribers of cmd_vel_smoothed: {b['subscribers']}")
+    print(f"        lifecycle managers: {b['lifecycle_managers']}")
+    print(f"        {len(b['nodes'])} nodes: {', '.join(b['nodes'])}")
+    said = [(STATE_ACTIONS.get(a, str(a)), zone) for _, a, zone in rec.states]
+    check(('slowdown', 'FootprintSlow') in said and ('stop', 'FootprintStop') in said,
+          'the state topic named the slowdown zone and the stop zone')
+    print(f"        state topic, in order: {said}")
+
+
+def analyse(rec, variant=VARIANTS['mux'], package=None, log_text=''):
     """Prints the measurements; returns the list of failed assertions."""
     failed = []
 
@@ -141,6 +238,9 @@ def analyse(rec):
         print(f"  {'ok  ' if ok else 'FAIL'}  {text}")
         if not ok:
             failed.append(text)
+
+    if variant is VARIANTS['nav2']:
+        analyse_bringup(rec, package, log_text, check)
 
     ev = rec.events
     for name in ('dropped', 'rest', 'removed', 'moving'):
@@ -201,7 +301,7 @@ def analyse(rec):
     print(f'        first zero published with the box {gap_stop:.3f} m from the robot')
     print(f'        stopping distance {stopping:.3f} m, from the first zero to rest')
     print(f'        at rest {gap_rest:.3f} m from the box (the front edge of the stop zone is '
-          f'{STOP_EDGE - obstacle.BODY[1]:.3f} m ahead of the robot)')
+          f"{variant['stop_edge'] - obstacle.BODY[1]:.3f} m ahead of the robot)")
     zeros = [t for t, _, p in rec.outputs if t_stop <= t <= t_removed and is_zero(p)]
     print(f'        the monitor published {len(zeros)} zeros over {zeros[-1] - zeros[0]:.2f} s '
           f'and was then silent for {t_removed - zeros[-1]:.1f} s (stop_pub_timeout)')
@@ -265,23 +365,37 @@ def main():
     parser.add_argument('--log', help='keep the output of the demo in this file')
     parser.add_argument('--no-furniture', action='store_true',
                         help='load the world without the models from Gazebo Fuel')
+    parser.add_argument('--nav2', action='store_true',
+                        help="the variant in which Nav2's bring-up starts the monitor")
     args = parser.parse_args()
+    variant = VARIANTS['nav2' if args.nav2 else 'mux']
 
     launch_file = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                               'demo', 'gazebo', 'cm_gazebo_launch.py')
-    log = open(args.log, 'w') if args.log else tempfile.TemporaryFile(mode='w+')
-    print(f'starting the demo without windows (monitor: {args.monitor}, mux: {args.mux}, '
+                               'demo', 'gazebo', variant['launch'])
+    log = open(args.log, 'w+') if args.log else tempfile.TemporaryFile(mode='w+')
+    if args.nav2:
+        print("variant: Nav2's bring-up starts the monitor; the patrol script drives "
+              'on cmd_vel_nav')
+    print(f'starting the demo without windows (monitor: {args.monitor}, mux: '
+          f"{'none' if args.nav2 else args.mux}, "
           f"ROS_DOMAIN_ID={os.environ['ROS_DOMAIN_ID']}, "
           f"GZ_PARTITION={os.environ['GZ_PARTITION']})")
     wall = time.monotonic()
     demo = subprocess.Popen(
-        ['ros2', 'launch', launch_file, 'gui:=false', f'monitor_package:={args.monitor}',
-         f'mux_package:={args.mux}'] + (['furniture:=false'] if args.no_furniture else []),
+        ['ros2', 'launch', launch_file, 'gui:=false', f'monitor_package:={args.monitor}']
+        + (['driver:=patrol'] if args.nav2 else [f'mux_package:={args.mux}'])
+        + (['furniture:=false'] if args.no_furniture else []),
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     rclpy.init()
-    rec = Recorder()
+    rec = Recorder(variant)
+
+    def on_event(name, **details):
+        rec.on_event(name, **details)
+        if name == 'rest' and args.nav2:
+            rec.look_at_bringup(demo.pid, variant['node'])
+
     try:
-        completed = obstacle.scenario(rec, on_event=rec.on_event)
+        completed = obstacle.scenario(rec, on_event=on_event)
         if completed:
             # Watch the robot drive on for a few seconds.
             t = rec.now()
@@ -292,7 +406,9 @@ def main():
         rclpy.try_shutdown()
 
     rec.pair()
-    failed = analyse(rec)
+    log.flush()
+    log.seek(0)
+    failed = analyse(rec, variant, args.monitor, log.read())
     if rec.unpaired > 5:
         failed.append(f'{rec.unpaired} published messages carried a stamp of no recorded command')
         print(f'  FAIL  {failed[-1]}')

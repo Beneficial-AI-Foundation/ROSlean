@@ -1,0 +1,3 @@
+2026-11-24 18:56 started from 8152520; task files read; next: lake exe cache get, pixi install, pixi run build (about 10 min)
+2026-11-24 19:00 environment built (4 packages); wrote cm_nav2_launch.py, nav2_monitor.yaml, check_demo.py --nav2; next: first headless run of the Nav2 variant (up to 8 min)
+2026-11-24 19:08 Nav2 variant written (cm_nav2_launch.py, nav2_monitor.yaml, check_demo.py --nav2); first headless run failed (Nav2 stuck configuring behavior_server on a cold start), second passed with the whole Nav2 stack; screen is locked, screencapture shows the lock screen; next: 10 runs with our node, 4 with upstream, one after the other (about 20 min)
