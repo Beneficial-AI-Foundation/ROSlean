@@ -1,2 +1,3 @@
 2026-11-24T11:59:37Z started; branch claude/cm-nav2-model-a from origin/collision-monitor d7428e3; next: cache get, baseline builds, read SPEC_NAV2 and model
 2026-11-24T12:06:19Z baseline builds pass (core 19 jobs, root 6653 jobs); core model reworked for option A: cmd carries base-frame coordinates of the stored scan's readings and zone vertices, Xform/Dy removed, CollisionMonitorXform.lean renamed CollisionMonitorPoint.lean, core/ builds; root proofs not yet adapted. next: Basic, Properties, Lifecycle, Trace, Convert, FFI proofs, Examples
+2026-11-24T12:11:58Z Basic, Properties, Lifecycle, Trace adapted to option A and build without sorry; next: Convert (vertexCoordMm), Margin.lean (replaces Transform.lean), FFI proofs, Examples

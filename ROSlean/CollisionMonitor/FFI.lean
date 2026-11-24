@@ -104,7 +104,8 @@ theorem actionOfRaw_of_ne_one (a : UInt8) (r : UInt64) (h : a ≠ 1) : actionOfR
 
 /-- The fields of a zone built from raw values, when `min_points` is
 accepted. -/
-theorem zoneOfRaw_fields (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8) (n : Nat)
+theorem zoneOfRaw_fields (s : ZoneShape) (a : UInt8) (r : UInt64) (mp : Int64) (en : UInt8)
+    (n : Nat)
     (h : minPointsOfRaw mp.toInt = some n) :
     zoneOfRaw s a r mp en =
       ({ shape := s, action := actionOfRaw a r, minPoints := n, enabled := en != 0 }, 0) := by
@@ -806,9 +807,9 @@ theorem apply_of_ok (m : Monitor) (e : Event) (h : m.ok = true) :
 /-- **Fail closed.** A monitor that is not ok answers every command in the
 active phase with `stopSource`: whatever the command (finite or not), the
 scans it was given, the transforms, and the time. -/
-theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanTf : Option Xform)
-    (zoneTfs : List (Option Xform)) (h : m.ok = false) (hp : m.st.phase = .active) :
-    (m.apply (.cmd now v scanTf zoneTfs)).out = .answer (some .stopSource) none := by
+theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanPts : Option (List Coords))
+    (zoneVerts : List (Option (List Coords))) (h : m.ok = false) (hp : m.st.phase = .active) :
+    (m.apply (.cmd now v scanPts zoneVerts)).out = .answer (some .stopSource) none := by
   unfold Monitor.apply
   simp [h, hp]
 
@@ -816,10 +817,10 @@ theorem apply_cmd_of_not_ok (m : Monitor) (now : Nat) (v : Twist) (scanTf : Opti
 commands. -/
 theorem apply_st_of_not_ok (m : Monitor) (e : Event) (h : m.ok = false)
     (he : (∃ now s, e = .scan now s) ∨ (∃ k verts place, e = .shape k verts place) ∨
-      ∃ now v scanTf zoneTfs, e = .cmd now v scanTf zoneTfs) :
+      ∃ now v scanPts zoneVerts, e = .cmd now v scanPts zoneVerts) :
     (m.apply e).st = m.st := by
   unfold Monitor.apply
-  rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, place, rfl⟩ | ⟨now, v, scanTf, zoneTfs, rfl⟩ <;>
+  rcases he with ⟨now, s, rfl⟩ | ⟨k, verts, place, rfl⟩ | ⟨now, v, scanPts, zoneVerts, rfl⟩ <;>
     simp [h]
 
 /-- The scan call is `Monitor.apply` on a scan event, which stores the scan,
@@ -1003,8 +1004,8 @@ theorem actionOfCodes_codes (o : Output) :
 /-- A published stop names a configured zone. -/
 theorem step_publish_stopZone (cfg : Config) (st : State) (e : Event) (k : Nat)
     (h : (step cfg st e).2.velocity = some (.stopZone k)) : k < cfg.zones.length := by
-  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
-  obtain ⟨pts, z, z0, -, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now scanTf zoneTfs k ha.symm
+  obtain ⟨now, v, scanPts, zoneVerts, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  obtain ⟨pts, z, z0, -, -, hz, -⟩ := evaluate_stopZone_only_if cfg st now scanPts zoneVerts k ha.symm
   exact (List.getElem?_eq_some_iff.mp hz).1
 
 /-- A published slowdown names a configured slowdown zone and carries that
@@ -1012,8 +1013,8 @@ zone's ratio, which is below the pattern of 1.0. -/
 theorem step_publish_slowdown (cfg : Config) (st : State) (e : Event) (k r : Nat)
     (h : (step cfg st e).2.velocity = some (.slowdown k r)) :
     r < F64.one ∧ ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r := by
-  obtain ⟨now, v, scanTf, zoneTfs, -, -, -, ha⟩ := step_velocity cfg st e _ h
-  exact evaluate_slowdown cfg st now scanTf zoneTfs k r ha.symm
+  obtain ⟨now, v, scanPts, zoneVerts, -, -, -, ha⟩ := step_velocity cfg st e _ h
+  exact evaluate_slowdown cfg st now scanPts zoneVerts k r ha.symm
 
 /-- **The node reads back the model's velocity.** For an ok monitor with at
 most 2³² zones, the kind, zone index and ratio that the three queries return
