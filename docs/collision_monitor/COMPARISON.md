@@ -39,8 +39,15 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
   that were run.
 
 Everything was run on 2026-11-24, on two platforms, with the Lean node as
-on the branch `collision-monitor` after the fixes of the review CM3/CM4
-(Lean 4.37.0-rc1):
+on the branch `collision-monitor` at commit `b503265` (Lean 4.37.0-rc1):
+after the fixes of the review CM3/CM4 and after the core's model was
+extended for transforms and the lifecycle (task T05; the node itself, the
+C++ shim, is not extended yet and uses the new core through the old calls).
+The behavioural runs had been made on the node before that extension
+(commit `91c21f9`) first and were all repeated; every count of every run
+came out the same, on both platforms. The run times did not: see
+[Defects](#defects), 2. Where this document gives a number from the earlier
+node it says "before the extension".
 
 | | macOS | Linux |
 | --- | --- | --- |
@@ -70,7 +77,7 @@ on Linux by the step of `bench/cm_linux/run.sh` given in the last column.
 | Upstream, fixed scenarios | `scenario.py UPSTREAM` | 55 scenarios, 277 checks, 0 failures | the same | `scenarios` |
 | Reference node | `scenario.py reference_node.py --no-tf --skip negative-stamp` | 45 scenarios, 238 checks, 0 failures; 9 skipped (transforms) | the same | `scenarios` |
 | Upstream, statements that only the SPEC makes | `scenario.py UPSTREAM --profile profile_upstream --own` (ctest `upstream_probes`) | 18 scenarios, 48 checks, 0 failures | the same | `scenarios` |
-| Lean node beside upstream, random | `random_diff.py NODE UPSTREAM A B --roslean`, seeds 0 to 599 in six processes of 100 | 0 cases outside the bounds, 54,043 commands; 1 case passed only on the slow retry | 0 cases outside the bounds, 54,043 commands; none retried | `random` |
+| Lean node beside upstream, random | `random_diff.py NODE UPSTREAM A B --roslean`, seeds 0 to 599 in six processes of 100 | 0 cases outside the bounds, 54,043 commands; none retried | the same | `random` |
 | The same with the scan frame turned | `… --roslean --yaw`, seeds 1000 to 1119 in two processes | 0 cases outside the bounds, 11,013 commands | the same | `random` |
 | Can that test fail? | `… 0 3 --roslean --self-test swap`, `… shrink` | violations reported in 3 of 3 cases, and in 1 of 3 | the same | `selftest` |
 | Core against upstream's zone tests, point by point | `band_bounds 100000 7` (ctest `band_bounds` with 20,000) | 34.0 million points, 340 zones: both bounds hold | the same | `points` |
@@ -127,9 +134,9 @@ NaN (accepted, never applied); a disabled source or zone; the default
 upstream's double conversion loses; negative zeros in commands and in
 slowed commands; the clock before the first `/clock` message; a backward
 jump of the clock; quality of service; and how many commands of a burst
-are answered (of 100 sent back to back, five times: Lean 10 to 12 and
-upstream 5 to 10 on macOS, both 10 every time on Linux; of 1000: Lean 32
-and 24, upstream 33 and 23 on macOS, 10 for both on Linux).
+are answered (of 100 sent back to back, five times: Lean 3 to 5 and
+upstream 4 to 10 on macOS, both 10 every time on Linux; of 1000: Lean 20
+and 18, upstream 22 and 20 on macOS, 10 for both on Linux).
 
 ## Fixed scenarios
 
@@ -233,7 +240,7 @@ ran the same cases):
 | --- | ---: | ---: |
 | Cases outside the bounds | 0 | 0 |
 | Unsafe divergences (S violated) | 0 | 0 |
-| Cases that passed only on the slow retry | 1 (seed 415) | 0 |
+| Cases that passed only on the slow retry | 0 | 0 |
 | Commands | 54,043 | 54,043 |
 | Scans | 32,289 | 32,289 |
 | Point-in-zone tests, circles; of them in the growth band | 104,915; 5,551 | 104,915; 5,526 |
@@ -253,13 +260,15 @@ differ in a few counts because their C libraries round sine and cosine
 differently, which moves points that lie within nanometres of a boundary
 (first row of the next table).
 
-Seed 415 on macOS: at the first attempt both nodes, at the same command
-(number 67), gave an answer that the test's model does not explain; with
-0.3 s per event instead of 0.05 s the case passed, and on Linux it passed
-at once. Both nodes deviating together at one command is what a message
-that arrived late at both looks like (eight such processes and the Linux
-runs were going at the same time); it was not investigated further, and no
-bound S was violated in the first attempt either.
+In the earlier run of the same 600 cases, on the node before the
+extension, one case on macOS passed only on the slow retry (seed 415): at
+the first attempt both nodes, at the same command (number 67), gave an
+answer that the test's model does not explain; with 0.3 s per event instead
+of 0.05 s it passed, as it did at once on Linux and in the run reported
+here. Both nodes deviating together at one command is what a message that
+arrived late at both looks like (eight such processes and the Linux runs
+were going at the same time); it was not investigated further, and bound S
+was not violated in that first attempt either.
 
 How far outside upstream's zone the point lay that decided a difference
 (the smallest reach that explains the Lean node's answer), macOS; Linux is
@@ -469,7 +478,7 @@ for the number of commands answered in a burst.
 | Commands with NaN or ±∞ in any of the six components, also with an obstacle in the stop zone | nothing published (R2) | same |
 | Commands of ±1.7·10³⁰⁸ and 5·10⁻³²⁴, no obstacle | pass unchanged | same |
 | The same in a slowdown zone | halved; the subnormal becomes 0.0 (D6) | passed unslowed |
-| 1000 commands back to back, twice | macOS: 32 and 24 answered; Linux: 10 and 10; then normal | macOS: 33 and 23; Linux: 10 and 10 |
+| 1000 commands back to back, twice | macOS: 20 and 18 answered; Linux: 10 and 10; then normal | macOS: 22 and 20; Linux: 10 and 10 |
 | 500 scans back to back | the last counts | same |
 | Scan in a foreign frame; empty frame name; base frame name with a blank or a slash; a name of 100,000 characters | stop (D11), also discarding the stored scan | stop (no transform) |
 | Clock jumps back 50 s, 100 s, to 0 | an expired scan is used again; a stop period that began "later" publishes zero again (A2) | same |
@@ -512,34 +521,56 @@ has a registered test that is expected to fail.
    a negative time), but it is the one way found to end the process from a
    topic.
 
-2. **The command path is slow for polygon zones.** Each command tests every
-   stored point against every zone in exact integer arithmetic, including
-   the √5 mm band (`nearBoundary`). In a hot loop this costs 8 to 14 ns per
-   reading and zone for circles and 190 to 280 ns for four-vertex polygons;
-   upstream needs 3 to 10 ns per reading for everything. With two polygons a
-   command costs 0.41 ms at 1080 readings and 3.9 ms at 10,000 on macOS,
-   0.52 ms and 5.6 ms in the Linux container
-   ([Per-call latency](#per-call-latency)).
-   A node is not called in a hot loop. With one command every 20 ms the
-   same call takes about four times as long (`cmd_cost`: 1.7 ms per command
-   at 1080 readings on macOS, 1.2 to 1.7 ms in the Linux container, against
-   0.4 and 0.5 ms back to back), and that is what shows through the nodes
-   on Linux: the Lean node's median latency is 2.4 ms at 1080 readings and
-   7.5 ms at 10,000, upstream's 0.4 and 0.3 ms
-   ([Through the nodes](#through-the-nodes)).
-   The answers are right. What can go wrong is what BENCHMARK.md says of a
-   slow mux: commands queue (keep-last 1, so they are dropped), and a
-   command is judged at the time its callback starts. Nothing warns at
-   start-up.
-   Smallest reproduction: `build/roslean_collision_monitor/cmd_cost`
-   (no ROS; two boxes of Nav2's example, 1080 stored readings, 400
-   commands). It asserts at most 25 ns per reading and zone back to back,
-   three times what the circle path needs, and prints 185 to 229 ns.
-   Registered as `roslean_cmd_cost`, marked `WILL_FAIL`. The test is a
-   threshold on run time, which is fragile in principle; the margin to the
-   limit is a factor of 8 in both directions that matter (a fix must gain
-   that much, and a busy machine would have to slow the median of 400 calls
-   by that much to hide a regression after the fix).
+2. **A command is slow, and since the model was extended it is too slow
+   for an ordinary scanner.** Each command places every stored reading in
+   the base frame again and then tests every point against every zone, all
+   in exact integer arithmetic.
+
+   | Per command, in a hot loop | macOS | Linux (container) | Upstream |
+   | --- | ---: | ---: | ---: |
+   | 360 readings, two polygons | 1.0 ms | 0.85 ms | 3 to 5 µs |
+   | 1080 readings, two polygons | 3.1 ms | 2.5 ms | 8 to 12 µs |
+   | 1080 readings, two circles | 2.7 ms | 2.1 ms | 4 to 9 µs |
+   | 10,000 readings, two polygons | 29 ms | 24 ms | 64 to 77 µs |
+
+   That is 1.9 to 2.9 µs per reading; scan and command callbacks together
+   take 180 to 810 times what upstream's take
+   ([Per-call latency](#per-call-latency)). A node is not called in a hot
+   loop: with one command every 20 ms the same call at 1080 readings takes
+   about 7.5 ms on macOS with either kind of zone (in one of three runs
+   12 ms with polygons) and 5.7 ms (circles) or 6.8 ms (polygons) in the
+   container (`cmd_cost`).
+
+   Where the time goes. Before the extension (commit `91c21f9`) a scan was
+   converted to millimetres once, when it arrived, and a command cost 8 ns
+   per reading and zone for circles and 200 ns for four-vertex polygons:
+   0.41 ms at 1080 readings with two polygons on macOS, 18 µs with two
+   circles. Since the extension `Scan.points` applies the scan's transform
+   to every reading at every command (`Xform.pointMm`, exact arithmetic on
+   the binary64 patterns), and the node passes the identity transform. The
+   cost no longer depends much on the zones: 2.5 µs per reading with two
+   circles, 2.9 µs with two polygons on macOS. The zone tests are the same
+   code as before; the placement was read in the source and its cost is
+   inferred from these figures, it was not profiled.
+
+   What follows from it, measured through the nodes
+   ([Through the nodes](#through-the-nodes)): @@NODE_SUMMARY@@
+
+   The answers to a given sequence of events are right, and they are the
+   same as before the extension in every run of this document. What is
+   wrong is when they come, and which events the node gets to see.
+   Nothing warns at start-up.
+
+   Smallest reproduction: `build/roslean_collision_monitor/cmd_cost` (no
+   ROS; the two boxes of Nav2's example, 1080 stored readings, 400
+   commands). It asserts at most 25 ns per reading and zone back to back
+   and prints 1,430 to 1,480 ns on macOS and 1,160 to 1,180 ns in the
+   container (185 to 230 ns before the extension). Registered as
+   `roslean_cmd_cost`, marked `WILL_FAIL`. The limit is three times what
+   the circle path needed before the extension and several times upstream's
+   whole cost per reading; it is a line drawn here, not a requirement taken
+   from anywhere (a question for the user in the task report). A threshold
+   on run time is fragile in principle; here the margin is a factor of 50.
 
 ### Fixed since the first draft
 
@@ -601,8 +632,8 @@ When this document was finished:
   node has died. It now requires the conditions before and after that half
   second, and the two lists of endpoints are read by a function that waits
   for an entry and reports a failed check, not a crash, if none comes. In
-  the runs of this document `scenario.py` started more than 600 scenario
-  runs on the two platforms without the error; that does not prove the
+  the runs of this document `scenario.py` started more than a thousand
+  scenario runs on the two platforms without the error; that does not prove the
   race is gone, only that the crash cannot occur any more.
 - A refusal passed whatever its reason; see
   [Fixed scenarios](#fixed-scenarios).

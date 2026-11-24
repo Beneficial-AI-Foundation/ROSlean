@@ -14,12 +14,19 @@
 // The scene changes every `--phase` seconds: nothing near, an obstacle in
 // the slowdown zone, an obstacle in the stop zone. The obstacle ranges are
 // far from the zone boundaries, so both nodes must answer alike; answers to
-// the same command that differ between the first two outputs are counted.
+// the same command that differ between the first two outputs are counted,
+// and in which direction: `first_less_restrictive` is the number of commands
+// for which the first output's linear.x is larger in magnitude than the
+// second's (the first node lets through what the second slows or stops),
+// `second_less_restrictive` the reverse. Two nodes that decide alike can
+// still differ here when one of them has not yet taken in the scan that the
+// other has: the scene changes every `--phase` seconds.
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cinttypes>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -104,7 +111,7 @@ int main(int argc, char ** argv)
 
   std::mutex mutex;
   std::vector<std::unique_ptr<Out>> outs;
-  uint64_t mismatches = 0, compared = 0;
+  uint64_t mismatches = 0, compared = 0, first_less = 0, second_less = 0;
   {
     std::string list = str("outs", "cmd_vel_out");
     size_t pos = 0;
@@ -133,6 +140,10 @@ int main(int argc, char ** argv)
           if (it != other.end()) {
             ++compared;
             mismatches += it->second != msg->twist.linear.x;
+            const double mine = std::fabs(msg->twist.linear.x), theirs = std::fabs(it->second);
+            const double v0 = k == 0 ? mine : theirs, v1 = k == 0 ? theirs : mine;
+            first_less += v0 > v1;
+            second_less += v1 > v0;
             other.erase(it);
           } else {
             o->recent[seq] = msg->twist.linear.x;
@@ -201,8 +212,10 @@ int main(int argc, char ** argv)
       std::lock_guard<std::mutex> lock(mutex);
       std::printf(
         "{\"%s\":%.1f,\"commands\":%" PRIu64 ",\"scans_total\":%" PRIu64
-        ",\"compared\":%" PRIu64 ",\"mismatches\":%" PRIu64,
-        kind, static_cast<double>(t - start) * 1e-9, cmds, sent_scan, compared, mismatches);
+        ",\"compared\":%" PRIu64 ",\"mismatches\":%" PRIu64
+        ",\"first_less_restrictive\":%" PRIu64 ",\"second_less_restrictive\":%" PRIu64,
+        kind, static_cast<double>(t - start) * 1e-9, cmds, sent_scan, compared, mismatches,
+        first_less, second_less);
       for (auto & o : outs) {
         std::printf(",");
         print_stats(o->topic.c_str(), o->lat);
@@ -248,8 +261,9 @@ int main(int argc, char ** argv)
     std::lock_guard<std::mutex> lock(mutex);
     std::printf(
       "{\"done\":true,\"sent_commands\":%" PRIu64 ",\"sent_scans\":%" PRIu64
-      ",\"compared\":%" PRIu64 ",\"mismatches\":%" PRIu64, sent_cmd, sent_scan, compared,
-      mismatches);
+      ",\"compared\":%" PRIu64 ",\"mismatches\":%" PRIu64
+      ",\"first_less_restrictive\":%" PRIu64 ",\"second_less_restrictive\":%" PRIu64,
+      sent_cmd, sent_scan, compared, mismatches, first_less, second_less);
     for (auto & o : outs) {
       std::printf(",\"received_%s\":%" PRIu64, o->topic.c_str(), o->received);
     }

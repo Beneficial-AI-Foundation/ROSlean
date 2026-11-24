@@ -106,7 +106,7 @@ for step in "$@"; do
       in_container bench_soak \
         "ROS_DOMAIN_ID=39 python3 bench/roslean_bench/scripts/run_cm_bench.py soak --minutes 32 --out /out; \
          install/roslean_bench/lib/roslean_bench/bench_cm --which lean --scan slow \
-           --soak 100000 --iters 1000000 --warmup 0 | tee /out/cm_soak_core.json"
+           --soak 20000 --iters 200000 --warmup 0 | tee /out/cm_soak_core.json"
       ;;
     ctest)
       in_container ctest "time colcon test --base-paths ros --packages-select roslean_collision_monitor \

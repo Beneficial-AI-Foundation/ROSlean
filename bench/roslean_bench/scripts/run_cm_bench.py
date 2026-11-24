@@ -174,7 +174,9 @@ def run_node(out, seconds):
                     print(f"{readings:>6} readings {name:>12}: {d['n']} answers, latency us "
                           f"p50 {d['p50_ns'] / 1e3:.0f} p90 {d['p90_ns'] / 1e3:.0f} "
                           f"p99 {d['p99_ns'] / 1e3:.0f} max {d['max_ns'] / 1e3:.0f}; "
-                          f"answers that differ between the nodes: {r['mismatches']} of {r['compared']}")
+                          f"answers that differ between the nodes: {r['mismatches']} of {r['compared']} "
+                          f"(lean less restrictive {r['first_less_restrictive']}, "
+                          f"upstream less restrictive {r['second_less_restrictive']})")
         finally:
             pair.stop()
     (out / 'cm_node.json').write_text(json.dumps(results, indent=1))
