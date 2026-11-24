@@ -35,9 +35,10 @@ emulation. The comparison with upstream has not been run on Linux at all.
 
 ## Tasks
 
-**On hold (2026-11-24).** The user has asked that no further task is started
-until they have decided the open questions under "Decisions". T02, already
-running, finishes; T03, T06 and T07 wait.
+**Decisions taken by the user on 2026-11-24** ("Decisions" below): the
+transform is applied in C++ as upstream does (option A of SPEC_NAV2 section
+5), which undoes part of T05; every other question is decided as its default.
+T05b does the rework. Tasks start again as their needs are merged.
 
 Run a task when everything in "Needs" is merged into `collision-monitor`. Tasks in the
 same row group can run at the same time.
@@ -50,8 +51,9 @@ same row group can run at the same time.
 | [T02](T02-finish-comparison.md) | Finish the comparison with upstream from the WIP branch; run it on Linux | T00, T01 | yes | running |
 | [T03](T03-comparison-defects.md) | Fix the defects the comparison found (negative clock, slow polygon path) | T02 | yes | open |
 | [T05](T05-nav2-model-proofs.md) | Extension: model events and proofs | T01, T04 | yes | merged add0540 |
+| [T05b](T05b-transform-in-cpp.md) | Extension: move the transform out of the model (option A), rework the proofs | T05 | yes | running |
 | [T07](T07-nav2-harness.md) | Extension: upstream scenarios for lifecycle, transforms, footprint | T02, T04 | yes | open |
-| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05 | yes | open |
+| [T06](T06-nav2-node.md) | Extension: C interface and node (lifecycle, state topic, TF, footprint) | T03, T05b | yes | open |
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | open |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | open |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | open |
@@ -98,17 +100,18 @@ Taken:
 - With pieces 1 to 3: the sensor pose comes from TF, `state_topic` is
   published, the node is a lifecycle node.
 
-Open, with the default that tasks follow until the user decides:
+Decided by the user on 2026-11-24:
 
-| Question | Default |
+| Question | Decision |
 | --- | --- |
 | Stop on structurally invalid scans (fail-closed)? | As upstream: readings are filtered one by one |
-| Publish zero for as long as a stop is demanded, not only for `stop_pub_timeout`? This removes the never-published stop (THEOREMS.md, "What the robot receives"). | As upstream |
+| Publish zero for as long as a stop is demanded, not only for `stop_pub_timeout`? This removes the never-published stop (THEOREMS.md, "What the robot receives"). | As upstream. Why the theorem is weaker for it: `findings/stop_pub_timeout_theorem.md` |
 | A timer that publishes zero when commands cease? | As upstream: none |
 | Scan age by arrival time instead of header stamp? | As upstream: header stamp |
 | Publish zero for a non-finite command? | As upstream: ignored |
 | Refuse zones that protect nothing (no zones, radius 0, `source_timeout: 0`)? | Accept and warn |
-| Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | T04 recommends B (in Lean; 1.2 to 1.9 µs per reading and command measured); B until decided |
+| Apply the transform in C++ as upstream (bit-for-bit, larger trusted part) or in Lean in exact arithmetic (smaller trusted part)? | In C++, as upstream (option A). T05, already merged, built option B; T05b reworks the model and proofs, T06 writes the shim code. T02 measured B through the node at about 20 times upstream's time per command |
+| With the transform in C++: compile the shim to match upstream's floating-point results bit for bit on each platform (upstream's arm64 binary fuses multiply-adds), or keep `-ffp-contract=off`? | Keep `-ffp-contract=off`: the same results on every platform, T01's test stands. Our points may differ from upstream's in the last bit on arm64 |
 | Hysteresis against stop/slowdown flicker at a zone edge? | No |
 | Keep the extra 1 mm on circle radii? | Keep |
 | (T04) Should a stop zone fed by a topic stop the robot while it has no shape yet? | As upstream: no action |
