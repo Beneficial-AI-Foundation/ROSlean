@@ -249,7 +249,7 @@ N28, N29 and N33.
 
 | | Version | Used for |
 | --- | --- | --- |
-| Source of `navigation2` | branch `jazzy`, commit `c704655`, package version 1.3.14 (the commit SPEC.md names) | **[S]** |
+| Source of `navigation2` | branch `jazzy`, commit `c704655`, package version 1.3.14 (the commit named at the top) | **[S]** |
 | Source of `geometry2` (`tf2`, `tf2_ros`, `tf2_geometry_msgs`) | branch `jazzy`, commit `f702874`, version 0.36.23 | **[S]** |
 | Binary `nav2_collision_monitor` | 1.3.12, RoboStack, macOS arm64, from this repository's pixi environment, with `tf2` 0.36.22, `nav2_lifecycle_manager` 1.3.12, `rmw_fastrtps_cpp` | **[B: case]** |
 
@@ -259,7 +259,8 @@ N28, N29 and N33.
 - **[B: case]** means observed on the binary on 2026-11-24 by the named case
   of `review/collision_monitor/nav2/nav2_probe.py`; the output of that run is
   `review/collision_monitor/nav2/results/macos-arm64.txt`. Nothing is marked
-  [B] that was not run for this document. Where SPEC.md or
+  [B] that was not run for this document (by T04, or by T09 where it says
+  so). Where the rules above or
   UPSTREAM_BEHAVIOUR.md already reports an observation, it is cited as such
   and not marked [B].
 - Between the binary's version 1.3.12 and the source's 1.3.14, `git diff
