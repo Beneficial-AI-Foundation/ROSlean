@@ -47,11 +47,14 @@
 
 #include "roslean_collision_monitor/conversions.hpp"
 #include "roslean_core/collision_monitor.hpp"
+#include "roslean_core/scan_points_monitor.hpp"
 
 namespace
 {
 
-using roslean::CollisionMonitor;
+// The scan is handed over with the base-frame coordinates of its readings;
+// ScanPointsMonitor passes them with every command, as the node does.
+using CollisionMonitor = roslean::ScanPointsMonitor;
 using roslean_collision_monitor::put_le;
 
 constexpr int kCommands = 400;

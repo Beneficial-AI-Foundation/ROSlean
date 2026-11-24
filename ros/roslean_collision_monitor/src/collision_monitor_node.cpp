@@ -1,29 +1,44 @@
-// Collision monitor with the decision logic in Lean.
+// Collision monitor with the decision logic in Lean: a lifecycle node that
+// Nav2 can manage in place of nav2_collision_monitor.
 //
 // This file is the shim: it reads parameters, creates subscriptions, reads the
-// clock and publishes. It contains no decision logic and converts no
-// configuration value: parameters go to the Lean core as they were read
-// (doubles and floats as bit patterns), and the core converts them, refuses
-// what the node does not accept, and says which parameter it refused. A scan
-// is handed over as bit patterns of its ranges and of the points they denote;
-// a command as six bit patterns. The core answers a command with one of:
-// publish nothing, publish the command, publish zero, publish the command
-// scaled by a ratio. The shim performs no floating-point test on a command
-// and keeps no state that enters a decision. (It remembers the last answer
-// it logged, so that a change of the action is logged once, as upstream
-// does; that memory is read by the logging and by nothing else.)
+// clock, looks transforms up and publishes. It contains no decision logic and
+// converts no configuration value: parameters go to the Lean core as they
+// were read (doubles and floats as bit patterns), and the core converts them,
+// refuses what the node does not accept, and says which parameter it refused.
 //
-// Parameters are read once, here, at start-up (D2). Every later change is
-// rejected through the parameter service, and a name that was not given at
-// start-up cannot be set at all, so that nobody is told "accepted" for a
-// change the node does not act on.
+// What the core is handed (docs/collision_monitor/SPEC_NAV2.md, section 8):
+//   - every lifecycle transition, from its `on_...` callback;
+//   - a scan as the bit patterns of its ranges;
+//   - a polygon message for a zone fed by a topic as its vertices in the
+//     base frame;
+//   - a command as six bit patterns, together with the points of the stored
+//     scan in the base frame, one pair per reading, under the transform
+//     looked up for this command, and the vertices of the stored polygon
+//     messages that are in another frame.
+// The core answers a command with: nothing at all; or a velocity (the
+// command, zero, the command scaled by a ratio) or the notice that the
+// velocity is withheld, together with the state message to publish, if any.
+// The shim performs no floating-point test on a command and keeps no flag
+// "active" of its own: that nothing is published while the node is not
+// active is the core's answer.
 //
-// The contract is docs/collision_monitor/SPEC.md, "Shim boundary"; rule (R…)
-// and difference (D…) numbers refer to that file. The floating-point work
-// that remains here is in conversions.hpp.
+// What the shim computes is trusted and sits in two headers with their own
+// tests: transforms.hpp (the points of a scan and the vertices of a polygon
+// message in the base frame: T2, T6) and conversions.hpp (the slowdown
+// multiplication, the `points` string, what is published for an answer: T1,
+// T3, T5, T9).
+//
+// Parameters are read in `on_configure`, as upstream reads them. A change
+// through the parameter service is rejected (ND8), and a name that was not
+// given at start-up cannot be set at all.
+//
+// Rule (R..., N...) and difference (D..., ND...) numbers refer to SPEC.md and
+// SPEC_NAV2.md in docs/collision_monitor.
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -32,30 +47,37 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
+#include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "nav2_msgs/msg/collision_monitor_state.hpp"
+#include "nav2_util/lifecycle_node.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "roslean_collision_monitor/conversions.hpp"
+#include "roslean_collision_monitor/transforms.hpp"
 #include "roslean_core/collision_monitor.hpp"
 #include "rosgraph_msgs/msg/clock.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "tf2/time.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/create_timer_ros.h"
+#include "tf2_ros/transform_listener.h"
 
 namespace roslean_collision_monitor
 {
 
 using roslean::CollisionMonitor;
+using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-/// A configuration the node refuses to start with (D14).
-struct ConfigError : std::runtime_error
-{
-  using std::runtime_error::runtime_error;
-};
-
-/// What was read for a zone: for messages and warnings only. The core has
-/// its own copy, and decides with that.
+/// What was read for a zone, and what the shim keeps for it: the lookups of
+/// a zone fed by a topic (T6) and what is displayed (T8). The core has its
+/// own copy of everything that enters a decision, and decides with that.
 struct ZoneParams
 {
   std::string name;
@@ -66,6 +88,20 @@ struct ZoneParams
   double ratio{0.0};
   int64_t min_points{0};
   std::vector<std::array<float, 2>> vertices;
+  /// The shape arrives on `sub_topic` (N31).
+  bool topic{false};
+  std::string sub_topic;
+  bool transient_local{false};
+  /// N16.
+  bool visualize{false};
+  std::string pub_topic;
+  /// The polygon message the core accepted last for this zone (N33): its
+  /// frame and points are what the lookups of later commands use (N34).
+  geometry_msgs::msg::PolygonStamped::ConstSharedPtr shape;
+  /// What is published for the zone (N16).
+  geometry_msgs::msg::PolygonStamped display;
+  rclcpp::SubscriptionBase::SharedPtr sub;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PolygonStamped>::SharedPtr pub;
 };
 
 /// Twice the signed area of a polygon whose vertices are whole millimetres
@@ -81,110 +117,49 @@ inline int64_t twice_area_mm2(const std::vector<std::array<int64_t, 2>> & v)
   return sum;
 }
 
-class CollisionMonitorNode : public rclcpp::Node
+inline rclcpp::NodeOptions node_options(rclcpp::NodeOptions options)
+{
+  // Every parameter given at start-up is declared; no other name can be set
+  // later (finding 2 of the review CM3/CM4).
+  return options.allow_undeclared_parameters(false)
+         .automatically_declare_parameters_from_overrides(true)
+         // D15: rclcpp takes /clock messages in a thread of its own by
+         // default, and a message with a negative time makes it throw there,
+         // where nothing can catch it: the process ends. Without that thread
+         // the message is taken in by the executor that spins this node, and
+         // the exception arrives in main(), which goes on (see there).
+         .use_clock_thread(false);
+}
+
+class CollisionMonitorNode : public nav2_util::LifecycleNode
 {
 public:
-  CollisionMonitorNode()
-  : Node(
-      "collision_monitor", "",
-      // Every parameter given at start-up is declared; no other name can be
-      // set later (finding 2 of the review CM3/CM4).
-      rclcpp::NodeOptions().allow_undeclared_parameters(false)
-      .automatically_declare_parameters_from_overrides(true)
-      // D15: rclcpp takes /clock messages in a thread of its own by default,
-      // and a message with a negative time makes it throw there, where
-      // nothing can catch it: the process ends. Without that thread the
-      // message is taken in by the executor that spins this node, and the
-      // exception arrives in main(), which goes on (see there).
-      .use_clock_thread(false))
+  explicit CollisionMonitorNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
+  : nav2_util::LifecycleNode("collision_monitor", "", node_options(options))
   {
-    // Everything is read, checked and handed to the core before any
-    // subscription exists. A refusal does not end the reading: all of them
-    // are collected and reported together.
-    const auto cmd_vel_in_topic = get_or<std::string>("cmd_vel_in_topic", "cmd_vel_smoothed");
-    const auto cmd_vel_out_topic = get_or<std::string>("cmd_vel_out_topic", "cmd_vel");
-    const bool stamped = get_or<bool>("enable_stamped_cmd_vel", false);
-    refuse_unsupported_node_parameters();
-
-    base_frame_id_ = get_or<std::string>("base_frame_id", "base_footprint");
-
-    CollisionMonitor::Builder builder;
-    stop_pub_timeout_ = get_or<double>("stop_pub_timeout", 1.0);
-    builder.set_stop_pub_timeout(stop_pub_timeout_);
-    node_source_timeout_ = get_or<double>("source_timeout", 2.0);
-    const std::string scan_topic = read_source(builder);
-    read_zones(builder);
-
-    monitor_.emplace(builder.build());
-    if (!monitor_->ok()) {
-      // The core refuses the configuration. Ask it why and name the
-      // parameters. (Were the node to run all the same, the core would
-      // answer every command with a stop.)
-      explain_refusal();
-    }
-    if (!refusals_.empty() || !monitor_->ok()) {
-      throw ConfigError(refusal_message());
-    }
-    warn_about_what_protects_nothing();
-
-    const auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
-    if (stamped) {
-      pub_stamped_ = create_publisher<geometry_msgs::msg::TwistStamped>(cmd_vel_out_topic, qos);
-      cmd_sub_ = create_subscription<geometry_msgs::msg::TwistStamped>(
-        cmd_vel_in_topic, qos,
-        [this](geometry_msgs::msg::TwistStamped::ConstSharedPtr msg) {
-          geometry_msgs::msg::TwistStamped out;
-          if (on_cmd(msg->twist, out.twist)) {
-            out.header = msg->header;
-            pub_stamped_->publish(out);
-          }
-        });
-    } else {
-      pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_out_topic, qos);
-      cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
-        cmd_vel_in_topic, qos,
-        [this](geometry_msgs::msg::Twist::ConstSharedPtr msg) {
-          geometry_msgs::msg::Twist out;
-          if (on_cmd(*msg, out)) {
-            pub_->publish(out);
-          }
-        });
-    }
-    scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-      scan_topic, rclcpp::SensorDataQoS(),
-      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(*msg);});
-    // D15: under simulated time the node looks at /clock itself, beside
-    // rclcpp's own subscription, to know whether the message received last
-    // is one that rclcpp can use. It reads nothing else from the message;
-    // the time still comes from now().
-    sim_time_ = get_or<bool>("use_sim_time", false);
-    if (sim_time_) {
-      clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
-        "/clock", rclcpp::ClockQoS(),
-        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {
-          set_clock_valid(clock_message_usable(msg->clock.sec));
-        });
-    }
-
-    // D2: parameters were read once, above. From here on every change is
-    // rejected, with the reason, instead of being accepted and ignored.
+    roslean::initialize();
+    // ND8: parameters are read in on_configure. A change through the
+    // parameter service is rejected, with the reason, instead of being
+    // accepted and ignored.
     on_set_parameters_ = add_on_set_parameters_callback(
-      [](const std::vector<rclcpp::Parameter> & changes) {
+      [this](const std::vector<rclcpp::Parameter> & changes) {
         rcl_interfaces::msg::SetParametersResult result;
+        if (configuring_) {
+          // Declarations made by what on_configure creates (the QoS
+          // overrides of the TF listener's subscriptions) are not changes.
+          result.successful = true;
+          return result;
+        }
         result.successful = false;
-        result.reason = "parameters of this node are read once, at start-up, and cannot be "
-        "changed while it runs (docs/collision_monitor/SPEC.md, D2)";
+        result.reason = "parameters of this node are read once, when it is configured, from "
+        "the values given at start-up, and cannot be changed while it runs "
+        "(docs/collision_monitor/SPEC_NAV2.md, ND8)";
         if (!changes.empty()) {
           result.reason += "; to change '" + changes.front().get_name() +
           "', restart the node with the new value";
         }
         return result;
       });
-
-    RCLCPP_INFO(
-      get_logger(), "Monitoring '%s' -> '%s' (%s) with scans from '%s' and %zu zone(s).",
-      cmd_vel_in_topic.c_str(), cmd_vel_out_topic.c_str(),
-      stamped ? "TwistStamped" : "Twist", scan_topic.c_str(), zones_.size());
   }
 
   /// An exception left a callback and was caught in main(). Under simulated
@@ -194,16 +169,228 @@ public:
   /// comes first counts.
   void on_callback_exception(const char * what)
   {
-    RCLCPP_ERROR_THROTTLE(
-      get_logger(), *get_clock(), 5000,
-      "An exception left a callback and was caught; the node goes on: %s", what);
+    RCLCPP_ERROR(
+      get_logger(), "An exception left a callback and was caught; the node goes on: %s", what);
     if (sim_time_) {
       set_clock_valid(false);
     }
   }
 
+protected:
+  // ---- lifecycle (N2 to N8) ----------------------------------------------
+
+  /// N3. Reads the parameters, builds the core and, if the core accepts the
+  /// configuration, creates the TF buffer, the subscriptions and the
+  /// publishers. A refused configuration fails the transition: the node
+  /// stays unconfigured and the process stays up, as upstream.
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &) override
+  {
+    configuring_ = true;
+    const auto result = configure();
+    configuring_ = false;
+    return result;
+  }
+
+  CallbackReturn configure()
+  {
+    reset();
+    const auto cmd_vel_in_topic = get_or<std::string>("cmd_vel_in_topic", "cmd_vel_smoothed");
+    const auto cmd_vel_out_topic = get_or<std::string>("cmd_vel_out_topic", "cmd_vel");
+    const auto state_topic = get_or<std::string>("state_topic", "");
+    const bool stamped = get_or<bool>("enable_stamped_cmd_vel", false);
+    base_frame_id_ = get_or<std::string>("base_frame_id", "base_footprint");
+    odom_frame_id_ = get_or<std::string>("odom_frame_id", "odom");
+    base_shift_correction_ = get_or<bool>("base_shift_correction", true);
+    // N26: converted as upstream converts it, by the same function.
+    tolerance_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      tf2::durationFromSec(get_or<double>("transform_tolerance", 0.1))).count();
+    refuse_unsupported_node_parameters();
+
+    CollisionMonitor::Builder builder;
+    stop_pub_timeout_ = get_or<double>("stop_pub_timeout", 1.0);
+    builder.set_stop_pub_timeout(stop_pub_timeout_);
+    node_source_timeout_ = get_or<double>("source_timeout", 2.0);
+    const std::string scan_topic = read_source(builder);
+    read_zones(builder);
+
+    CollisionMonitor monitor = builder.build();
+    if (!monitor.ok()) {
+      // The core refuses the configuration. Ask it why and name the
+      // parameters.
+      monitor_.emplace(std::move(monitor));
+      explain_refusal();
+      monitor_.reset();
+    }
+    if (!refusals_.empty()) {
+      RCLCPP_ERROR(get_logger(), "%s", refusal_message().c_str());
+      reset();
+      return CallbackReturn::FAILURE;
+    }
+    monitor_.emplace(std::move(monitor));
+    warn_about_what_protects_nothing();
+    source_timeout_zero_ =
+      CollisionMonitor::source_timeout_ns(node_source_timeout_, own_source_timeout_) ==
+      std::optional<int64_t>(0);
+
+    // The TF buffer and its listener, as upstream creates them (N1, N3): the
+    // listener has a thread of its own, so transforms arrive while a
+    // callback waits for one.
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+    tf_buffer_->setCreateTimerInterface(
+      std::make_shared<tf2_ros::CreateTimerROS>(
+        get_node_base_interface(), get_node_timers_interface()));
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, this, true);
+
+    const auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
+    if (stamped) {
+      pub_stamped_ = create_publisher<geometry_msgs::msg::TwistStamped>(cmd_vel_out_topic, qos);
+      cmd_sub_ = create_subscription<geometry_msgs::msg::TwistStamped>(
+        cmd_vel_in_topic, qos,
+        [this](geometry_msgs::msg::TwistStamped::ConstSharedPtr msg) {
+          geometry_msgs::msg::TwistStamped out;
+          const auto decision = on_cmd(msg->twist, out.twist);
+          if (decision.velocity) {
+            out.header = msg->header;
+            pub_stamped_->publish(out);
+          }
+          if (decision.processed) {
+            publish_polygons();
+          }
+        });
+    } else {
+      pub_ = create_publisher<geometry_msgs::msg::Twist>(cmd_vel_out_topic, qos);
+      cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
+        cmd_vel_in_topic, qos,
+        [this](geometry_msgs::msg::Twist::ConstSharedPtr msg) {
+          geometry_msgs::msg::Twist out;
+          const auto decision = on_cmd(*msg, out);
+          if (decision.velocity) {
+            pub_->publish(out);
+          }
+          if (decision.processed) {
+            publish_polygons();
+          }
+        });
+    }
+    if (!state_topic.empty()) {
+      state_pub_ = create_publisher<nav2_msgs::msg::CollisionMonitorState>(state_topic, qos);
+    }
+    scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
+      scan_topic, rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr msg) {on_scan(msg);});
+    for (uint32_t k = 0; k < zones_.size(); ++k) {
+      auto & zone = zones_[k];
+      if (zone.topic) {
+        // N31: upstream's QoS.
+        rclcpp::QoS polygon_qos = rclcpp::SystemDefaultsQoS();
+        if (zone.transient_local) {
+          polygon_qos.transient_local();
+        }
+        zone.sub = create_subscription<geometry_msgs::msg::PolygonStamped>(
+          zone.sub_topic, polygon_qos,
+          [this, k](geometry_msgs::msg::PolygonStamped::ConstSharedPtr msg) {on_shape(k, msg);});
+      }
+      if (zone.visualize) {
+        zone.pub = create_publisher<geometry_msgs::msg::PolygonStamped>(
+          zone.pub_topic, rclcpp::SystemDefaultsQoS());
+      }
+    }
+    // D15: under simulated time the node looks at /clock itself, beside
+    // rclcpp's own subscription, to know whether the message received last
+    // is one that rclcpp can use, and to see the clock advance while a
+    // callback waits for a transform (N26; see wait_for).
+    sim_time_ = get_or<bool>("use_sim_time", false);
+    if (sim_time_) {
+      clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
+        "/clock", rclcpp::ClockQoS(),
+        [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {on_clock(*msg);});
+    }
+
+    monitor_->on_lifecycle(CollisionMonitor::Transition::Configure);
+    RCLCPP_INFO(
+      get_logger(), "Monitoring '%s' -> '%s' (%s) with scans from '%s' and %zu zone(s).",
+      cmd_vel_in_topic.c_str(), cmd_vel_out_topic.c_str(),
+      stamped ? "TwistStamped" : "Twist", scan_topic.c_str(), zones_.size());
+    return CallbackReturn::SUCCESS;
+  }
+
+  /// N5. The publishers are activated, every visualised zone is published
+  /// once, and the bond is created. The transition itself publishes no
+  /// velocity and no state message.
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
+  {
+    for_each_publisher([](auto & p) {p.on_activate();});
+    monitor_->on_lifecycle(CollisionMonitor::Transition::Activate);
+    publish_polygons();
+    createBond();
+    return CallbackReturn::SUCCESS;
+  }
+
+  /// N6.
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override
+  {
+    monitor_->on_lifecycle(CollisionMonitor::Transition::Deactivate);
+    for_each_publisher([](auto & p) {p.on_deactivate();});
+    destroyBond();
+    return CallbackReturn::SUCCESS;
+  }
+
+  /// N7. Subscriptions, publishers, the TF buffer, the stored scan and the
+  /// stored shapes go, and so does the core's monitor: the next configure
+  /// builds a new one from the parameters, in the state the model has after
+  /// `cleanup` (no scan, no shapes).
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
+  {
+    if (monitor_) {
+      monitor_->on_lifecycle(CollisionMonitor::Transition::Cleanup);
+    }
+    reset();
+    return CallbackReturn::SUCCESS;
+  }
+
+  /// N8, ND4. After this the core answers nothing, whatever arrives.
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &) override
+  {
+    if (monitor_) {
+      monitor_->on_lifecycle(CollisionMonitor::Transition::Shutdown);
+    }
+    return CallbackReturn::SUCCESS;
+  }
+
 private:
-  // ---- events ------------------------------------------------------------
+  /// Back to what the node holds while unconfigured.
+  void reset()
+  {
+    cmd_sub_.reset();
+    scan_sub_.reset();
+    clock_sub_.reset();
+    pub_.reset();
+    pub_stamped_.reset();
+    state_pub_.reset();
+    zones_.clear();
+    tf_listener_.reset();
+    tf_buffer_.reset();
+    scan_.reset();
+    monitor_.reset();
+    refusals_.clear();
+    refused_names_.clear();
+    own_source_timeout_.reset();
+    logged_ = false;
+    cost_warned_readings_ = 0;
+  }
+
+  template<typename F>
+  void for_each_publisher(F f)
+  {
+    if (pub_) {f(*pub_);}
+    if (pub_stamped_) {f(*pub_stamped_);}
+    if (state_pub_) {f(*state_pub_);}
+    for (auto & zone : zones_) {
+      if (zone.pub) {f(*zone.pub);}
+    }
+  }
+
+  // ---- the clock ----------------------------------------------------------
 
   void set_clock_valid(bool valid)
   {
@@ -221,64 +408,176 @@ private:
     }
   }
 
-  // One clock reading per event (D7). The core takes unsigned nanoseconds.
+  void on_clock(const rosgraph_msgs::msg::Clock & msg)
+  {
+    const bool usable = clock_message_usable(msg.clock.sec);
+    set_clock_valid(usable);
+    if (usable) {
+      sim_clock_ns_ = static_cast<int64_t>(msg.clock.sec) * 1000000000 + msg.clock.nanosec;
+    }
+  }
+
+  // One clock reading per event (D7, ND2). The core takes unsigned
+  // nanoseconds.
   uint64_t now_ns()
   {
     return static_cast<uint64_t>(std::max<rcl_time_point_value_t>(now().nanoseconds(), 0));
   }
 
-  void on_scan(const sensor_msgs::msg::LaserScan & msg)
+  /// The node clock as far as it can be known inside a callback. Under
+  /// simulated time rclcpp's clock stands still while a callback runs
+  /// (there is no clock thread, D15), so the node takes the /clock messages
+  /// of its own subscription by hand while it waits.
+  int64_t clock_while_waiting(int64_t at_least)
   {
-    const uint64_t t = now_ns();
-    const int64_t stamp_ns =
-      static_cast<int64_t>(msg.header.stamp.sec) * 1000000000 + msg.header.stamp.nanosec;
-    // D11: there is no transform lookup. The points of a scan can be placed
-    // in the base frame only if the scan is in that frame already, or if the
-    // sensor's pose was configured. The comparison is made here; what an
-    // unusable scan means is decided by the core (the source has no data).
-    const bool same_frame = msg.header.frame_id == base_frame_id_;
-    const bool usable = sensor_pose_set_ || same_frame;
-    if (sensor_pose_set_ && !same_frame) {
-      // The scan is used: the configured pose stands in for the transform,
-      // and nothing checks that it is the pose of this scan's frame.
-      // Once a minute: with a pose this is the normal state of a correctly
-      // configured robot, and the point is that it is not forgotten.
-      RCLCPP_WARN_THROTTLE(
-        get_logger(), *get_clock(), 60000,
-        "Scan is in frame '%s', not in the base frame '%s'. It is used all the same, placed by "
-        "'%s.roslean_sensor_pose' = [%g, %g, %g]; no transform is looked up and the frame name "
-        "is not checked (D11).",
-        msg.header.frame_id.c_str(), base_frame_id_.c_str(), source_name_.c_str(),
-        sensor_pose_.x, sensor_pose_.y, sensor_pose_.yaw);
+    if (!sim_time_) {
+      return now().nanoseconds();
     }
-    if (!usable) {
-      RCLCPP_ERROR_THROTTLE(
-        get_logger(), *get_clock(), 5000,
-        "Scan is in frame '%s', not in the base frame '%s', and '%s.roslean_sensor_pose' is not "
-        "set: the scan is not used, and the source counts as having no data.",
-        msg.header.frame_id.c_str(), base_frame_id_.c_str(), source_name_.c_str());
+    if (clock_sub_) {
+      rosgraph_msgs::msg::Clock msg;
+      rclcpp::MessageInfo info;
+      while (clock_sub_->take(msg, info)) {
+        on_clock(msg);
+      }
     }
-    warn_about_cost(msg.ranges.size());
-    const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges, sensor_pose_);
-    monitor_->on_scan(
-      t, stamp_ns, usable, bits_of(msg.range_min), bits_of(msg.range_max), beams.data(),
-      beams.size());
+    return std::max(sim_clock_ns_, at_least);
   }
 
-  /// Hands the command to the core and fills `out` with what it says to
-  /// publish. Returns false if nothing is to be published.
-  bool on_cmd(const geometry_msgs::msg::Twist & cmd, geometry_msgs::msg::Twist & out)
+  // ---- transforms (T6) ----------------------------------------------------
+
+  /// N26: the lookup, with upstream's wait. If the transform cannot be had
+  /// at once, the callback sleeps 10 ms of wall time at a time while the
+  /// node clock is before `start + transform_tolerance`, trying again each
+  /// time, and tries once more at the end (tf2_ros::Buffer::lookupTransform
+  /// with a timeout does the same; it is not called, because it reads a
+  /// clock that cannot advance here under simulated time). Nothing else is
+  /// handled meanwhile, as upstream. The wait ends early if the clock stops
+  /// being valid (D15).
+  std::optional<tf2::Transform> wait_for(const Request & request, int64_t start_ns)
   {
-    // D15: without a valid clock reading there is no time to hand over, and
-    // the core is told so; it answers with a stop.
+    std::string why;
+    auto tf = try_lookup(*tf_buffer_, request, &why);
+    while (!tf && rclcpp::ok() && clock_valid_ &&
+      clock_while_waiting(start_ns) < start_ns + tolerance_ns_)
+    {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      tf = try_lookup(*tf_buffer_, request, &why);
+    }
+    if (!tf) {
+      RCLCPP_ERROR_THROTTLE(
+        get_logger(), *get_clock(), 5000, "Failed to get the transform from '%s' to '%s': %s",
+        request.source.c_str(), request.target.c_str(), why.c_str());
+    }
+    return tf;
+  }
+
+  // ---- events ------------------------------------------------------------
+
+  void on_scan(sensor_msgs::msg::LaserScan::ConstSharedPtr msg)
+  {
+    if (!monitor_) {
+      return;
+    }
+    const uint64_t t = now_ns();
+    const int64_t stamp_ns =
+      static_cast<int64_t>(msg->header.stamp.sec) * 1000000000 + msg->header.stamp.nanosec;
+    warn_about_cost(msg->ranges.size());
+    const auto ranges = encode_ranges(msg->ranges);
+    monitor_->on_scan(
+      t, stamp_ns, bits_of(msg->range_min), bits_of(msg->range_max), ranges.data(),
+      ranges.size());
+    // T2 (d): the message whose ranges the core has just been given is the
+    // one whose points are handed over with the following commands.
+    scan_ = msg;
+    scan_stamp_ns_ = stamp_ns;
+  }
+
+  /// N33. A polygon message for zone `k`. With at least three points its
+  /// transform is looked up (with the wait of N26) and its vertices are
+  /// handed over in the base frame; with fewer the core is given the short
+  /// list at once and refuses it. The message is kept only if the core
+  /// accepted it.
+  void on_shape(uint32_t k, geometry_msgs::msg::PolygonStamped::ConstSharedPtr msg)
+  {
+    if (!monitor_ || k >= zones_.size()) {
+      return;
+    }
+    const auto & points = msg->polygon.points;
+    const Request request = shape_request(base_frame_id_, msg->header.frame_id);
+    std::optional<tf2::Transform> tf = identity_transform();
+    if (points.size() >= 3) {
+      tf = wait_for(request, static_cast<int64_t>(now_ns()));
+    }
+    const auto verts = tf ? polygon_vertices(*tf, points) : std::vector<uint8_t>();
+    const bool accepted =
+      monitor_->on_shape(k, !request.identity, tf.has_value(), verts.data(), verts.size());
+    if (accepted) {
+      zones_[k].shape = msg;
+      zones_[k].display = *msg;
+    } else {
+      RCLCPP_ERROR(
+        get_logger(), "[%s]: polygon message with %zu point(s) in frame '%s' is ignored: it needs "
+        "at least three points, a transform to '%s', and finite coordinates within 999.997 m "
+        "(N33, ND6); the zone keeps the shape it had",
+        zones_[k].name.c_str(), points.size(), msg->header.frame_id.c_str(),
+        base_frame_id_.c_str());
+    }
+  }
+
+  struct Published
+  {
+    bool velocity;   ///< `out` is to be published
+    bool processed;  ///< the command was processed: the polygons are published (N16)
+  };
+
+  /// Hands the command to the core, publishes the state message the core
+  /// asks for, and fills `out` with the velocity to publish, if any.
+  Published on_cmd(const geometry_msgs::msg::Twist & cmd, geometry_msgs::msg::Twist & out)
+  {
+    if (!monitor_) {
+      return {false, false};
+    }
+    const uint64_t lx = bits_of(cmd.linear.x), ly = bits_of(cmd.linear.y),
+      lz = bits_of(cmd.linear.z), ax = bits_of(cmd.angular.x), ay = bits_of(cmd.angular.y),
+      az = bits_of(cmd.angular.z);
+    const uint64_t t = now_ns();
+    std::optional<std::vector<uint8_t>> points;
+    std::vector<uint8_t> zone_verts;
+    if (clock_valid_) {
+      // Which transforms upstream would look up for this command is the
+      // core's answer (N22, N34): the shim neither waits where upstream
+      // answers at once nor skips a lookup.
+      const auto plan = monitor_->cmd_plan(t, lx, ly, lz, ax, ay, az);
+      bool zones = plan != CollisionMonitor::Plan::None;
+      if (plan == CollisionMonitor::Plan::ScanAndZones && scan_) {
+        const auto tf = wait_for(
+          scan_request(
+            base_frame_id_, scan_->header.frame_id, scan_stamp_ns_, static_cast<int64_t>(t),
+            odom_frame_id_, base_shift_correction_),
+          static_cast<int64_t>(t));
+        if (tf) {
+          points = scan_points(*tf, scan_->angle_min, scan_->angle_increment, scan_->ranges);
+        } else if (!source_timeout_zero_) {
+          // The source is invalid: upstream does not reach its zone loop
+          // (N34), and the core leaves the shapes as they are.
+          zones = false;
+        }
+      }
+      if (zones) {
+        zone_verts = zone_vertices(static_cast<int64_t>(t));
+      }
+    }
+    // D15: without a valid clock reading (also if the clock stopped being
+    // valid during a wait) there is no time to hand over, and the core is
+    // told so; it answers with a stop.
     const auto decision = clock_valid_ ?
       monitor_->on_cmd(
-      now_ns(), bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
-      bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z)) :
-      monitor_->on_cmd_no_clock(
-      bits_of(cmd.linear.x), bits_of(cmd.linear.y), bits_of(cmd.linear.z),
-      bits_of(cmd.angular.x), bits_of(cmd.angular.y), bits_of(cmd.angular.z));
+      t, lx, ly, lz, ax, ay, az, points.has_value(), points ? points->data() : nullptr,
+      points ? points->size() : 0, zone_verts.data(), zone_verts.size()) :
+      monitor_->on_cmd_no_clock(lx, ly, lz, ax, ay, az);
     log_change(decision);
+    // N13: the state message, before the velocity.
+    publish_state(decision);
     // What to publish for the answer is apply_answer (conversions.hpp, with
     // its own test), which takes the kind as the number the core returned.
     static_assert(
@@ -286,22 +585,24 @@ private:
       static_cast<uint8_t>(CollisionMonitor::OutputKind::Pass) == 1 &&
       static_cast<uint8_t>(CollisionMonitor::OutputKind::Slowdown) == 2 &&
       static_cast<uint8_t>(CollisionMonitor::OutputKind::StopZone) == 3 &&
-      static_cast<uint8_t>(CollisionMonitor::OutputKind::StopSource) == 4,
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::StopSource) == 4 &&
+      static_cast<uint8_t>(CollisionMonitor::OutputKind::Withheld) == 5,
       "OutputKind must have the codes of roslean_cm_out_kind");
+    const bool processed = decision.kind != CollisionMonitor::OutputKind::Silent;
     std::array<double, 3> planar{};
     const Answer answer = apply_answer(
       static_cast<uint8_t>(decision.kind), decision.ratio_bits,
       {cmd.linear.x, cmd.linear.y, cmd.angular.z}, planar);
     if (answer == Answer::Nothing) {
-      // R2 (a component is not finite) or R15 (zero was published for
-      // stop_pub_timeout already).
-      RCLCPP_DEBUG(get_logger(), "Command not answered");
-      return false;
+      // Not processed (not active, N4; a component is not finite, R2), or
+      // processed with the zero withheld (R15).
+      RCLCPP_DEBUG(get_logger(), "Command not answered with a velocity");
+      return {false, processed};
     }
     if (answer == Answer::PublishUnknownKind) {
       // Unreachable: the kind is `kindOf` of the core's output
       // (core/ROSleanCore/CollisionMonitorFFI.lean), a total function whose
-      // values are 0 to 4. Were a core and a shim of different versions ever
+      // values are 0 to 5. Were a core and a shim of different versions ever
       // linked together, the answer the shim does not understand is treated
       // as a stop, not as silence: `planar` is all zeros.
       RCLCPP_ERROR_THROTTLE(
@@ -313,7 +614,89 @@ private:
     out.linear.x = planar[0];
     out.linear.y = planar[1];
     out.angular.z = planar[2];
-    return true;
+    return {true, processed};
+  }
+
+  /// The zone vertices of a command (SPEC_NAV2, 8.3): for every zone in
+  /// order a count and the vertices of its stored message in the base frame
+  /// under the newest transform, or "none" (count 0xFFFFFFFF). A lookup is
+  /// made, with the wait of N26, for every enabled zone whose stored message
+  /// is in another frame (N34, ND3). The array ends after the last zone that
+  /// has vertices: a zone it does not reach has none.
+  std::vector<uint8_t> zone_vertices(int64_t t)
+  {
+    std::vector<uint8_t> out;
+    size_t used = 0;
+    for (const auto & zone : zones_) {
+      const size_t at = out.size();
+      out.resize(at + 4, 0xFF);
+      if (!zone.topic || !zone.enabled || !zone.shape) {
+        continue;
+      }
+      const Request request = shape_request(base_frame_id_, zone.shape->header.frame_id);
+      if (request.identity) {
+        continue;
+      }
+      const auto tf = wait_for(request, clock_valid_ ? clock_while_waiting(t) : t);
+      if (!tf) {
+        continue;
+      }
+      const auto verts = polygon_vertices(*tf, zone.shape->polygon.points);
+      put_le(out.data() + at, zone.shape->polygon.points.size(), 4);
+      out.insert(out.end(), verts.begin(), verts.end());
+      used = out.size();
+    }
+    out.resize(used);
+    return out;
+  }
+
+  /// N13 (T8): the state message the core asks for. The names are the
+  /// shim's table from zone index to name.
+  void publish_state(const CollisionMonitor::Output & d)
+  {
+    if (!state_pub_) {
+      return;
+    }
+    nav2_msgs::msg::CollisionMonitorState state;
+    switch (d.report) {
+      case CollisionMonitor::Report::None:
+        return;
+      case CollisionMonitor::Report::Normal:
+        state.action_type = nav2_msgs::msg::CollisionMonitorState::DO_NOTHING;
+        state.polygon_name = "";
+        break;
+      case CollisionMonitor::Report::Stop:
+        state.action_type = nav2_msgs::msg::CollisionMonitorState::STOP;
+        state.polygon_name = zone_name(d.report_zone);
+        break;
+      case CollisionMonitor::Report::Slowdown:
+        state.action_type = nav2_msgs::msg::CollisionMonitorState::SLOWDOWN;
+        state.polygon_name = zone_name(d.report_zone);
+        break;
+      case CollisionMonitor::Report::Source:
+        state.action_type = nav2_msgs::msg::CollisionMonitorState::STOP;
+        state.polygon_name = "invalid source";
+        break;
+      default:
+        // Unreachable (`reportOf` has the values 0 to 4). An unknown report
+        // is not published as something it is not.
+        RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 5000, "unknown report %u from the core: no state message",
+          static_cast<unsigned>(d.report));
+        return;
+    }
+    state_pub_->publish(state);
+  }
+
+  /// N16 (T8): every visualised zone, with the node clock as the stamp.
+  void publish_polygons()
+  {
+    for (auto & zone : zones_) {
+      if (zone.pub) {
+        zone.display.header.stamp = now();
+        zone.pub->publish(zone.display);
+      }
+    }
   }
 
   /// Logs the action the core demands when it differs from the one logged
@@ -325,7 +708,9 @@ private:
   /// published.
   void log_change(const CollisionMonitor::Output & d)
   {
-    if (d.kind == CollisionMonitor::OutputKind::Silent) {
+    if (d.kind == CollisionMonitor::OutputKind::Silent ||
+      d.kind == CollisionMonitor::OutputKind::Withheld)
+    {
       return;
     }
     if (logged_ && logged_kind_ == d.kind && logged_zone_ == d.zone &&
@@ -352,9 +737,10 @@ private:
       case CollisionMonitor::OutputKind::StopSource:
         RCLCPP_WARN(
           get_logger(), "Robot to stop due to invalid source: no scan was received yet, or the "
-          "last one is older than the source timeout, or it was in a frame that cannot be used");
+          "last one is older than the source timeout, or its transform to the base frame could "
+          "not be obtained");
         break;
-      case CollisionMonitor::OutputKind::Silent:
+      default:
         break;
     }
   }
@@ -376,7 +762,9 @@ private:
     double per_reading = 25.0;
     for (const auto & zone : zones_) {
       if (zone.enabled) {
-        per_reading += zone.circle ? 1.5 : 2.0 * static_cast<double>(zone.vertices.size());
+        // A topic zone has no vertices yet: counted as a square.
+        per_reading += zone.circle ? 1.5 :
+          2.0 * static_cast<double>(zone.topic ? 4 : zone.vertices.size());
       }
     }
     return 2.0 * per_reading * static_cast<double>(readings);
@@ -468,28 +856,12 @@ private:
     return all;
   }
 
-  // SPEC, "Excluded features", node level.
+  // What is still outside the subset, at node level. Everything refused is
+  // reported in one message (refusal_message).
   void refuse_unsupported_node_parameters()
   {
-    if (!get_or<std::string>("state_topic", "").empty()) {
-      refuse("state_topic", "the state topic is not provided; leave it empty or unset (D13)");
-    }
-    const auto shift = get_opt<bool>("base_shift_correction");
-    if ((!shift.has_value() || *shift) && !refused("base_shift_correction")) {
-      refuse(
-        "base_shift_correction", "must be set to false explicitly: scan points are not "
-        "corrected for the robot's motion, and upstream's default is true (D11)");
-    }
     if (get_or<bool>("use_realtime_priority", false)) {
       refuse("use_realtime_priority", "real-time priority is not supported");
-    }
-    for (const char * name : {"odom_frame_id", "transform_tolerance"}) {
-      if (is_set(name)) {
-        RCLCPP_WARN(
-          get_logger(), "Parameter '%s' is ignored: this node performs no transform lookup. "
-          "A scan must be in the frame 'base_frame_id', or the sensor's pose must be given by "
-          "'<source>.roslean_sensor_pose' (D11).", name);
-      }
     }
   }
 
@@ -519,25 +891,13 @@ private:
     // the node's, as upstream's default does (R17).
     own_source_timeout_ = get_opt<double>(s + ".source_timeout");
     builder.set_source(source_enabled_, node_source_timeout_, own_source_timeout_);
-
-    const auto pose = get_opt<std::vector<double>>(s + ".roslean_sensor_pose");
-    if (pose.has_value()) {
-      if (pose->size() != 3 ||
-        !std::all_of(pose->begin(), pose->end(), [](double v) {return std::isfinite(v);}))
-      {
-        refuse(s + ".roslean_sensor_pose", "must be three finite numbers [x, y, yaw]");
-      } else {
-        sensor_pose_ = SensorPose{(*pose)[0], (*pose)[1], (*pose)[2]};
-        sensor_pose_set_ = true;
-        // Finding 1 of the review CM3/CM4: this switches the frame check
-        // off, so it is said once, loudly, with the pose in use.
-        RCLCPP_WARN(
-          get_logger(), "'%s.roslean_sensor_pose' is set: scans are used whatever their "
-          "frame_id, placed in '%s' by the fixed pose [x, y, yaw] = [%g, %g, %g] (metres, "
-          "radians). No transform is looked up and the frame of a scan is not checked (D11); a "
-          "wrong pose puts obstacles in the wrong place.",
-          s.c_str(), base_frame_id_.c_str(), sensor_pose_.x, sensor_pose_.y, sensor_pose_.yaw);
-      }
+    // `<source>.min_height` and `max_height` are not read: upstream does not
+    // read them for a scan source either (N21).
+    if (is_set(s + ".roslean_sensor_pose")) {
+      refuse(
+        s + ".roslean_sensor_pose", "removed: the pose of the sensor comes from TF, as in "
+        "nav2_collision_monitor. Publish the transform from the scan's frame to '" +
+        base_frame_id_ + "' (for a fixed sensor: a static transform) and delete this parameter");
     }
     return topic;
   }
@@ -549,6 +909,21 @@ private:
       refuse("polygons", "required");
       return;
     }
+    // ND5: a state message names a zone. Two zones of one name, a zone named
+    // like the state of an invalid source, and a zone without a name could
+    // not be told apart by a reader of the state topic.
+    std::set<std::string> seen;
+    for (const auto & z : *names) {
+      if (z.empty()) {
+        refuse("polygons", "a zone must have a name (ND5)");
+      } else if (z == "invalid source") {
+        refuse(
+          "polygons", "a zone must not be named 'invalid source': the state topic uses that name "
+          "for an invalid source (ND5)");
+      } else if (!seen.insert(z).second) {
+        refuse("polygons", "zone '" + z + "' is listed twice: zone names must differ (ND5)");
+      }
+    }
     for (const auto & z : *names) {
       read_zone(builder, z);
     }
@@ -556,7 +931,7 @@ private:
 
   // Zones are added in the order of `polygons`; that order is the zone index
   // in the core's answers. A zone that the shim refuses is not added (the
-  // node does not start in that case).
+  // transition fails in that case).
   void read_zone(CollisionMonitor::Builder & builder, const std::string & z)
   {
     bool complete = true;
@@ -574,7 +949,9 @@ private:
       complete = false;
     } else if (*action_type != "stop" && *action_type != "slowdown") {
       refuse(
-        z + ".action_type", "only 'stop' and 'slowdown' are supported; got '" + *action_type + "'");
+        z + ".action_type", "only 'stop' and 'slowdown' are supported; got '" + *action_type +
+        "'. (To use Nav2's footprint zone, give it 'points', or 'action_type: stop' together "
+        "with 'polygon_sub_topic'; 'footprint_topic' is read for 'approach' only.)");
       complete = false;
     }
     if (is_set(z + ".max_points")) {
@@ -584,24 +961,24 @@ private:
     if (sources_names.has_value() && *sources_names != std::vector<std::string>{source_name_}) {
       refuse(z + ".sources_names", "must be the one source '" + source_name_ + "' or unset");
     }
-    if (get_or<bool>(z + ".visualize", false) || is_set(z + ".polygon_pub_topic")) {
-      RCLCPP_WARN(
-        get_logger(), "Zone '%s': 'visualize' and 'polygon_pub_topic' are ignored; the zone's "
-        "shape is not published (D13).", z.c_str());
-    }
     ZoneParams zone;
     zone.name = z;
     zone.min_points = get_or<int64_t>(z + ".min_points", 4);
     zone.ratio = get_or<double>(z + ".slowdown_ratio", 0.5);
     zone.enabled = get_or<bool>(z + ".enabled", true);
     zone.slowdown = action_type.has_value() && *action_type == "slowdown";
+    zone.visualize = get_or<bool>(z + ".visualize", false);
+    zone.pub_topic = get_or<std::string>(z + ".polygon_pub_topic", z);
+    zone.display.header.frame_id = base_frame_id_;
     const auto action = zone.slowdown ?
       CollisionMonitor::ZoneAction::Slowdown : CollisionMonitor::ZoneAction::Stop;
 
     if (type.has_value() && *type == "circle") {
       const auto radius = get_opt<double>(z + ".radius");
       if (!radius.has_value()) {
-        refuse(z + ".radius", "required: a circle whose radius comes from a topic is not supported");
+        refuse(
+          z + ".radius", "required: a circle whose radius comes from a topic is not supported "
+          "(ND12)");
         return;
       }
       if (!complete) {
@@ -609,24 +986,56 @@ private:
       }
       zone.circle = true;
       zone.radius = *radius;
+      for (const auto & v : circle_polygon(*radius)) {
+        geometry_msgs::msg::Point32 p;
+        p.x = v[0];
+        p.y = v[1];
+        zone.display.polygon.points.push_back(p);
+      }
       builder.add_circle(*radius, action, zone.ratio, zone.min_points, zone.enabled);
     } else if (type.has_value() && *type == "polygon") {
       const auto points = get_opt<std::string>(z + ".points");
-      if (!points.has_value()) {
-        refuse(z + ".points", "required: a polygon that comes from a topic is not supported");
-        return;
-      }
-      std::string error;
-      if (!parse_points(*points, zone.vertices, error)) {
-        refuse(z + ".points", error);
-        return;
-      }
-      if (!complete) {
-        return;
-      }
-      builder.add_polygon(action, zone.ratio, zone.min_points, zone.enabled);
-      for (const auto & v : zone.vertices) {
-        builder.add_vertex(v[0], v[1]);
+      if (points.has_value()) {
+        // N29: with `points` the shape is fixed; `polygon_sub_topic` and
+        // `footprint_topic` are not read.
+        std::string error;
+        if (!parse_points(*points, zone.vertices, error)) {
+          refuse(z + ".points", error);
+          return;
+        }
+        if (!complete) {
+          return;
+        }
+        builder.add_polygon(action, zone.ratio, zone.min_points, zone.enabled);
+        for (const auto & v : zone.vertices) {
+          builder.add_vertex(v[0], v[1]);
+          geometry_msgs::msg::Point32 p;
+          p.x = v[0];
+          p.y = v[1];
+          zone.display.polygon.points.push_back(p);
+        }
+      } else {
+        const auto sub_topic = get_opt<std::string>(z + ".polygon_sub_topic");
+        if (!sub_topic.has_value() || sub_topic->empty()) {
+          // N29, ND11: upstream fails here too.
+          std::string why =
+            "is not initialized, and the zone has no 'points': static points and sub topic both "
+            "not defined";
+          if (is_set(z + ".footprint_topic")) {
+            why += ". 'footprint_topic' is read for 'action_type: approach' only, which this node "
+              "does not provide; give the zone 'points' (recommended), or set "
+              "'polygon_sub_topic' to the topic the footprint is published on";
+          }
+          refuse(z + ".polygon_sub_topic", why);
+          return;
+        }
+        if (!complete) {
+          return;
+        }
+        zone.topic = true;
+        zone.sub_topic = *sub_topic;
+        zone.transient_local = get_or<bool>(z + ".polygon_subscribe_transient_local", false);
+        builder.add_topic_polygon(action, zone.ratio, zone.min_points, zone.enabled);
       }
     } else {
       return;
@@ -711,8 +1120,8 @@ private:
       std::optional<int64_t>(0))
     {
       warn(
-        "the source timeout is 0: a scan is used however old it is, and with no scan (or after "
-        "a scan in an unusable frame) commands pass as if nothing were near (R7, R8).");
+        "the source timeout is 0: a scan is used however old it is, and with no scan, or "
+        "without a transform for it, commands pass as if nothing were near (R7, R8, N27).");
     }
     for (const auto & zone : zones_) {
       const std::string z = "zone '" + zone.name + "': ";
@@ -729,7 +1138,13 @@ private:
       if (zone.circle && zone.radius == 0.0) {
         warn(z + "'radius' is 0: the zone is a disc of 1 mm around the origin of the base frame.");
       }
-      if (!zone.circle) {
+      if (zone.topic) {
+        warn(
+          z + "its shape comes from the topic '" + zone.sub_topic + "': until the first message "
+          "with at least three points is accepted the zone takes no action, and a shape given in "
+          "another frame stays where it was last published (N32, N34).");
+      }
+      if (!zone.circle && !zone.topic) {
         // The vertices as the core sees them, in whole millimetres.
         std::vector<std::array<int64_t, 2>> mm;
         for (const auto & v : zone.vertices) {
@@ -751,8 +1166,8 @@ private:
   }
 
   std::optional<CollisionMonitor> monitor_;
-  std::vector<ZoneParams> zones_;  // as read, for messages only
-  std::vector<std::string> refusals_;  // every reason not to start
+  std::vector<ZoneParams> zones_;  // as read; index = the core's zone index
+  std::vector<std::string> refusals_;  // every reason to fail `configure`
   std::set<std::string> refused_names_;
   // Raw values as read, for messages only.
   double node_source_timeout_{0.0};
@@ -770,21 +1185,39 @@ private:
   // made; it is false only while the /clock message received last carried a
   // negative time, or after an exception was caught in main() and until the
   // next usable /clock message. Always true without simulated time.
+  bool configuring_{false};  // on_configure is running (see the parameter callback)
   bool sim_time_{false};
   bool clock_valid_{true};
+  int64_t sim_clock_ns_{0};  // the usable /clock message seen last (for waits only)
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr clock_sub_;
   std::string source_name_;
+  // Transforms (T6).
   std::string base_frame_id_;
-  SensorPose sensor_pose_;
-  bool sensor_pose_set_{false};  // the pose parameter was given explicitly
+  std::string odom_frame_id_;
+  bool base_shift_correction_{true};
+  int64_t tolerance_ns_{0};
+  // The source timeout is 0, by the core's conversion: a failed lookup for
+  // the scan then does not make the source invalid (N27), and upstream goes
+  // on to the zones' lookups. Selects lookups; enters no decision.
+  bool source_timeout_zero_{false};
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+  // The scan handed to the core last (T2 d).
+  sensor_msgs::msg::LaserScan::ConstSharedPtr scan_;
+  int64_t scan_stamp_ns_{0};
   rclcpp::SubscriptionBase::SharedPtr cmd_sub_;
   rclcpp::SubscriptionBase::SharedPtr scan_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_stamped_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
+  rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_stamped_;
+  rclcpp_lifecycle::LifecyclePublisher<nav2_msgs::msg::CollisionMonitorState>::SharedPtr state_pub_;
 };
 
 }  // namespace roslean_collision_monitor
 
+#ifdef ROSLEAN_COLLISION_MONITOR_COMPONENT
+#include "rclcpp_components/register_node_macro.hpp"
+RCLCPP_COMPONENTS_REGISTER_NODE(roslean_collision_monitor::CollisionMonitorNode)
+#else
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
@@ -795,12 +1228,12 @@ int main(int argc, char * argv[])
     // Lean runtime is initialised for this thread only.
     auto node = std::make_shared<roslean_collision_monitor::CollisionMonitorNode>();
     rclcpp::executors::SingleThreadedExecutor executor;
-    executor.add_node(node);
+    executor.add_node(node->get_node_base_interface());
     // D15: no topic content may end the node. An exception that leaves a
     // callback (rclcpp's own /clock callback throws on a negative time) ends
     // spin(); the message that caused it has been taken, so spinning again
-    // goes on with the next one. A refused configuration is thrown by the
-    // constructor above, outside this loop, and still ends the process.
+    // goes on with the next one. Every caught exception is logged as an
+    // error (on_callback_exception).
     while (rclcpp::ok()) {
       try {
         executor.spin();
@@ -815,3 +1248,4 @@ int main(int argc, char * argv[])
   rclcpp::shutdown();
   return result;
 }
+#endif

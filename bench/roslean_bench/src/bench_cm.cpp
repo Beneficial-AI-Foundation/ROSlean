@@ -39,14 +39,16 @@
 #include "nav2_collision_monitor/collision_monitor_node.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "roslean_collision_monitor/conversions.hpp"
+#include "roslean_collision_monitor/scan_records.hpp"
 #include "roslean_core/collision_monitor.hpp"
+#include "roslean_core/scan_points_monitor.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 
 namespace
 {
 
 using Clock = std::chrono::steady_clock;
-using roslean::CollisionMonitor;
+using CollisionMonitor = roslean::ScanPointsMonitor;
 
 uint64_t mono_ns()
 {
@@ -118,7 +120,7 @@ public:
     const int64_t stamp_ns =
       static_cast<int64_t>(msg.header.stamp.sec) * 1000000000 + msg.header.stamp.nanosec;
     const bool usable = msg.header.frame_id == base_frame_id_;
-    const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges, SensorPose{});
+    const auto beams = encode_scan(msg.angle_min, msg.angle_increment, msg.ranges);
     monitor_->on_scan(
       t, stamp_ns, usable, bits_of(msg.range_min), bits_of(msg.range_max), beams.data(),
       beams.size());

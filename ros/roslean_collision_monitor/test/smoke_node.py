@@ -8,10 +8,17 @@ NODE is the path of the `collision_monitor` executable. The node runs with
 every event is chosen exactly. The script sends scans and velocity commands
 and checks what comes out on `cmd_vel`: the command unchanged (pass-through),
 zero (stop), the command scaled (slowdown), or nothing. Expectations follow
-docs/collision_monitor/SPEC.md. It then checks that the node refuses to start
-with configurations outside the supported subset, and names the parameter
-(all refused parameters in one message), and that it warns about accepted
-configurations that protect nothing.
+docs/collision_monitor/SPEC.md. It then checks that the node fails its
+`configure` transition for configurations outside the supported subset, stays
+up, and names the parameter (all refused parameters in one message), and that
+it warns about accepted configurations that protect nothing.
+
+The node is a lifecycle node (SPEC_NAV2.md). Here it runs with
+`autostart_node: true`, so that it configures and activates itself, without a
+bond, and with `transform_tolerance: 0.0`, so that a scan whose transform is
+missing is answered at once (the wait of N26, the lifecycle transitions, the
+bond, the state topic and the zones fed by a topic are tested at node level
+by test/scenario_nav2.py, test/bond_manager.py and test/random_nav2.py).
 
 This is a smoke test of the shim, not a comparison with upstream.
 
@@ -43,6 +50,9 @@ from rcl_interfaces.srv import GetParameters, SetParameters, SetParametersAtomic
 from rclpy.node import Node
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import TransformStamped
+from rclpy.qos import DurabilityPolicy, QoSProfile
+from tf2_msgs.msg import TFMessage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTLE = 0.2  # s of wall time allowed for delivery
@@ -104,9 +114,9 @@ STEPS = [
     ('cmd', CMD, STOP, 'scan too old 1 ns later: zero (R8)'),
     ('scan', [math.inf] * 5),
     ('cmd', CMD, PASS, 'a fresh scan of inf readings: pass'),
-    # D11: a scan in another frame cannot be placed without a sensor pose.
+    # N27: a scan in a frame without a transform to the base frame.
     ('scan', FAR, 'laser_link'),
-    ('cmd', CMD, STOP, 'a scan in another frame is not used: zero, as without data (R8)'),
+    ('cmd', CMD, STOP, 'a scan whose transform is missing: zero, as without data (R8, N27)'),
     ('scan', FAR),
     ('cmd', CMD, PASS, 'the next scan in the base frame is used again'),
 ]
@@ -114,50 +124,49 @@ STEPS = [
 # Five readings around the direction pi of the scan's frame.
 BEHIND = (math.pi - 0.02, 0.01)
 
-# With `scan.roslean_sensor_pose: [0.0, 0.0, pi]` (a sensor mounted backwards)
-# a scan in the sensor's frame is used, and what the sensor sees ahead is
-# behind the robot: outside the stop box, inside the 0.6 m circle.
-POSE_PARAMS = ['scan.roslean_sensor_pose:=[0.0, 0.0, 3.141592653589793]']
+# With a static transform that mounts the sensor backwards (N23, N25), a scan
+# in the sensor's frame is used, and what the sensor sees ahead is behind the
+# robot: outside the stop box, inside the 0.6 m circle.
+POSE_PARAMS = []
 POSE_STEPS = [
     ('clock', 100 * NS),
+    ('tf', 'base_link', 'laser_link', 0.0, 0.0, math.pi),
     ('scan', [0.2] * 5, 'laser_link'),
-    ('cmd', CMD, slow(0.5), 'sensor pose set: 0.2 m "ahead" of a backwards sensor is behind the robot'),
+    ('cmd', CMD, slow(0.5), 'transform from TF: 0.2 m "ahead" of a backwards sensor is behind the robot'),
     ('scan', [0.2] * 5, 'laser_link', *BEHIND),
     ('cmd', CMD, STOP, 'and 0.2 m behind the backwards sensor is ahead of the robot: stop'),
     ('scan', FAR, 'laser_link'),
-    ('cmd', CMD, PASS, 'sensor pose set: a scan in the sensor frame is used'),
-    ('log', "'scan.roslean_sensor_pose' is set: scans are used whatever their frame_id", 1, 1,
-     'start-up warning, once, that the pose switches the frame check off'),
-    ('log', '[x, y, yaw] = [0, 0, 3.14159]', 1, 1, 'which gives the pose in use'),
-    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link'. It is used", 1, 3,
-     'throttled warning when a scan arrives in another frame while the pose is set'),
+    ('cmd', CMD, PASS, 'a scan in the sensor frame is used'),
+    ('log', 'Failed to get the transform', 0, 0, 'no lookup failed'),
 ]
 
-# Review CM3/CM4, finding 1 and 4f: a pose of zero is "the sensor is the base
-# frame". The scan is used as if it were in the base frame, whatever the
-# sensor's real mounting, and the node says so.
-ZERO_POSE_PARAMS = ['scan.roslean_sensor_pose:=[0.0, 0.0, 0.0]']
+# The identity as the transform: the scan is used as if it were in the base
+# frame. The transform is then replaced by one that puts the sensor 1 m
+# ahead: the stored scan is placed anew for the next command (N22, N23).
+ZERO_POSE_PARAMS = []
 ZERO_POSE_STEPS = [
     ('clock', 100 * NS),
+    ('tf', 'base_link', 'laser_link', 0.0, 0.0, 0.0),
     ('scan', [0.2] * 5, 'laser_link'),
-    ('cmd', CMD, STOP, 'zero pose: a scan in laser_link is taken as if in the base frame: stop'),
+    ('cmd', CMD, STOP, 'identity transform: a scan in laser_link lies where it would in the base frame: stop'),
     ('scan', [0.2] * 5, 'laser_link', *BEHIND),
-    ('cmd', CMD, slow(0.5), 'zero pose: what the sensor sees behind itself counts as behind the robot'),
+    ('cmd', CMD, slow(0.5), 'what the sensor sees behind itself is behind the robot'),
     ('scan', [0.2] * 5),
-    ('cmd', CMD, STOP, 'zero pose: a scan in the base frame, the same'),
-    ('log', '[x, y, yaw] = [0, 0, 0]', 1, 1, 'start-up warning with the zero pose'),
-    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link'. It is used", 1, 3,
-     'warning about the scan in another frame'),
+    ('cmd', CMD, STOP, 'a scan in the base frame, the same'),
+    ('scan', [0.2] * 5, 'laser_link'),
+    ('cmd', CMD, STOP, 'the scan in laser_link again: stop'),
+    ('tf', 'base_link', 'laser_link', 1.0, 0.0, 0.0),
+    ('cmd', CMD, PASS, 'the sensor moved 1 m ahead by a new transform: the same stored scan, '
+     'placed anew for this command, is 1.2 m away (N22)'),
 ]
 
-# The same scans without the parameter: none of those in another frame is used.
+# The same scans without a transform: none of those in another frame is used.
 NO_POSE_STEPS = [
     ('clock', 100 * NS),
     ('scan', FAR, 'laser_link'),
-    ('cmd', CMD, STOP, 'no pose: a scan in laser_link with nothing near is not used: zero (R8)'),
-    ('log', "'scan.roslean_sensor_pose' is set", 0, 0, 'no pose: no start-up warning about a pose'),
-    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_link', and", 1, 3,
-     'no pose: error that the scan is not used'),
+    ('cmd', CMD, STOP, 'no transform: a scan in laser_link with nothing near is not used: zero (N27)'),
+    ('log', "Failed to get the transform from 'laser_link' to 'base_link'", 1, 3,
+     'no transform: error that the lookup failed'),
 ]
 
 # Review CM3/CM4, finding 1, the reviewer's case, on the shipped example
@@ -183,9 +192,8 @@ EXAMPLE_STEPS = [
     ('cmd', CMD, STOP, 'example.yaml: five points in the stop box: zero'),
     ('scan', [0.25] * 5, 'base_footprint', *BEHIND),
     ('cmd', CMD, slow(0.3), 'example.yaml: five points behind the robot: the 0.3 slowdown'),
-    ('log', "'scan.roslean_sensor_pose' is set", 0, 0, 'example.yaml sets no sensor pose'),
-    ('log', "Scan is in frame 'laser_link', not in the base frame 'base_footprint', and", 1, 3,
-     'example.yaml: error that the scan in laser_link is not used'),
+    ('log', "Failed to get the transform from 'laser_link' to 'base_footprint'", 1, 3,
+     'example.yaml: error that the transform of the scan in laser_link is missing'),
     ('log', 'protects nothing', 0, 0, 'example.yaml: no warning about a configuration that protects nothing'),
 ]
 
@@ -290,6 +298,8 @@ DYNAMIC_STEPS = [
 
 # Parameters of a minimal configuration the node accepts.
 BASE = {
+    'autostart_node': 'true',
+    'bond_heartbeat_period': '0.0',
     'base_shift_correction': 'false',
     'observation_sources': '[scan]',
     'polygons': '[Z]',
@@ -302,8 +312,7 @@ POLYGON = {'Z.type': 'polygon', 'Z.radius': None}
 # Configurations the node must refuse: (label, changes to BASE, text that the
 # error message must contain). A value of None removes the parameter.
 BAD_CONFIGS = [
-    ('base_shift_correction not set (D11)', {'base_shift_correction': None}, 'base_shift_correction'),
-    ('base_shift_correction true', {'base_shift_correction': 'true'}, 'base_shift_correction'),
+    ('two zones of one name (ND5)', {'polygons': '[Z, Z]'}, 'polygons'),
     ('two sources', {'observation_sources': '[scan, pointcloud]'}, 'observation_sources'),
     ('no observation_sources', {'observation_sources': None}, 'observation_sources'),
     ('point cloud source', {'scan.type': 'pointcloud'}, 'scan.type'),
@@ -317,7 +326,13 @@ BAD_CONFIGS = [
     ('circle without radius', {'Z.radius': None}, 'Z.radius'),
     ('radius of 2000 m (D12)', {'Z.radius': '2000.0'}, 'Z.radius'),
     ('infinite radius', {'Z.radius': '.inf'}, 'Z.radius'),
-    ('polygon without points', POLYGON, 'Z.points'),
+    ('polygon without points and without polygon_sub_topic (N29, ND11)', POLYGON,
+     'Z.polygon_sub_topic'),
+    ("Nav2's footprint zone with action_type changed and nothing else (ND11)",
+     {**POLYGON, 'Z.footprint_topic': '/local_costmap/published_footprint'},
+     'Z.polygon_sub_topic'),
+    ('a circle fed by a topic (ND12)', {'Z.radius': None, 'Z.polygon_sub_topic': 'radius'},
+     'Z.radius'),
     ('polygon with three vertices (R10)',
      {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1]]"'}, 'Z.points'),
     ('polygon with a malformed point',
@@ -333,14 +348,13 @@ BAD_CONFIGS = [
      {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1], [-1, 1e39]]"'}, 'Z.points'),
     ('huge source_timeout (D9)', {'source_timeout': '1.0e10'}, 'source_timeout'),
     ('zone bound to another source', {'Z.sources_names': '[other]'}, 'Z.sources_names'),
-    ('state topic (D13)', {'state_topic': 'collision_monitor_state'}, 'state_topic'),
     ('real-time priority', {'use_realtime_priority': 'true'}, 'use_realtime_priority'),
     ('negative source_timeout (D9)', {'source_timeout': '-1.0'}, 'source_timeout'),
     ('negative timeout of the source', {'scan.source_timeout': '-1.0'}, 'scan.source_timeout'),
     ('NaN stop_pub_timeout (D9)', {'stop_pub_timeout': '.nan'}, 'stop_pub_timeout'),
     ('integer source_timeout (R17)', {'source_timeout': '2'}, 'source_timeout'),
     ('string min_points (R17)', {'Z.min_points': 'four'}, 'Z.min_points'),
-    ('sensor pose with two numbers', {'scan.roslean_sensor_pose': '[0.0, 0.0]'},
+    ('the removed sensor pose parameter', {'scan.roslean_sensor_pose': '[0.0, 0.0, 0.0]'},
      'scan.roslean_sensor_pose'),
 ]
 
@@ -358,6 +372,8 @@ RADIUS_CASES = [
 MANY_WRONG = """
 collision_monitor:
   ros__parameters:
+    autostart_node: true
+    bond_heartbeat_period: 0.0
     base_frame_id: "base_footprint"
     state_topic: "collision_monitor_state"
     source_timeout: -1.0
@@ -389,7 +405,7 @@ collision_monitor:
       roslean_sensor_pose: [0.0, 0.0]
 """
 MANY_WRONG_NAMES = [
-    'state_topic', 'base_shift_correction', 'source_timeout', 'scan.source_timeout',
+    'source_timeout', 'scan.source_timeout',
     'stop_pub_timeout', 'A.radius', 'B.min_points', 'C.action_type', 'C.max_points', 'D.points',
     'scan.roslean_sensor_pose',
 ]
@@ -405,7 +421,8 @@ GOOD_CONFIGS = [
       'Z.polygon_pub_topic': 'zone', 'source_timeout': '0.0', 'stop_pub_timeout': '0.0',
       'Z.min_points': '-1', 'Z.radius': '-0.5', 'Z.action_type': 'slowdown',
       'Z.slowdown_ratio': '7.0', 'Z.sources_names': '[scan]', 'state_topic': '""',
-      'scan.roslean_sensor_pose': '[0.1, 0.0, 3.14]', 'scan.enabled': 'false'},
+      'odom_frame_id': 'odom', 'scan.min_height': '0.15', 'scan.max_height': '2.0',
+      'scan.enabled': 'false'},
      ["'scan.enabled' is false", "'min_points' is -1", "'slowdown_ratio' is 7.0"]),
     # Review CM3/CM4, finding 7c: accepted, with a warning for each.
     ('source_timeout 0.0', {'source_timeout': '0.0'}, ['the source timeout is 0']),
@@ -430,6 +447,17 @@ GOOD_CONFIGS = [
      {**POLYGON, 'Z.points': '"[[0, 0], [1, 1], [0, 0], [1, 1]]"'},
      ["zone 'Z': the polygon of 'points' has no area"]),
     ('a proper square', {**POLYGON, 'Z.points': '"[[1, 1], [1, -1], [-1, -1], [-1, 1]]"'}, []),
+    # The Nav2 extension: accepted now.
+    ('state topic, base shift correction, a visualised zone',
+     {'state_topic': 'collision_monitor_state', 'base_shift_correction': 'true',
+      'Z.visualize': 'true'}, []),
+    ('base_shift_correction not set (upstream\'s default, true)', {'base_shift_correction': None}, []),
+    ('a polygon fed by a topic (N31): accepted, with a warning',
+     {**POLYGON, 'Z.polygon_sub_topic': 'zone_shape'}, ["its shape comes from the topic 'zone_shape'"]),
+    ("Nav2's footprint zone with the two-line edit of SPEC_NAV2 8.6",
+     {**POLYGON, 'Z.polygon_sub_topic': '/local_costmap/published_footprint',
+      'Z.footprint_topic': '/local_costmap/published_footprint', 'Z.time_before_collision': '1.2',
+      'Z.simulation_time_step': '0.1'}, ["its shape comes from the topic"]),
 ]
 # Not tested: `polygons: []`. A parameter file or `-p` cannot express an empty
 # list (rcl: "No parameter value set"), so the node's warning for a
@@ -468,6 +496,9 @@ class Driver(Node):
         self.clock_pub = self.create_publisher(Clock, '/clock', 10)
         self.scan_pub = self.create_publisher(LaserScan, 'scan', 10)
         self.cmd_pub = self.create_publisher(self.msg_type, 'cmd_vel_smoothed', 10)
+        self.tf_static_pub = self.create_publisher(
+            TFMessage, '/tf_static',
+            QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.received = []
         self.create_subscription(self.msg_type, 'cmd_vel', self.received.append, 10)
         self.now_ns = 0
@@ -505,6 +536,17 @@ class Driver(Node):
         msg.range_max = 10.0
         msg.ranges = [float(r) for r in ranges]
         self.scan_pub.publish(msg)
+
+    def send_static_tf(self, parent, child, x, y, yaw):
+        t = TransformStamped()
+        t.header.frame_id = parent
+        t.child_frame_id = child
+        t.header.stamp.sec, t.header.stamp.nanosec = self.stamp()
+        t.transform.translation.x = float(x)
+        t.transform.translation.y = float(y)
+        t.transform.rotation.z = math.sin(yaw / 2.0)
+        t.transform.rotation.w = math.cos(yaw / 2.0)
+        self.tf_static_pub.publish(TFMessage(transforms=[t]))
 
     def send_cmd(self, values):
         msg = self.msg_type()
@@ -597,6 +639,9 @@ class Driver(Node):
             elif step[0] == 'scan':
                 self.send_scan(*step[1:])
                 self.spin_for(SETTLE)
+            elif step[0] == 'tf':
+                self.send_static_tf(*step[1:])
+                self.spin_for(2 * SETTLE)
             elif step[0] == 'log':
                 _, needle, at_least, at_most, label = step
                 n = self.logs.wait_for(needle, at_least, self.spin_for, timeout=2.0)
@@ -640,6 +685,8 @@ def stop(proc):
 def run_scenario(exe, title, steps, stamped=False, params=(), params_file='smoke_params.yaml'):
     args = [exe, '--ros-args', '--params-file', os.path.join(HERE, params_file),
             '-p', 'use_sim_time:=true', '-p', f'enable_stamped_cmd_vel:={str(stamped).lower()}',
+            '-p', 'autostart_node:=true', '-p', 'bond_heartbeat_period:=0.0',
+            '-p', 'transform_tolerance:=0.0', '-p', 'base_shift_correction:=false',
             '--log-level', 'collision_monitor:=debug']
     for param in params:
         args += ['-p', param]
@@ -660,17 +707,21 @@ def run_scenario(exe, title, steps, stamped=False, params=(), params_file='smoke
 
 
 def refusal(args):
-    """Starts the node with a configuration it must refuse; returns the exit
-    code and the fatal lines of its log."""
+    """Starts the node with a configuration it must refuse. The node configures
+    itself (autostart_node), the transition fails, and the process stays up
+    (N3; this replaced the exit at start-up, D14). Returns whether the process
+    was still running five seconds later and the lines of its log that report
+    a refusal."""
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    try:
-        _, err = proc.communicate(timeout=20)
-        code = proc.returncode
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        _, err = proc.communicate()
-        code = None
-    return code, [line for line in err.splitlines() if '[FATAL]' in line]
+    logs = Logs(proc)
+    end = time.monotonic() + 20.0
+    while logs.count('refused') == 0 and proc.poll() is None and time.monotonic() < end:
+        time.sleep(0.05)
+    time.sleep(0.5)
+    alive = proc.poll() is None
+    stop(proc)
+    logs.thread.join(timeout=5)
+    return alive, [line for line in logs.lines if '[ERROR]' in line and 'refused' in line]
 
 
 def param_args(changes):
@@ -687,10 +738,10 @@ def run_bad_configs(exe, tmp):
     print('--- configurations the node must refuse')
     for label, changes, needle in BAD_CONFIGS:
         code, fatal = refusal([exe] + param_args(changes))
-        ok = code == 1 and len(fatal) == 1 and f"'{needle}'" in fatal[0] and \
+        ok = code is True and len(fatal) == 1 and f"'{needle}'" in fatal[0] and \
             '1 parameter refused' in fatal[0]
         bad += not ok
-        print(f"{'ok  ' if ok else 'FAIL'}  refuses: {label} (exit code {code})"
+        print(f"{'ok  ' if ok else 'FAIL'}  configure fails, the process stays up: {label}"
               + ('' if ok else f'  [{fatal}]'))
 
     # Finding 7a: the radius message gives the true bound.
@@ -698,7 +749,7 @@ def run_bad_configs(exe, tmp):
         if accepted:
             continue
         code, fatal = refusal([exe] + param_args({'Z.radius': value}))
-        ok = code == 1 and len(fatal) == 1 and 'at most 999.999 m in magnitude' in fatal[0] \
+        ok = code is True and len(fatal) == 1 and 'at most 999.999 m in magnitude' in fatal[0] \
             and 'below 1000 m' not in fatal[0]
         bad += not ok
         print(f"{'ok  ' if ok else 'FAIL'}  refuses radius {value} and gives the bound 999.999 m"
@@ -710,21 +761,21 @@ def run_bad_configs(exe, tmp):
         f.write(MANY_WRONG)
     code, fatal = refusal([exe, '--ros-args', '--params-file', path])
     missing = [n for n in MANY_WRONG_NAMES if len(fatal) != 1 or f"parameter '{n}'" not in fatal[0]]
-    ok = code == 1 and len(fatal) == 1 and not missing and \
+    ok = code is True and len(fatal) == 1 and not missing and \
         f'{len(MANY_WRONG_NAMES)} parameters refused' in fatal[0]
     bad += not ok
     print(f"{'ok  ' if ok else 'FAIL'}  a parameter file with {len(MANY_WRONG_NAMES)} refused "
-          'parameters: one fatal message names them all'
+          'parameters: one error message names them all'
           + ('' if ok else f'  [exit code {code}; not named: {missing}; {fatal}]'))
     return bad
 
 
 def starts(args):
-    """Starts the node with a configuration it must accept, lets it run for
-    three seconds and stops it. Returns (ok, what went wrong, its log)."""
+    """Starts the node with a configuration it must accept, lets it configure
+    and activate itself, and stops it after four seconds. Returns (ok, what went wrong, its log)."""
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
-        _, err = proc.communicate(timeout=3)
+        _, err = proc.communicate(timeout=4)
         return False, f'exited with code {proc.returncode}: {err.strip()}', err
     except subprocess.TimeoutExpired:
         proc.send_signal(signal.SIGINT)
@@ -746,10 +797,16 @@ def run_good_configs(exe):
         if accepted:
             cases.append((f'radius {value}', [exe] + param_args({'Z.radius': value}), []))
     example = os.path.join(HERE, '..', 'config', 'example.yaml')
-    cases.append(('config/example.yaml', [exe, '--ros-args', '--params-file', example], []))
+    cases.append(('config/example.yaml',
+                  [exe, '--ros-args', '--params-file', example, '-p', 'autostart_node:=true',
+                   '-p', 'bond_heartbeat_period:=0.0'], []))
     for label, args, warnings in cases:
         ok, what, err = starts(args)
         warned = [line for line in err.splitlines() if '[WARN]' in line and PROTECTS_NOTHING in line]
+        if ok and 'Auto-starting' not in err:
+            ok, what = False, 'the node did not start itself'
+        elif ok and ('failed to configure' in err or 'failed to activate' in err):
+            ok, what = False, 'the node did not reach the active state'
         if ok and warnings:
             missing = [w for w in warnings if not any(w in line for line in warned)]
             ok = not missing and len(warned) == len(warnings)
@@ -772,9 +829,9 @@ def main():
     try:
         bad += run_scenario(exe, 'Twist', STEPS)
         bad += run_scenario(exe, 'TwistStamped', STEPS, stamped=True)
-        bad += run_scenario(exe, 'sensor pose, backwards', POSE_STEPS, params=POSE_PARAMS)
-        bad += run_scenario(exe, 'sensor pose of zero', ZERO_POSE_STEPS, params=ZERO_POSE_PARAMS)
-        bad += run_scenario(exe, 'no sensor pose', NO_POSE_STEPS)
+        bad += run_scenario(exe, 'transform from TF: sensor mounted backwards', POSE_STEPS, params=POSE_PARAMS)
+        bad += run_scenario(exe, 'transform from TF: identity, then replaced', ZERO_POSE_STEPS, params=ZERO_POSE_PARAMS)
+        bad += run_scenario(exe, 'no transform', NO_POSE_STEPS)
         bad += run_scenario(exe, 'config/example.yaml, scan in another frame', EXAMPLE_STEPS,
                             params_file=os.path.join('..', 'config', 'example.yaml'))
         bad += run_scenario(exe, 'negative zeros', NEGZERO_STEPS)

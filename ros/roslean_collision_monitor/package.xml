@@ -3,7 +3,7 @@
 <package format="3">
   <name>roslean_collision_monitor</name>
   <version>0.1.0</version>
-  <description>Replacement for the core of Nav2's collision monitor (one laser scan, circle and polygon zones, stop and slowdown) whose decision logic is a Lean function with proved properties.</description>
+  <description>Replacement for Nav2's collision monitor for stop and slowdown zones (one laser scan, circles, polygons, polygons fed by a topic; lifecycle node with bond, state topic, transforms from TF) whose decision logic is a Lean function with proved properties.</description>
   <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
   <license>Apache-2.0</license>
 
@@ -14,6 +14,14 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>rosgraph_msgs</depend>
+  <!-- The Nav2 extension: lifecycle node with bond, state message, transforms -->
+  <depend>rclcpp_lifecycle</depend>
+  <depend>rclcpp_components</depend>
+  <depend>nav2_util</depend>
+  <depend>nav2_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
 
   <!-- Gazebo demo (demo/gazebo): begin -->
   <exec_depend>rclpy</exec_depend>
