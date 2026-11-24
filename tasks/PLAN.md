@@ -57,7 +57,7 @@ same row group can run at the same time.
 | [T08](T08-nav2-review.md) | Independent review of the extension; Lean node through T07's scenarios | T06, T07 | yes | merged 363ce85 |
 | [T09](T09-nav2-fixes.md) | Fixes from T08 | T08 | yes | merged f7fa7cf |
 | [T10](T10-nav2-demo.md) | Demo: Nav2 launches the Lean node in place of its monitor | T09 | no (needs a display) | running |
-| [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | running |
+| [T11](T11-writeup-website.md) | Website page on what is missing and what it takes; README; trusted base | T09 (T10 if done) | yes | merged; the spots that point to T10's results are checked when T10 is merged |
 | [T12](T12-fresh-machine-audit.md) | Someone with nothing but the README builds and runs it | T11 | yes | open |
 
 ```
