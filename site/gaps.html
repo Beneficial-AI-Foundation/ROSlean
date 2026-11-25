@@ -91,7 +91,7 @@
 
     <section id="nav2">
       <h2>Under Nav2: what has to be edited</h2>
-      <p><code>nav2_bringup</code>'s <code>nav2_params.yaml</code> configures the monitor with one zone, <code>FootprintApproach</code>, with <code>action_type: approach</code> (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>, N21). The Lean node refuses that zone. The documented edit replaces it by the footprint as a fixed stop polygon (SPEC_NAV2.md, section 8.6):</p>
+      <p><code>nav2_bringup</code>'s <code>nav2_params.yaml</code> configures the monitor with one zone, <code>FootprintApproach</code>, with <code>action_type: approach</code> (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>, N21). The Lean node refuses that zone. The documented edit replaces it by the footprint as a fixed stop polygon (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC_NAV2.md">SPEC_NAV2.md</a>, section 8.6):</p>
 <pre class="plain"><code>polygons: ["FootprintStop"]
 FootprintStop:
   type: "polygon"
@@ -262,7 +262,7 @@ FootprintStop:
 
     <section id="proofs">
       <h2>What is not proved</h2>
-      <p>What is proved is listed on the <a href="details.html#cm-theorems">details page</a>. This section lists what the theorems rest on without proving it. T1 to T10 are the numbered trusted parts of SPEC.md.</p>
+      <p>What is proved is listed on the <a href="details.html#cm-theorems">details page</a>. This section lists what the theorems rest on without proving it. T1 to T10 are the numbered trusted parts of <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md#where-the-velocity-is-computed">SPEC.md</a>.</p>
 
       <article class="gap" id="proof-polygon">
         <h3>The topological half of the polygon margin argument</h3>
