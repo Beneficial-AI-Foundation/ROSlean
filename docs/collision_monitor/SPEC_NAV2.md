@@ -1140,7 +1140,7 @@ the fixed polygon as the recommended edit; 3 option A; 4 as upstream, yes;
 component works too); 8 the fixed polygon, the two-line change mentioned.
 One question arose later and has only a default (the review CM5, finding
 1): what a topic zone does after a polygon message with a NaN vertex. The
-node stops (SPEC.md, ND6); the user has not confirmed it.
+node stops (SPEC.md, ND6); confirmed by the user on 2026-11-25.
 
 1. **A stop zone fed by a topic that has no shape yet** takes no action
    (N32, "No shape"). The fail-closed alternative: such a zone, if its
