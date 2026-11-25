@@ -215,7 +215,9 @@ ros2 launch nav2_bringup navigation_launch.py params_file:=my_nav2_params.yaml
 ros2 launch nav2_bringup bringup_launch.py params_file:=my_nav2_params.yaml map:=my_map.yaml use_composition:=False
 ```
 
-and so does any launch file of yours or of a robot bring-up package that says
+(the first three were run; `bringup_launch.py` includes `navigation_launch.py`
+and was not run as a whole, see [What was tested](#what-was-tested)), and so
+does any launch file of yours or of a robot bring-up package that says
 
 ```python
 Node(package='nav2_collision_monitor', executable='collision_monitor', ...)
@@ -242,9 +244,11 @@ No launch file is edited. What you must know before choosing this:
   `collision_monitor_core` and `collision_detector_core` and the headers
   `nav2_collision_monitor/*.hpp` to CMake. The overlay exports nothing. A
   package that does `find_package(nav2_collision_monitor)` and links or
-  includes them does not build while the overlay is sourced. No package of
-  Nav2 1.3.12 does (only the metapackage `navigation2` names
-  `nav2_collision_monitor`, as a run-time dependency). Upstream's libraries
+  includes them does not build while the overlay is sourced. Among the
+  packages installed with Nav2 1.3.12 here, none does: only the metapackage
+  `navigation2` names `nav2_collision_monitor` in its `package.xml`, as a
+  run-time dependency, and no installed library or executable other than
+  upstream's own two nodes links against the two libraries. Upstream's libraries
   themselves stay where they are and are not hidden: the overlay's library
   has another file name.
 - **The collision detector** keeps working if upstream is installed
@@ -434,7 +438,7 @@ the node and formed the bond with it, not that a robot was protected.
 | `colcon build` in a separate workspace that contains a copy of this repository: the command of option A; then the command of option B | 2 packages; 3 packages. A plain `colcon list` does not show the overlay |
 | The guard of the tests: `roslean_collision_monitor` configured with the overlay sourced; a test script asked for `nav2_collision_monitor/collision_monitor` with the overlay sourced | CMake warns and registers no test against upstream; the script exits with a message |
 | `check_params.py` on Nav2's `nav2_params.yaml` and `nav2_multirobot_params_1.yaml`, upstream's `collision_monitor_params.yaml`, and the parameter files of this repository | Refusal reported for the first two, none for the others, as the node decides |
-| The repository's tests without the long ones (`pixi run test-quick`), after the change | 16 of 17 passed. The one failure, `upstream_probes`, runs upstream's node alone on one of this repository's probes of a source timeout; it failed in 2 of 6 runs while another simulation was using the machine and passed in the 4 others |
+| The repository's tests (`pixi run test`), after the change, the overlay not sourced | 28 of 29 passed, among them all 25 of `roslean_collision_monitor`. The one failure was the `scenario` test of `roslean_twist_mux`, which this change does not touch: one message was missing while another program had the machine at a load of about 40; run again alone it passed twice. In an earlier run of the short set (`pixi run test-quick`), `upstream_probes`, which drives upstream's node alone, failed on a source timeout probe; repeated, it failed once more and passed four times |
 
 Not tested: Linux (the node itself and its tests were run on Linux arm64
 earlier, see the [README](../README.md); the overlay package, the new launch
