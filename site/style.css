@@ -239,7 +239,6 @@ footer .wrap { padding-block: 1.5rem 2.5rem; font-size: 0.9rem; color: var(--mut
 @media (max-width: 640px) { .gap dl { grid-template-columns: 1fr; gap: 0.1rem; } .gap dd { margin-bottom: 0.5rem; } }
 .kind { font: 500 0.72rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .kind.proved { color: var(--proved); }
-.kind.open { color: var(--accent); }
 td code, dd code { overflow-wrap: anywhere; }
 blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--code-bg); border-left: 3px solid var(--line); font: 0.84rem/1.5 var(--font-mono); overflow-wrap: anywhere; }
 

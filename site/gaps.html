@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ROSlean collision monitor: what is missing</title>
-<meta name="description" content="What the Lean collision monitor does not do, does differently from nav2_collision_monitor, has not proved and has not been tested on, and what closing each gap would take.">
+<meta name="description" content="What the Lean collision monitor does and does not do, where it differs from nav2_collision_monitor, what is proved, what is tested and on which platforms, and what is trusted.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
@@ -37,9 +37,9 @@
       <li><a href="#shapes">Zone shapes that change</a></li>
       <li><a href="#sources">Sensors and sources</a></li>
       <li><a href="#interface">Node interface</a></li>
-      <li><a href="#proofs">Proofs not done</a></li>
-      <li><a href="#platforms">Platforms never tested</a></li>
-      <li><a href="#decisions">Decisions and their behaviour</a></li>
+      <li><a href="#proofs">What is not proved</a></li>
+      <li><a href="#platforms">Platforms</a></li>
+      <li><a href="#behaviour">Behaviour to know</a></li>
       <li><a href="#direction">Stricter or looser than upstream</a></li>
       <li><a href="#cost">Cost</a></li>
     </ol>
@@ -48,7 +48,7 @@
   <main>
     <div class="hero">
       <p class="eyebrow"><a href="./#packages">Packages</a> / collision monitor</p>
-      <h1>What is missing, and what closing each gap would take.</h1>
+      <h1>What the collision monitor does not do, and what its theorems rest on.</h1>
       <p class="lede">The ROSlean collision monitor is a gate for velocity commands with stop and slowdown zones. Its decision for each command is a Lean function with machine-checked theorems, and Nav2's lifecycle manager can launch it in place of <code>nav2_collision_monitor</code>. It is not a drop-in replacement for Nav2's default configuration, whose only zone uses the <code>approach</code> action, which this node refuses.</p>
     </div>
 
@@ -56,20 +56,18 @@
       <h2>What the node is, and how to read this page</h2>
       <p>"Upstream" is <a href="https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor"><code>nav2_collision_monitor</code></a> of ROS 2 Jazzy, read at commit <code>c704655</code> (version 1.3.14) and run as binaries 1.3.12 (macOS, RoboStack) and 1.3.14 (Linux, apt). The Lean node covers one laser scan source, circle and polygon zones, and the actions <code>stop</code> and <code>slowdown</code>, as a lifecycle node with a bond, a state topic, transforms from TF with base shift correction, and polygon zones whose shape arrives on a topic. The specification is <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>; rule numbers (R, N), differences (D, ND), trusted parts (T) and assumptions (A) below are its.</p>
       <p>The claim is about commands, not physics. The theorems say which velocity the node publishes for the messages it received. They do not say that a robot does not collide: that also depends on the sensor, the zone sizes, the base and the transforms.</p>
-      <p>Every statement on this page is one of four kinds:</p>
+      <p>Every statement on this page is one of three kinds:</p>
       <div class="table">
         <table>
           <thead><tr><th>Kind</th><th>Meaning</th><th>Where to check it</th></tr></thead>
           <tbody>
             <tr><td><span class="kind proved">Proved</span></td><td>A Lean theorem, named here. No <code>sorry</code>, no <code>native_decide</code>, only Lean's three standard axioms.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/CollisionMonitor"><code>ROSlean/CollisionMonitor/</code></a></td></tr>
             <tr><td><span class="kind">Tested</span></td><td>Observed on running binaries, with the test and its counts named.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a></td></tr>
-            <tr><td><span class="kind">Trusted</span></td><td>Neither proved nor fully tested. Each item has a number T1 to T10.</td><td>SPEC.md, "Where the velocity is computed"</td></tr>
-            <tr><td><span class="kind">Decided</span></td><td>A choice, with who made it. One default is still open for the user: whether the documented Nav2 edit stays a stop polygon.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/tasks/PLAN.md">tasks/PLAN.md</a>, "Decisions"</td></tr>
+            <tr><td><span class="kind">Trusted</span></td><td>Neither proved nor fully tested. Each item is one of the numbered trusted parts of SPEC.md, T1 to T10.</td><td>SPEC.md, "Where the velocity is computed"</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="note">Where things were run: macOS on arm64 (one Apple M5 Pro), and a Linux arm64 container in Docker on that same Mac. Nothing of the node described here ran on x86-64 or on Linux on its own hardware. One early cloud session ran the tests of the node as it was before the Nav2 extension on Linux x86-64. Every timing figure is from that one Mac.</p>
-      <p class="note">Sizes of remaining work are estimates. Those marked "SPEC_NAV2" are from <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC_NAV2.md">SPEC_NAV2.md, section 12</a>, and are relative to all collision monitor work so far: the model and its C interface (1,900 lines of Lean in <code>core/</code>), the proofs (8,900 lines in <code>ROSlean/CollisionMonitor/</code>), the C++ shim (2,000 lines) and their tests. Those marked "this page" were made when this page was written and are in no other document.</p>
+      <p class="note">Where things were run: macOS on arm64 (one Apple M5 Pro), and a Linux arm64 container in Docker on that same Mac. Nothing of the node described here ran on x86-64 or on Linux on its own hardware. An earlier version of the node, without the lifecycle interface, TF and topic zones, ran its tests once on Linux x86-64. Every timing figure is from that one Mac. Details under <a href="#platforms">platforms</a>.</p>
     </section>
 
     <section id="fit">
@@ -83,9 +81,9 @@
             <tr><td>Nothing has to move the robot while an obstacle is in a stop zone.</td><td>A planner must be able to turn or back the robot out, as Nav2's recovery behaviours do: a stop zone zeroes those commands too. In simulation, Nav2's tour ended with the robot standing for good in three runs of six (<a href="#nav2">under Nav2</a>).</td></tr>
             <tr><td>Zone shapes are fixed circles or polygons, or polygons published on a topic.</td><td>A circle's radius must arrive on a topic.</td></tr>
             <tr><td>Parameters are set at start-up.</td><td>You use the <code>~/toggle</code> service or change <code>enabled</code> while the node runs.</td></tr>
-            <tr><td>Your base stops by itself when commands cease, or holds its last command and takes commands from nowhere else (assumption A3).</td><td>Your base needs fresh zero commands to stay stopped. Upstream has the same limit: see <a href="#decisions">the stop that is not published</a>.</td></tr>
+            <tr><td>Your base stops by itself when commands cease, or holds its last command and takes commands from nowhere else (assumption A3).</td><td>Your base needs fresh zero commands to stay stopped. Upstream has the same limit: see <a href="#stop-pub-timeout">the stop that is not published</a>.</td></tr>
             <tr><td>You can run the stand-alone executable.</td><td>You must load the monitor as a component and need it to survive a <code>/clock</code> message with a negative time. The component works but lacks that protection (D15).</td></tr>
-            <tr><td>6 to 9 times upstream's processor time per command is acceptable: 49 µs against 7 µs for 1080 readings and two polygon zones, in process, on the Mac.</td><td>You run on x86-64 or a robot computer and need a tested result: there is none yet.</td></tr>
+            <tr><td>6 to 9 times upstream's processor time per command is acceptable: 49 µs against 7 µs for 1080 readings and two polygon zones, in process, on the Mac.</td><td>You run on x86-64 or a robot computer and need a tested result: there is none.</td></tr>
           </tbody>
         </table>
       </div>
@@ -100,10 +98,10 @@ FootprintStop:
   points: "[[0.22, 0.22], [0.22, -0.22], [-0.22, -0.22], [-0.22, 0.22]]"
   action_type: "stop"
   min_points: 6</code></pre>
-      <p>The coordinates are an example. How far the polygon must reach beyond the robot is the user's choice; nothing in this repository relates a zone size to a braking distance. In the launch file, <code>package='nav2_collision_monitor'</code> becomes <code>package='roslean_collision_monitor'</code>; the executable name, the node name, the lifecycle manager's list, the topics and the bond stay.</p>
+      <p>The coordinates are an example. How far the polygon must reach beyond the robot is the integrator's choice; nothing in this repository relates a zone size to a braking distance. In the launch file, <code>package='nav2_collision_monitor'</code> becomes <code>package='roslean_collision_monitor'</code>; the executable name, the node name, the lifecycle manager's list, the topics and the bond stay.</p>
       <p>Changing only <code>action_type</code> of Nav2's zone to <code>stop</code> does not configure, on upstream either: a stop zone does not read <code>footprint_topic</code>, so it has no shape and no topic. Seen on upstream's binary (UPSTREAM_BEHAVIOUR.md, finding 35; scenarios <code>footprint-edit-stop</code>, <code>footprint-edit-slowdown</code>). Adding <code>polygon_sub_topic: "/local_costmap/published_footprint"</code> makes it configure on both nodes, with two limits listed under <a href="#shapes">zone shapes that change</a>.</p>
-      <p><span class="kind">Tested</span> Nav2's own <code>navigation_launch.py</code> with the package name changed and <code>nav2_params.yaml</code> with the edit above: Nav2's lifecycle manager configured, activated and bonded the node, as a stand-alone process and as a component in <code>component_container_isolated</code>; a command passed, became zero with twenty readings at 0.15 m, and passed again (review CM5, macOS; static transforms and a scripted scan, no simulator, no localisation, no goal).</p>
-      <p><span class="kind">Tested</span> With a simulated robot (Gazebo, TurtleBot3, macOS; task T10; <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">collision monitor tutorial</a>, section 7): Nav2's whole bring-up with <code>use_composition:=False</code> started the Lean executable as its collision monitor, with a fixed stop polygon and a fixed slowdown polygon in place of <code>FootprintApproach</code>. A script drove on the controller's topic and a box was dropped in the robot's path; the automated check (<code>pixi run cm-check --nav2</code>) passed in 10 runs of 10 with the Lean node and in 4 of 4 with upstream's node on the same parameters, the robot at rest 0.269 to 0.275 m and 0.267 to 0.270 m from the box. The first start of all, in a freshly installed environment, failed before the monitor was activated: Nav2's lifecycle manager stopped at <code>Configuring behavior_server</code>. It did not recur in 27 further starts. The windows were captured from the screen afterwards (Gazebo and RViz, 2026-11-25) and the frames inspected; no person sat in front of them.</p>
+      <p><span class="kind">Tested</span> Nav2's own <code>navigation_launch.py</code> with the package name changed and <code>nav2_params.yaml</code> with the edit above: Nav2's lifecycle manager configured, activated and bonded the node, as a stand-alone process and as a component in <code>component_container_isolated</code>; a command passed, became zero with twenty readings at 0.15 m, and passed again (macOS; static transforms and a scripted scan, no simulator, no localisation, no goal).</p>
+      <p><span class="kind">Tested</span> With a simulated robot (Gazebo, TurtleBot3, macOS, without windows; <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">collision monitor tutorial</a>, section 7): Nav2's whole bring-up with <code>use_composition:=False</code> started the Lean executable as its collision monitor, with a fixed stop polygon and a fixed slowdown polygon in place of <code>FootprintApproach</code>. A script drove on the controller's topic and a box was dropped in the robot's path; the automated check (<code>pixi run cm-check --nav2</code>) passed in 10 runs of 10 with the Lean node and in 4 of 4 with upstream's node on the same parameters, the robot at rest 0.269 to 0.275 m and 0.267 to 0.270 m from the box. One further start, the first in a freshly installed environment, failed before the monitor was activated: Nav2's lifecycle manager stopped at <code>Configuring behavior_server</code>. The failure did not recur in 27 further starts.</p>
       <p>The robot then behaves differently from stock Nav2: it stops when the zone is occupied, where stock Nav2 slows down in proportion to the time before a predicted collision. In a stop zone every command becomes zero, including backing up and turning, as with upstream's <code>stop</code> action. Nav2's recovery behaviours (spin, back up) go through the monitor and are zeroed too.</p>
       <p><span class="kind">Tested</span> <strong>With the stop zone, Nav2's tour ended with the robot standing for good in three runs of six.</strong> Nav2 planning and driving a tour of the apartment for 300 simulated seconds: the Lean node reached 1, 1 and 8 places and stood at the end of two runs; upstream's node on the same zones reached 8, 2 and 5 places and stood at the end of one; stock Nav2 (upstream's node with <code>FootprintApproach</code>) reached 11 places in its one run and never stood. The stops were the rule at work (readings in the stop zone, counted by the measuring script), not a defect of either node, and three runs each do not compare the nodes. A stop zone is not a substitute for <code>approach</code>: use this edit to run the proved node in Nav2's pipeline, and expect a robot that can be held where stock Nav2 would turn away.</p>
     </section>
@@ -117,11 +115,9 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>CollisionMonitor::processApproach</code> in <a href="https://github.com/ros-navigation/navigation2/blob/jazzy/nav2_collision_monitor/src/collision_monitor_node.cpp"><code>src/collision_monitor_node.cpp</code></a>, <code>Polygon::getCollisionTime</code> in <code>src/polygon.cpp</code>, <code>src/kinematics.cpp</code>. The robot's motion is simulated in steps of <code>simulation_time_step</code> up to <code>time_before_collision</code>, with <code>cos</code> and <code>sin</code> of the turned angle; at each step the points inside the footprint are counted; the command is scaled by <code>collision_time / time_before_collision</code>. The footprint comes through <code>nav2_costmap_2d::FootprintSubscriber</code>.</dd>
           <dt>Nav2's default</dt><dd>Yes. It is the only zone of <code>nav2_params.yaml</code>. The package's own example file defines such a zone but does not list it.</dd>
-          <dt>This node today</dt><dd>Refuses. The <code>configure</code> transition fails, the node stays unconfigured, the process stays up. With Nav2's unchanged <code>nav2_params.yaml</code> the log says:
+          <dt>This node</dt><dd>Refuses. The <code>configure</code> transition fails, the node stays unconfigured, the process stays up. With Nav2's unchanged <code>nav2_params.yaml</code> the log says:
             <blockquote class="msg">2 parameters refused: parameter 'FootprintApproach.action_type': only 'stop' and 'slowdown' are supported; got 'approach'. (To use Nav2's footprint zone, give it 'points', or 'action_type: stop' together with 'polygon_sub_topic'; 'footprint_topic' is read for 'approach' only.); parameter 'FootprintApproach.polygon_sub_topic': is not initialized, and the zone has no 'points': static points and sub topic both not defined. 'footprint_topic' is read for 'action_type: approach' only, which this node does not provide; give the zone 'points' (recommended), or set 'polygon_sub_topic' to the topic the footprint is published on</blockquote>
             For an <code>approach</code> zone that has <code>points</code> it is the first of the two alone, as <code>1 parameter refused: …</code>.</dd>
-          <dt>To close it</dt><dd>Model: the simulation loop over a rotating and translating point set, in exact arithmetic, with <code>cos</code> and <code>sin</code> supplied by the shim or enclosed in rational bounds. To prove: the scale factor is in [0, 1]; no amplification; if the unscaled command reaches <code>min_points</code> points within the horizon, the published speed is at most the scaled one. Would stay trusted: <code>cos</code>, <code>sin</code>, one division, unless the rational bounds are proved, which is a project of its own. The shim also needs the footprint subscriber's pose lookup.</dd>
-          <dt>Size (estimate)</dt><dd>The largest single item: about half of all collision monitor work so far (SPEC_NAV2).</dd>
         </dl>
       </article>
 
@@ -131,9 +127,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>processStopSlowdownLimit</code> in <code>src/collision_monitor_node.cpp</code>: <code>ratio = min(1, linear_limit / hypot(vx, vy), angular_limit / |w|)</code>, clamped to [0, 1], applied to all three components.</dd>
           <dt>Nav2's default</dt><dd>No. The package's example file defines <code>PolygonLimit</code> but does not list it.</dd>
-          <dt>This node today</dt><dd>Refuses, with the first part of the message above and <code>got 'limit'</code>.</dd>
-          <dt>To close it</dt><dd>A new action kind. The ratio needs a square root and a division: computed by the shim and checked in Lean on bit patterns (the check's premises stay trusted), or compared in squares exactly. To prove: no amplification; the published speeds respect both limits up to rounding.</dd>
-          <dt>Size (estimate)</dt><dd>About a tenth of the work so far (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses, with the first part of the message above and <code>got 'limit'</code>.</dd>
         </dl>
       </article>
 
@@ -143,9 +137,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd>Accepted; the zone has no effect (UPSTREAM_BEHAVIOUR.md, finding 23; scenario <code>action-none</code>).</dd>
           <dt>Nav2's default</dt><dd>No.</dd>
-          <dt>This node today</dt><dd>Refuses with the same message (D1).</dd>
-          <dt>To close it</dt><dd>One more action in the model that never triggers anything.</dd>
-          <dt>Size (estimate)</dt><dd>Trivial (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses with the same message (D1).</dd>
         </dl>
       </article>
     </section>
@@ -159,9 +151,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>src/velocity_polygon.cpp</code>: the shape is the first sub-polygon whose ranges contain the command (<code>linear_min/max</code>, <code>theta_min/max</code>, and for <code>holonomic</code> a direction from <code>atan2</code>); if none matches, the previous shape stays.</dd>
           <dt>Nav2's default</dt><dd>No. The example file defines <code>VelocityPolygonStop</code> but does not list it.</dd>
-          <dt>This node today</dt><dd>Refuses: <code>parameter '&lt;zone&gt;.type': only 'circle' and 'polygon' are supported; got 'velocity_polygon'</code>.</dd>
-          <dt>To close it</dt><dd>Comparisons of doubles, exact on bit patterns. The shape becomes a function of the command, so the model's <code>evaluate</code> would depend on the command, which it does not today. The holonomic branch needs <code>hypot</code> and <code>atan2</code> from the shim (trusted).</dd>
-          <dt>Size (estimate)</dt><dd>Non-holonomic: about a tenth of the work so far (SPEC_NAV2). Holonomic: not estimated.</dd>
+          <dt>This node</dt><dd>Refuses: <code>parameter '&lt;zone&gt;.type': only 'circle' and 'polygon' are supported; got 'velocity_polygon'</code>.</dd>
         </dl>
       </article>
 
@@ -170,9 +160,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>Circle::createSubscription</code>, <code>Circle::radiusCallback</code> in <code>src/circle.cpp</code>: a circle with <code>polygon_sub_topic</code> receives its radius as <code>std_msgs/Float32</code> (N36; read from source only, never run here).</dd>
           <dt>Nav2's default</dt><dd>No.</dd>
-          <dt>This node today</dt><dd>Refuses (ND12): <code>parameter '&lt;zone&gt;.radius': required: a circle whose radius comes from a topic is not supported (ND12)</code>.</dd>
-          <dt>To close it</dt><dd>One more event in the model; the conversion of a radius (<code>radiusMm</code>) exists and is proved (<code>radiusMm_ge</code>, <code>circle_safe</code>).</dd>
-          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses (ND12): <code>parameter '&lt;zone&gt;.radius': required: a circle whose radius comes from a topic is not supported (ND12)</code>.</dd>
         </dl>
       </article>
 
@@ -180,10 +168,10 @@ FootprintStop:
         <h3>A polygon whose shape arrives on a topic: provided, with four limits</h3>
         <p>This is how Nav2's footprint can become a zone (<code>polygon_sub_topic</code>). The node has it (N29 to N35). What a user should know:</p>
         <dl>
-          <dt>No shape yet</dt><dd>Until its first accepted message the zone takes no action; a stop zone does not stop. Upstream's behaviour (N32), kept by the user's decision; fail-open. <span class="kind proved">Proved</span> <code>not_triggered_of_no_shape</code>, <code>output_of_no_shape</code>. The node warns about it when configured.</dd>
-          <dt>Left behind</dt><dd>A footprint from the costmap is in the odom frame. Between two costmap updates the zone lags by the distance driven; if the costmap stops publishing, the robot drives out of its zone (N34; seen on upstream, scenario <code>footprint-sub-topic</code>). Kept as upstream by the user's decision. The fixed polygon has neither problem, which is why it is the documented edit.</dd>
-          <dt>Unusable vertex</dt><dd>After a polygon message with a vertex that is not finite or lies more than 999.997 m from an axis, the zone demands its action for every command until a usable message arrives or the node is cleaned up (ND6). Upstream takes such a message as it is, and its zone then catches some points and misses others. More restrictive than upstream. <span class="kind proved">Proved</span> <code>triggered_unusable_of_triggered</code>, <code>evaluate_isStop_of_unusable</code>, <code>run_stop_after_unusable</code>. <span class="kind">Decided</span> by the user, 2026-11-25.</dd>
-          <dt>Refused refresh</dt><dd>If the recomputed vertices of a zone in another frame are not finite or out of range, the zone stays where it was for that command (ND13, <code>refresh_of_refused</code>). This needs the zone's frame about a kilometre from the base. It is the one place where the node can in principle let a command pass that upstream would stop. <span class="kind open">Open</span> for the user.</dd>
+          <dt>No shape yet</dt><dd>Until its first accepted message the zone takes no action; a stop zone does not stop. Upstream's behaviour (N32); fail-open. <span class="kind proved">Proved</span> <code>not_triggered_of_no_shape</code>, <code>output_of_no_shape</code>. The node warns about it when configured.</dd>
+          <dt>Left behind</dt><dd>A footprint from the costmap is in the odom frame. Between two costmap updates the zone lags by the distance driven; if the costmap stops publishing, the robot drives out of its zone (N34; seen on upstream, scenario <code>footprint-sub-topic</code>). As upstream. The fixed polygon has neither problem, which is why the documented edit uses it.</dd>
+          <dt>Unusable vertex</dt><dd>After a polygon message with a vertex that is not finite or lies more than 999.997 m from an axis, the zone demands its action for every command until a usable message arrives or the node is cleaned up (ND6). Upstream takes such a message as it is, and its zone then catches some points and misses others. More restrictive than upstream. <span class="kind proved">Proved</span> <code>triggered_unusable_of_triggered</code>, <code>evaluate_isStop_of_unusable</code>, <code>run_stop_after_unusable</code>. A slowdown zone in this state slows; it does not stop.</dd>
+          <dt>Refused refresh</dt><dd>If the recomputed vertices of a zone in another frame are not finite or out of range, the zone stays where it was for that command (ND13, <code>refresh_of_refused</code>). This needs the zone's frame about a kilometre from the base. It is the one place where the node can in principle let a command pass that upstream would stop.</dd>
         </dl>
       </article>
     </section>
@@ -196,9 +184,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>src/pointcloud.cpp</code>: <code>PointCloud2</code> with <code>x</code>, <code>y</code>, <code>z</code>, <code>min_range</code> on the 3D length, the 3D transform, and a height filter <code>min_height</code> to <code>max_height</code>.</dd>
           <dt>Nav2's default</dt><dd>No. Its one source is a scan. The example file defines a <code>pointcloud</code> source but does not list it.</dd>
-          <dt>This node today</dt><dd>Refuses: <code>parameter '&lt;source&gt;.type': only 'scan' sources are supported; got 'pointcloud'</code>.</dd>
-          <dt>To close it</dt><dd>The shim's transform keeps the third coordinate; the height comparison in Lean on a third bit pattern per point; decoding of <code>PointCloud2</code> layouts in the shim (trusted). Clouds have 10⁵ points and more, handed to Lean with every command: the cost of that has to be measured first.</dd>
-          <dt>Size (estimate)</dt><dd>About a fifth of the work so far (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses: <code>parameter '&lt;source&gt;.type': only 'scan' sources are supported; got 'pointcloud'</code>.</dd>
         </dl>
       </article>
 
@@ -207,9 +193,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>src/range.cpp</code>: one <code>sensor_msgs/Range</code> becomes an arc of points every <code>obstacles_angle</code>, with <code>cos</code> and <code>sin</code> in <code>float</code>.</dd>
           <dt>Nav2's default</dt><dd>No.</dd>
-          <dt>This node today</dt><dd>Refuses, as for a point cloud, with <code>got 'range'</code>.</dd>
-          <dt>To close it</dt><dd>Like the scan path with a different generator of scan-frame points in the shim (trusted, as T2 is for a scan).</dd>
-          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses, as for a point cloud, with <code>got 'range'</code>.</dd>
         </dl>
       </article>
 
@@ -218,9 +202,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>src/polygon_source.cpp</code>: <code>PolygonInstanceStamped</code> messages kept per id, dropped when too old, sampled along their edges every <code>sampling_distance</code>.</dd>
           <dt>Nav2's default</dt><dd>No.</dd>
-          <dt>This node today</dt><dd>Refuses, as for a point cloud, with <code>got 'polygon'</code>.</dd>
-          <dt>To close it</dt><dd>The sampling in the shim (trusted) or in Lean with a rational square-root bound; a list of stored polygons with ids in the model's state.</dd>
-          <dt>Size (estimate)</dt><dd>About a tenth of the work so far (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses, as for a point cloud, with <code>got 'polygon'</code>.</dd>
         </dl>
       </article>
 
@@ -229,9 +211,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>process</code> in <code>src/collision_monitor_node.cpp</code>: every enabled source in order, the first invalid one stops; <code>&lt;zone&gt;.sources_names</code> selects which sources a zone counts (<code>Polygon::getPointsInside</code>).</dd>
           <dt>Nav2's default</dt><dd>No. One source.</dd>
-          <dt>This node today</dt><dd>Refuses: <code>parameter 'observation_sources': exactly one source is supported; 2 given</code>, and <code>parameter '&lt;zone&gt;.sources_names': must be the one source '&lt;name&gt;' or unset</code>.</dd>
-          <dt>To close it</dt><dd>The stored scan and the points of a command become lists in the model. The theorems generalise without new ideas.</dd>
-          <dt>Size (estimate)</dt><dd>About a tenth of the work so far, mostly proofs (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Refuses: <code>parameter 'observation_sources': exactly one source is supported; 2 given</code>, and <code>parameter '&lt;zone&gt;.sources_names': must be the one source '&lt;name&gt;' or unset</code>.</dd>
         </dl>
       </article>
 
@@ -246,9 +226,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>toggleCMServiceCallback</code> in <code>src/collision_monitor_node.cpp</code>; <code>dynamicParametersCallback</code> of zones and sources.</dd>
           <dt>Nav2's default</dt><dd>Not used.</dd>
-          <dt>This node today</dt><dd>No toggle service. Every parameter change is rejected (ND8), with a reason that says the values are those given at start-up and to restart the node with the new value.</dd>
-          <dt>To close it</dt><dd>Three events and a flag in the model's state.</dd>
-          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>No toggle service. Every parameter change is rejected (ND8), with a reason that says the values are those given at start-up and to restart the node with the new value.</dd>
         </dl>
       </article>
 
@@ -257,9 +235,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd>Published on <code>~/collision_points_marker</code> (N17).</dd>
           <dt>Nav2's default</dt><dd>Not used.</dd>
-          <dt>This node today</dt><dd>Not published (ND9). The state topic and the zone polygons are.</dd>
-          <dt>To close it</dt><dd>The shim has the points; a publisher. Display only.</dd>
-          <dt>Size (estimate)</dt><dd>Small (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Not published (ND9). The state topic and the zone polygons are.</dd>
         </dl>
       </article>
 
@@ -268,9 +244,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd>Under simulated time such a message ends the process: rclcpp's clock thread throws and nothing catches it. Seen on the binary for the executable (fault case <code>clock-negative</code>); for the component read from source.</dd>
           <dt>Nav2's default</dt><dd>Nav2's bring-up loads the monitor into a component container by default.</dd>
-          <dt>This node today</dt><dd>The stand-alone executable goes on and answers every command with zero until a usable <code>/clock</code> message arrives (D15; test <code>roslean_fault_clock_negative</code>; <span class="kind proved">proved</span> <code>noClock_velocity</code>). The component <code>roslean_collision_monitor::CollisionMonitorNode</code> loads and runs in the three container kinds of <code>rclcpp_components</code> (tests <code>smoke_component</code>, <code>smoke_component_single</code>, <code>smoke_component_mt</code>, macOS) but does not have this protection: it ends with its container, as upstream's component does. That it ends is read from source, not run. The stand-alone executable is the supported form.</dd>
-          <dt>To close it</dt><dd>The container would have to catch the exception; that is not this node's code.</dd>
-          <dt>Size (estimate)</dt><dd>Not estimated.</dd>
+          <dt>This node</dt><dd>The stand-alone executable goes on and answers every command with zero until a usable <code>/clock</code> message arrives (D15; test <code>roslean_fault_clock_negative</code>; <span class="kind proved">proved</span> <code>noClock_velocity</code>). The component <code>roslean_collision_monitor::CollisionMonitorNode</code> loads and runs in the three container kinds of <code>rclcpp_components</code> (tests <code>smoke_component</code>, <code>smoke_component_single</code>, <code>smoke_component_mt</code>, macOS) but does not have this protection: it ends with its container, as upstream's component does. That it ends is read from source, not run. The exception is thrown in rclcpp's clock thread; catching it is the container's part, not this node's. The stand-alone executable is the supported form.</dd>
         </dl>
       </article>
 
@@ -279,9 +253,7 @@ FootprintStop:
         <dl>
           <dt>Upstream</dt><dd><code>max_points</code> is a deprecated alias that overrides <code>min_points</code>. <code>use_realtime_priority</code> sets a soft real-time priority in <code>on_configure</code>.</dd>
           <dt>Nav2's default</dt><dd>Neither is used.</dd>
-          <dt>This node today</dt><dd>Both refused: <code>parameter '&lt;zone&gt;.max_points': deprecated and not supported; use min_points (D10)</code>, and, when it is <code>true</code>, <code>parameter 'use_realtime_priority': real-time priority is not supported</code>.</dd>
-          <dt>To close it</dt><dd><code>max_points</code>: refused by design, so that the core has one rule for the threshold (D10). Real-time priority: a call in the shim.</dd>
-          <dt>Size (estimate)</dt><dd>Real-time priority: trivial (SPEC_NAV2).</dd>
+          <dt>This node</dt><dd>Both refused: <code>parameter '&lt;zone&gt;.max_points': deprecated and not supported; use min_points (D10)</code>, and, when it is <code>true</code>, <code>parameter 'use_realtime_priority': real-time priority is not supported</code>. <code>max_points</code> is refused so that the core has one rule for the threshold (D10).</dd>
         </dl>
       </article>
 
@@ -289,54 +261,46 @@ FootprintStop:
     </section>
 
     <section id="proofs">
-      <h2>Proofs not done</h2>
-      <p>What is proved is listed on the <a href="details.html#cm-theorems">details page</a>. This section lists what the theorems rest on without proving it. The numbers T1 to T10 are SPEC.md's trusted list.</p>
+      <h2>What is not proved</h2>
+      <p>What is proved is listed on the <a href="details.html#cm-theorems">details page</a>. This section lists what the theorems rest on without proving it. T1 to T10 are the numbered trusted parts of SPEC.md.</p>
 
       <article class="gap" id="proof-polygon">
         <h3>The topological half of the polygon margin argument</h3>
         <p>The model's polygon zones are grown by a band of √5 mm so that rounding to integer millimetres never loses a point that the configured polygon contains.</p>
         <dl>
           <dt>Proved</dt><dd>The quantitative half. The band test is exactly "at most √5 mm from the segment" (<code>nearSegment_iff</code>). A point of the real polygon's boundary is, after rounding, within the band (<code>nearBoundary_of_rounded</code>; with room for the shim's floating-point transform, <code>contains_of_shim</code>, <code>contains_of_shim_fixed</code>). A point upstream's rule puts inside the rounded polygon is counted (<code>contains_polygon_iff</code>). For circles the whole claim is proved (<code>circle_safe</code>, <code>circle_safe_shim</code>).</dd>
-          <dt>Not proved</dt><dd>That one of the two cases always applies: if the real point is inside the real polygon and the rounded point is outside the rounded polygon, then the boundary passed over the point during rounding. This is prose in SPEC.md. Also not proved: the figures in the other direction (a point up to 3.5 mm outside a circle or 4.4 mm outside a polygon can count as inside).</dd>
+          <dt>Not proved</dt><dd>That one of the two cases always applies: if the real point is inside the real polygon and the rounded point is outside the rounded polygon, then the boundary passed over the point during rounding. This is prose in SPEC.md. Also not proved: the figures in the other direction (a point up to 3.5 mm outside a circle or 4.4 mm outside a polygon can count as inside). The repository has no definition of upstream's crossing rule over the real numbers and no continuity argument for it.</dd>
           <dt>Tested instead</dt><dd><code>band_bounds</code>: 34.0 million points against upstream's own zone tests on 340 zones, on macOS and in the Linux container: upstream never counted a point the core did not, and the farthest point outside upstream's zone that the core counted was 3.409 mm for a circle and 4.167 mm for a polygon. Random comparison of the two nodes: below, under <a href="#direction">stricter or looser</a>.</dd>
-          <dt>To close it</dt><dd>A definition of upstream's crossing rule over the real numbers, and a continuity argument: the parity of crossings cannot change while the point stays off the boundary. Neither is in the repository.</dd>
-          <dt>Size (estimate)</dt><dd>About the size of the existing geometry proofs, <code>Geometry.lean</code> (700 lines), or more (this page).</dd>
         </dl>
       </article>
 
       <article class="gap" id="proof-mul">
-        <h3>The floating-point multiplication of a slowdown (T1)</h3>
+        <h3>The floating-point multiplication of a slowdown (trusted part T1)</h3>
         <p>The Lean core never multiplies. For a slowdown it returns the ratio's bit pattern and the shim computes <code>command × ratio</code> in <code>double</code>.</p>
         <dl>
           <dt>Proved</dt><dd>A published slowdown carries the configured ratio of the zone named, with its sign bit clear and a value in [0, 1) (<code>no_amplification</code>, <code>published_ratio_in_unit_interval</code>, <code>lt_one_iff</code>), and that ratio is at most that of every triggered slowdown zone (<code>slowdown_bound</code>).</dd>
-          <dt>Trusted</dt><dd>That the IEEE-754 product of a finite double with a double in [0, 1) has the same sign or is zero, has magnitude at most the original, and does not grow when the ratio shrinks. "The published speed is at most the commanded one" is therefore a Lean theorem plus T1.</dd>
-          <dt>To close it</dt><dd>Multiply in the core on bit patterns (a correctly rounded binary64 product in integer arithmetic, about fifty lines by SPEC.md's count) and return the output bits; then prove no amplification for that function. SPEC.md calls the proof a project of its own.</dd>
-          <dt>Size (estimate)</dt><dd>About the size of the existing conversion proofs, <code>Convert.lean</code> and <code>Bits.lean</code> together (700 lines) (this page).</dd>
+          <dt>Trusted</dt><dd>That the IEEE-754 product of a finite double with a double in [0, 1) has the same sign or is zero, has magnitude at most the original, and does not grow when the ratio shrinks. "The published speed is at most the commanded one" is therefore a Lean theorem plus T1. The core has no multiplication on bit patterns and no theorem about the product.</dd>
         </dl>
       </article>
 
       <article class="gap" id="proof-transform">
-        <h3>The transform code, and the points a command carries (T2, T6, T7)</h3>
+        <h3>The transform code, and the points a command carries (trusted parts T2, T6, T7)</h3>
         <p>The C++ shim computes each scan point in the scan's frame, looks the transform up in TF, applies it in <code>double</code>, and hands Lean one coordinate pair per reading with every command.</p>
         <dl>
           <dt>Proved</dt><dd>What the model does with whatever coordinates it is given. The number of points is the number of valid readings of the stored scan (<code>points_length</code>); each point is the pair it was given, truncated toward the origin by less than 1 mm (<code>coordMm_eq_truncReal</code>, <code>scanPointMm_sub_lt</code>); a missing transform stops when <code>source_timeout</code> is not 0 (<code>no_transform</code>, <code>run_no_transform</code>).</dd>
           <dt>Trusted</dt><dd>That pair <em>i</em> is the image of reading <em>i</em> of the stored scan (T2); <code>cos</code>, <code>sin</code> and the angle accumulation in <code>float</code> (T2); tf2's tree, interpolation and product, and that the shim asks for the right frames and times (T6); the node's own waiting loop and its clearing of the TF buffer at a backward clock jump (T6); that upstream's point is within 0.04 mm of the shim's, estimated at 10⁻⁸ mm (T7). All of it is in one file, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ros/roslean_collision_monitor/include/roslean_collision_monitor/transforms.hpp"><code>transforms.hpp</code></a> (260 lines).</dd>
-          <dt>Tested instead</dt><dd><code>smoke_transforms</code>: on 200,000 transforms the shim's points equal, bit for bit, a reference written out operation by operation; the object code contains no fused multiply-add. The scenarios <code>tf-*</code> and <code>shift-*</code> of <code>scenario_nav2.py</code> beside upstream. A mutation test of the review caught 9 of 11 changes to the transform code, one was equivalent, and the one it missed has a test since.</dd>
-          <dt>Decided</dt><dd>By the user: the transform is applied in C++ as upstream applies it (option A), compiled with <code>-ffp-contract=off</code> on every platform. An earlier version applied it in Lean in exact arithmetic and proved every scan point to be the exact image of its reading; it cost about 20 times upstream's time per command and was replaced.</dd>
-          <dt>To close it</dt><dd>Either restore the exact transform in Lean and make it fast enough, or prove the floating-point formula against a formal model of binary64 arithmetic, which this repository does not have. tf2 itself would stay trusted in both.</dd>
-          <dt>Size (estimate)</dt><dd>The first: the model and its proofs were built once (task T05) and removed, so restoring them is known work; making them fast enough is not estimated. The second: not estimated (this page).</dd>
+          <dt>Tested instead</dt><dd><code>smoke_transforms</code>: on 200,000 transforms the shim's points equal, bit for bit, a reference written out operation by operation; the object code contains no fused multiply-add. The scenarios <code>tf-*</code> and <code>shift-*</code> of <code>scenario_nav2.py</code> beside upstream. A mutation test caught 9 of 11 changes to the transform code; one was equivalent, and the one it missed is covered by a test.</dd>
+          <dt>As built</dt><dd>The transform is applied in C++ in double precision, as upstream applies it, compiled with <code>-ffp-contract=off</code> on every platform. It is trusted, not proved: the transform is not computed in Lean, and the repository has no formal model of binary64 arithmetic. tf2 is trusted in any case.</dd>
         </dl>
       </article>
 
       <article class="gap" id="proof-ieee">
-        <h3>The IEEE-754 reading of bit patterns (T4)</h3>
+        <h3>The IEEE-754 reading of bit patterns (trusted part T4)</h3>
         <p>The core compares and classifies floating-point numbers as bit patterns, without floating-point arithmetic.</p>
         <dl>
           <dt>Proved</dt><dd>Against a formula written in this repository for the number a pattern denotes (<code>magVal</code>): the comparison of ranges is ≤ on the denoted numbers and false for NaN (<code>le_iff_value</code>); which reading is valid (<code>validBeam_iff_value</code>); patterns are ordered as their magnitudes (<code>magVal_strictMono</code>).</dd>
-          <dt>Trusted</dt><dd>That the formula is IEEE-754's; that the compiler's <code>float</code> and <code>double</code> are binary32 and binary64; that upstream's own <code>&lt;=</code>, <code>isfinite</code> and <code>== 0.0</code> are the IEEE operations.</dd>
+          <dt>Trusted</dt><dd>That the formula is IEEE-754's; that the compiler's <code>float</code> and <code>double</code> are binary32 and binary64; that upstream's own <code>&lt;=</code>, <code>isfinite</code> and <code>== 0.0</code> are the IEEE operations. No independent formalisation of IEEE-754 is in the repository or its dependencies as used here.</dd>
           <dt>Tested instead</dt><dd><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/review/collision_monitor/Checks.lean"><code>review/collision_monitor/Checks.lean</code></a> compares the helpers with the hardware operations on some 300,000 patterns each, with no disagreement.</dd>
-          <dt>To close it</dt><dd>Prove the formula equal to an independent formalisation of IEEE-754. None is in the repository or its dependencies as used here.</dd>
-          <dt>Size (estimate)</dt><dd>Not estimated: it depends on the formalisation chosen.</dd>
         </dl>
       </article>
 
@@ -346,10 +310,10 @@ FootprintStop:
           <thead><tr><th>What</th><th>What stands in its place</th></tr></thead>
           <tbody>
             <tr><td>That the model equals upstream</td><td>The rules were read from the source and tested against the binary; the known differences are D1 to D15 and ND1 to ND13. Counts under <a href="#direction">stricter or looser</a>.</td></tr>
-            <tr><td>That an accepted timeout is upstream's nanosecond count</td><td>Proved: which timeouts are refused (<code>timeoutNs_isSome</code>). Tested: equal to <code>rclcpp::Duration</code> and to the hardware on 530,000 values (T3).</td></tr>
+            <tr><td>That an accepted timeout is upstream's nanosecond count</td><td>Proved: which timeouts are refused (<code>timeoutNs_isSome</code>). Tested: equal to <code>rclcpp::Duration</code> and to the hardware on 530,000 values (trusted part T3).</td></tr>
             <tr><td>Runs that contain a command without a clock reading, on the exported C functions</td><td>Proved on the model's states (<code>mixed_from_init</code>). After the first such command no theorem stated from start-up applies as it stands (<code>noClock_unreachable</code>); the statement is not lifted to the C interface.</td></tr>
-            <tr><td>The C++ shim (T2, T3, T5, T8, T9)</td><td>One event per message in order, values passed unaltered, publishing what the output says, the parsing of <code>points</code>, zone names, when the clock is valid. Tested by <code>smoke_conversions</code>, <code>smoke_node</code>, <code>test_cm_ffi</code>.</td></tr>
-            <tr><td>Concurrency (T10)</td><td>The model handles one event at a time. The node runs every callback that reaches the core in one mutually exclusive callback group; that no two threads are in the core at once is trusted and checked by no test. What <code>lean_initialize_thread</code> does was checked for the macOS arm64 toolchain only.</td></tr>
+            <tr><td>The C++ shim (trusted parts T2, T3, T5, T8, T9)</td><td>One event per message in order, values passed unaltered, publishing what the output says, the parsing of <code>points</code>, zone names, when the clock is valid. Tested by <code>smoke_conversions</code>, <code>smoke_node</code>, <code>test_cm_ffi</code>.</td></tr>
+            <tr><td>Concurrency (trusted part T10)</td><td>The model handles one event at a time. The node runs every callback that reaches the core in one mutually exclusive callback group; that no two threads are in the core at once is trusted and checked by no test. What <code>lean_initialize_thread</code> does was checked for the macOS arm64 toolchain only.</td></tr>
             <tr><td>Time spent waiting for a transform, the bond, the lifecycle manager</td><td>The model has the outcome of each lookup and the transitions as events, nothing about durations.</td></tr>
             <tr><td>Lean's compiler and runtime, tf2, rclcpp, the middleware</td><td>Trusted.</td></tr>
           </tbody>
@@ -358,30 +322,30 @@ FootprintStop:
     </section>
 
     <section id="platforms">
-      <h2>Platforms never tested</h2>
+      <h2>Platforms: what was run where</h2>
       <div class="table">
         <table>
-          <thead><tr><th>Platform or condition</th><th>State</th><th>To close it</th></tr></thead>
+          <thead><tr><th>Platform or condition</th><th>What was run</th></tr></thead>
           <tbody>
-            <tr><td>macOS arm64</td><td>Everything on this page was run here (one Apple M5 Pro, RoboStack through pixi, upstream 1.3.12).</td><td>—</td></tr>
-            <tr><td>Linux arm64, container</td><td>Docker on the same Mac (Ubuntu 24.04, ROS from apt, upstream 1.3.14, gcc). On the final node: the scenarios of the Nav2 extension, 20 random cases, the bond test; and, in the audit (docs/AUDIT.md), the whole test suite twice, with the older scenarios (318 checks) and fault injection (109 checks): in the image of <code>docker/Dockerfile</code> beside upstream 1.3.14, and through pixi beside upstream 1.3.13, 28 tests and 0 failures each. The 720-case random comparison, the point-by-point comparison and timing ran there on earlier versions of the node.</td><td>Repeat the remaining runs on the final node: <code>bench/cm_linux/run.sh</code>.</td></tr>
-            <tr><td>Linux x86-64</td><td>Not run for the node described here. One cloud session (task T00; 4 cores, Ubuntu 24.04) ran the tests of the node before the Nav2 extension: 11 tests, 0 failures, and the headless Gazebo check.</td><td><code>pixi run build</code> and <code>pixi run test</code> on such a machine. For twist_mux, x86-64 exposed a linking fault that arm64 hid (docs/PLAN.md, lesson 14).</td></tr>
-            <tr><td>Linux on its own hardware; a robot computer; a real-time kernel</td><td>Never. Run times and memory on such machines are unknown.</td><td>A run of the benchmark (<code>pixi run bench-cm</code>) and the tests on the target.</td></tr>
-            <tr><td>A real robot, a real lidar</td><td>Never. Simulation only (Gazebo, TurtleBot3).</td><td>—</td></tr>
-            <tr><td>Middleware other than Fast DDS</td><td>Never.</td><td>—</td></tr>
-            <tr><td>Wall-clock time</td><td>All behavioural tests run under simulated time. On the wall clock only load runs and the Nav2 bring-up were made; no timeout boundary was probed there.</td><td>—</td></tr>
-            <tr><td>Long runs</td><td>32 minutes of load, on an earlier version of the node, before it became a lifecycle node (resident memory rose by 48 kB on macOS and 84 kB in the container after the first ten seconds). No soak of the final node.</td><td><code>run_cm_bench.py soak</code> on the final node.</td></tr>
-            <tr><td>The whole test suite in one run</td><td><code>pixi run test</code> was run once on each of two fresh clones by the audit (docs/AUDIT.md): macOS arm64, 29 tests, 0 failures, 39 minutes; a Linux arm64 container through pixi, beside upstream 1.3.13, 28 tests, 0 failures, 39 minutes, after two workarounds without which the build failed there at the audited commit.</td><td>The two build defects (no <code>strip</code> found; <code>test_cm_ffi</code> linked without the thread library) were repaired afterwards; on the repaired tree the build succeeds as written in the same kind of container and five tests pass. The full suite has not been run there again.</td></tr>
+            <tr><td>macOS arm64</td><td>Everything on this page was run here (one Apple M5 Pro, RoboStack through pixi, upstream 1.3.12).</td></tr>
+            <tr><td>Linux arm64, container</td><td>Docker on the same Mac (Ubuntu 24.04, ROS from apt, upstream 1.3.14, gcc). On the node described here: the scenarios of the Nav2 extension, 20 random cases, the bond test; and the whole test suite twice, with the older scenarios (318 checks) and fault injection (109 checks): in the image of <code>docker/Dockerfile</code> beside upstream 1.3.14, and through pixi beside upstream 1.3.13, 28 tests and 0 failures each. The 720-case random comparison, the point-by-point comparison and timing ran there on earlier versions of the node only; the script for those runs is <code>bench/cm_linux/run.sh</code>.</td></tr>
+            <tr><td>Linux x86-64</td><td>Not run for the node described here. An earlier version of the node, without the lifecycle interface, TF and topic zones, was run once on a cloud machine (4 cores, Ubuntu 24.04): 11 tests, 0 failures, and the headless Gazebo check. For twist_mux, a build on x86-64 exposed a linking fault that arm64 did not show.</td></tr>
+            <tr><td>Linux on its own hardware; a robot computer; a real-time kernel</td><td>Never run. Run times and memory on such machines are unknown.</td></tr>
+            <tr><td>A real robot, a real lidar</td><td>Never run. Simulation only (Gazebo, TurtleBot3).</td></tr>
+            <tr><td>Middleware other than Fast DDS</td><td>Never run.</td></tr>
+            <tr><td>Wall-clock time</td><td>All behavioural tests run under simulated time. On the wall clock only load runs and the Nav2 bring-up were made; no timeout boundary was probed there.</td></tr>
+            <tr><td>Long runs</td><td>32 minutes of load, on an earlier version of the node that was not a lifecycle node (resident memory rose by 48 kB on macOS and 84 kB in the container after the first ten seconds). No long run of the node described here.</td></tr>
+            <tr><td>The whole test suite in one run</td><td><code>pixi run test</code> on a fresh clone, once on each of two platforms. macOS arm64: 29 tests, 0 failures, 39 minutes. A Linux arm64 container through pixi, beside upstream 1.3.13: 28 tests, 0 failures, 39 minutes, on a tree with two workarounds without which the build failed there (no <code>strip</code> found; <code>test_cm_ffi</code> linked without the thread library). With both defects repaired in the repository, the build succeeds as written in the same kind of container and five tests pass; the full suite was not run on the repaired tree.</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <section id="decisions">
-      <h2>Decisions, and the behaviour each implies</h2>
+    <section id="behaviour">
+      <h2>Behaviour to know</h2>
 
       <h3 id="stop-pub-timeout">A demanded stop is not always published</h3>
-      <p>This is not a defect. Upstream does it on purpose and documents it, and the user decided to keep it. It is here because it is the reason one theorem is weaker than one would expect.</p>
+      <p>This is upstream's behaviour, intended and documented there, and this node has it too. It is the reason one theorem is weaker than one would expect.</p>
       <p>When the node's output is zero it publishes that zero for <code>stop_pub_timeout</code> and then publishes nothing for as long as the output stays zero (R15; upstream: <a href="https://github.com/ros-navigation/navigation2/blob/jazzy/nav2_collision_monitor/src/collision_monitor_node.cpp#L213"><code>publishVelocity</code></a>). The clock starts when the output changes from non-zero to zero, and the rule looks at the value, not at its cause.</p>
       <div class="table">
         <table>
@@ -405,36 +369,24 @@ FootprintStop:
         </table>
       </div>
       <p>The two proved statements keep the robot stopped only under assumption A3: the base holds its last command, and nothing else commands it in the meantime. It matters when another node publishes to the base during the silence (teleop, a recovery behaviour, docking), which upstream intends to allow; when the base needs fresh zeros to stay stopped; or when something reads "no zeros" as "no stop". The state topic does report the stop.</p>
-      <p><strong>To close it:</strong> publish zero for every command that meets a demanded stop, without a time limit. "A demanded stop is published" then becomes a theorem and A3 is no longer needed for stops. The cost is a deliberate difference from upstream: an outside system can no longer take over the velocity topic while the obstacle is in the stop zone and the planner is still commanding, and the comparison tests must leave these cases out. A parameter with upstream's behaviour as the default would keep both. Size (estimate, this page): one condition in the model's <code>step</code>, and the theorems about <code>stop_pub_timeout</code> in <code>Trace.lean</code> and <code>Properties.lean</code> restated; small beside the items above. The full note is <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/findings/stop_pub_timeout_theorem.md"><code>findings/stop_pub_timeout_theorem.md</code></a>.</p>
+      <p>The node has no mode in which zero is published for every command that meets a demanded stop. "A demanded stop is published" is not a theorem, and a stop that is held rests on A3.</p>
 
-      <h3>Decided by the user</h3>
+      <h3 id="edge-cases">Fail-open cases and edge cases</h3>
       <div class="table">
         <table>
-          <thead><tr><th>Question</th><th>Behaviour of the node</th><th>What the other choice would be</th></tr></thead>
+          <thead><tr><th>Situation</th><th>Behaviour of the node</th></tr></thead>
           <tbody>
-            <tr><td>A timer that publishes zero when commands cease?</td><td>None. The node acts only when a command arrives (R1). It is not a watchdog.</td><td>A new event kind and a numbered difference.</td></tr>
-            <tr><td>Stop on scans that are invalid as a whole?</td><td>No. Readings are filtered one by one (R4). A scan that is empty, all NaN, or has unusable range limits reads as free space, and the command passes. Fail-open, as upstream (fault injection, both nodes).</td><td>A predicate for a malformed scan and a stop for it; the comparison with upstream must then leave such scans out (SPEC.md, open decision 1).</td></tr>
-            <tr><td><code>source_timeout: 0</code></td><td>Switches off the stop for an old scan, for no scan, and for a missing transform (R8, N27). Fail-open, as upstream. <span class="kind proved">Proved</span> that it is so: <code>sourcePoints_of_no_transform_timeout_zero</code>. The node warns when configured.</td><td>Refuse the value, or stop for a missing transform regardless.</td></tr>
-            <tr><td>A topic zone that has no shape yet</td><td>Takes no action (N32). Fail-open, as upstream.</td><td>A stop zone without shape stops; with Nav2 this would hold the robot until the costmap has published its first footprint.</td></tr>
-            <tr><td>Scan age</td><td>By header stamp (R7). A sensor clock ahead of the node's defeats the timeout.</td><td>By arrival time, or the older of the two.</td></tr>
-            <tr><td>A command with NaN or an infinity</td><td>Ignored: nothing is published (R2).</td><td>Publish zero.</td></tr>
-            <tr><td>Configurations that protect nothing (no zones, radius 0, a disabled source)</td><td>Accepted with one warning each.</td><td>Refuse them.</td></tr>
-            <tr><td>Hysteresis at a zone edge</td><td>None. With sensor noise the decision can alternate between stop and slowdown from scan to scan.</td><td>A stateful rule; a difference.</td></tr>
-            <tr><td>A backward clock jump</td><td>Transforms received on <code>/tf</code> are forgotten; with base shift correction commands stop until new odometry arrives (as upstream; the second half is inferred, not run).</td><td>—</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <h3>Questions decided by the user on 2026-11-25</h3>
-      <div class="table">
-        <table>
-          <thead><tr><th>Question</th><th>What is built</th><th>Status</th></tr></thead>
-          <tbody>
-            <tr><td>After a polygon message with an unusable vertex (ND6)</td><td>The zone demands its action until a usable message arrives. Stops where upstream may pass.</td><td><span class="kind">Decided</span> Confirmed.</td></tr>
-            <tr><td>Should a marked slowdown zone stop instead of slowing?</td><td>It slows: the zone does its own action.</td><td><span class="kind">Decided</span> Confirmed: it slows.</td></tr>
-            <tr><td>A refused refresh of a zone in another frame (ND13)</td><td>The zone stays where it was. In principle less restrictive than upstream.</td><td><span class="kind">Decided</span> Stays as built. The case for it is written up as an issue draft (<code>issues/nd13-refused-refresh.md</code>).</td></tr>
-            <tr><td>A run on x86-64 or on Linux on its own hardware</td><td>Not made.</td><td><span class="kind">Decided</span> Not before the write-up. The steps are an issue draft (<code>issues/linux-hardware-run.md</code>).</td></tr>
-            <tr><td>The cost target for a command</td><td>A budget of 50, 150 and 1500 µs at 360, 1080 and 10,000 stored readings.</td><td><span class="kind">Decided</span> Accepted. Further speed is experimental work (<code>issues/performance.md</code>).</td></tr>
+            <tr><td>Commands cease</td><td>Nothing is published. The node has no timer; it acts only when a command arrives (R1). It is not a watchdog.</td></tr>
+            <tr><td>A scan that is invalid as a whole</td><td>No stop. Readings are filtered one by one (R4). A scan that is empty, all NaN, or has unusable range limits reads as free space, and the command passes. Fail-open, as upstream (fault injection, both nodes).</td></tr>
+            <tr><td><code>source_timeout: 0</code></td><td>Switches off the stop for an old scan, for no scan, and for a missing transform (R8, N27). Fail-open, as upstream. <span class="kind proved">Proved</span> that it is so: <code>sourcePoints_of_no_transform_timeout_zero</code>. The node warns when configured.</td></tr>
+            <tr><td>A topic zone that has no shape</td><td>Takes no action until its first accepted message (N32). Fail-open, as upstream.</td></tr>
+            <tr><td>Scan age</td><td>By header stamp (R7). A sensor clock ahead of the node's defeats the timeout.</td></tr>
+            <tr><td>A command with NaN or an infinity</td><td>Ignored: nothing is published (R2).</td></tr>
+            <tr><td>Configurations that protect nothing (no zones, radius 0, a disabled source)</td><td>Accepted with one warning each.</td></tr>
+            <tr><td>A zone edge</td><td>No hysteresis. With sensor noise the decision can alternate between stop and slowdown from scan to scan.</td></tr>
+            <tr><td>A backward clock jump</td><td>Transforms received on <code>/tf</code> are forgotten; with base shift correction commands stop until new odometry arrives (as upstream; the second half is inferred, not run).</td></tr>
+            <tr><td>A polygon message with an unusable vertex (ND6)</td><td>The zone demands its own action for every command until a usable message arrives: a stop zone stops, a slowdown zone slows. Stops where upstream may pass.</td></tr>
+            <tr><td>A refused refresh of a zone in another frame (ND13)</td><td>The zone stays where it was. In principle less restrictive than upstream.</td></tr>
           </tbody>
         </table>
       </div>
@@ -451,11 +403,11 @@ FootprintStop:
             <tr><td>Later, same decision</td><td><strong>ND3</strong>: a stop by an earlier zone can be published later than upstream publishes it, by up to <code>transform_tolerance</code> for each later topic zone whose transform lookup fails. Read from source, not run.</td></tr>
             <tr><td>Less restrictive, in principle</td><td><strong>ND13</strong> only: a refused refresh leaves a topic zone where it was, which misses points a kilometre away that upstream's moved zone would catch.</td></tr>
             <tr><td>Not comparable</td><td><strong>D8</strong>: a scan with a negative stamp ends upstream's process. This node takes the stamp as 0; while the node clock is still below <code>source_timeout</code> such a scan counts as fresh.</td></tr>
-            <tr><td>Fail-open, kept as upstream</td><td>A topic zone with no shape yet (N32); <code>source_timeout: 0</code> (R8, N27); scans with unusable limits or no valid reading read as free space (R4); a disabled source (R6); a footprint zone left behind (N34); no output without commands (R1); silence after <code>stop_pub_timeout</code> (R15).</td></tr>
+            <tr><td>Fail-open, as upstream</td><td>A topic zone with no shape yet (N32); <code>source_timeout: 0</code> (R8, N27); scans with unusable limits or no valid reading read as free space (R4); a disabled source (R6); a footprint zone left behind (N34); no output without commands (R1); silence after <code>stop_pub_timeout</code> (R15).</td></tr>
           </tbody>
         </table>
       </div>
-      <p><span class="kind">Tested</span> On the final node, macOS, beside upstream 1.3.12: 318 checks in 73 scenario runs and 289 checks in 44 runs of the Nav2 extension, 0 failures, every difference one of the numbered ones (D1 1, D4 20, D5 3, D6 1, D8 1, D9 2, D10 2; ND4 2, ND5 1, ND6 4, ND11 3). 300 random cases with 26,951 commands: none outside the bounds of D4; 586 commands with a different demanded velocity, each decided by a point in a growth band (farthest 2.056 mm outside a circle, 3.044 mm outside a polygon), the Lean node the more restrictive one every time. 300 random cases of the extension with 16,797 commands: both nodes gave the model's answer to every one. In the Linux arm64 container: the 289 checks, and 20 random cases with 1,182 commands, with the same result. No case was found in which upstream stops or slows and the Lean node does not, outside ND13, which no test produces.</p>
+      <p><span class="kind">Tested</span> On the node described here, macOS, beside upstream 1.3.12: 318 checks in 73 scenario runs and 289 checks in 44 runs of the Nav2 extension, 0 failures, every difference one of the numbered ones (D1 1, D4 20, D5 3, D6 1, D8 1, D9 2, D10 2; ND4 2, ND5 1, ND6 4, ND11 3). 300 random cases with 26,951 commands: none outside the bounds of D4; 586 commands with a different demanded velocity, each determined by a point in a growth band (farthest 2.056 mm outside a circle, 3.044 mm outside a polygon), the Lean node the more restrictive one every time. 300 random cases of the extension with 16,797 commands: both nodes gave the model's answer to every one. In the Linux arm64 container: the 289 checks, and 20 random cases with 1,182 commands, with the same result. No case was found in which upstream stops or slows and the Lean node does not, outside ND13, which no test produces.</p>
       <p class="note">Not generated by either random test: a polygon message with a non-finite vertex, a backward clock jump, a wait for a transform. Those are covered by scenarios only.</p>
     </section>
 
@@ -472,14 +424,14 @@ FootprintStop:
           </tbody>
         </table>
       </div>
-      <p class="note">Median per command, the callback bodies of both nodes in one process on the same messages, nothing in a zone, the identity as the transform and no TF buffer; one Apple M5 Pro, macOS arm64 (task T06). That is 6 to 9 times upstream's. In the Linux arm64 container an earlier version of the command path measured 4.2 to 6.4 times upstream's (task T03); the final node was not timed there. The budget is a line drawn in this project (150 µs is 0.75 % of the 20 ms between two commands at 50 Hz), not upstream's speed; the test <code>roslean_cmd_cost</code> asserts it for the Lean core alone.</p>
+      <p class="note">Median per command, the callback bodies of both nodes in one process on the same messages, nothing in a zone, the identity as the transform and no TF buffer; one Apple M5 Pro, macOS arm64, 2026-11-24. That is 6 to 9 times upstream's. In the Linux arm64 container an earlier version of the command path measured 4.2 to 6.4 times upstream's; the node described here was not timed there. The budget is this project's own figure (150 µs is 0.75 % of the 20 ms between two commands at 50 Hz), not upstream's speed; the test <code>roslean_cmd_cost</code> asserts it for the Lean core alone.</p>
       <p>Not measured: a transform from the TF buffer in the loop, base shift correction, topic zones, any x86-64 machine. Through the two node binaries over topics at 50 commands a second, both answered every command; the median latency, most of it the measuring program's and the middleware's, was 5.8, 6.7 and 7.5 ms for the Lean node and 6.3, 6.6 and 6.4 ms for upstream at 360, 1080 and 10,000 readings (macOS).</p>
-      <p>Whether upstream's speed is wanted is the user's to say; until then the budget is the target (tasks/PLAN.md). The scan callback costs about 10 ns per reading, where upstream stores a pointer.</p>
+      <p>The scan callback costs about 10 ns per reading, where upstream stores a pointer.</p>
     </section>
 
     <section id="more">
       <h2>Further reading</h2>
-      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>: rules, differences, trusted parts. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>: every theorem in plain words. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a>: the runs against upstream. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/UPSTREAM_BEHAVIOUR.md">UPSTREAM_BEHAVIOUR.md</a>: what upstream's binary does. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/REVIEWS.md">REVIEWS.md</a>: the independent reviews and what was done about each finding.</p>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>: rules, differences, trusted parts. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>: every theorem in plain words. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a>: the runs against upstream. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/UPSTREAM_BEHAVIOUR.md">UPSTREAM_BEHAVIOUR.md</a>: what upstream's binary does.</p>
       <p><a href="details.html#collision-monitor">The collision monitor in detail</a> · <a href="./#collision_monitor">Back to the overview</a></p>
     </section>
   </main>
