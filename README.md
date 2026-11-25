@@ -13,6 +13,7 @@ the C++ integration, and the robot hardware are outside those proofs.
 | Read the rules | [Specification](docs/SPEC.md) | [Specification](docs/collision_monitor/SPEC.md), [Nav2 integration](docs/collision_monitor/SPEC_NAV2.md) |
 | Read the proofs | [Theorems](docs/THEOREMS.md) | [Theorems](docs/collision_monitor/THEOREMS.md) |
 | Compare with upstream | [Benchmarks](docs/BENCHMARK.md) | [Tests and benchmarks](docs/collision_monitor/COMPARISON.md), [upstream behavior](docs/collision_monitor/UPSTREAM_BEHAVIOUR.md) |
+| Use it in place of upstream | | [What to change, how to check, how to go back](docs/DROP_IN_COLLISION_MONITOR.md); [the same as steps for a coding agent](docs/DROP_IN_COLLISION_MONITOR_AGENTS.md). Only for `stop` and `slowdown` zones on one laser scan: Nav2's default configuration is refused |
 
 See the [project site](https://beneficial-ai-foundation.github.io/ROSlean/),
 [development plan](docs/PLAN.md), and [review findings](docs/REVIEWS.md).
@@ -28,6 +29,7 @@ site or its workflow.
 | `ros/roslean_core` | Compiles the C that Lean generates into `libroslean_core` and installs the Lean runtime it needs with it; C++ wrappers, FFI tests. |
 | `ros/roslean_twist_mux` | The mux node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. Its `demo/` holds the turtlesim and Gazebo demos. |
 | `ros/roslean_collision_monitor` | The collision monitor node, as an executable and as a component. A C++ shim: lifecycle, subscriptions, TF lookups and the transform of scan points (`include/…/transforms.hpp`), publishing. `test/` holds the harness that runs it beside upstream; `demo/gazebo/` the demo. |
+| `overlay/opt_in/nav2_collision_monitor` | The same collision monitor as a package named `nav2_collision_monitor`, which shadows upstream's in a workspace, so that Nav2's unedited launch files start it: same executable, component, launch file and params file names. Not under `ros/`, not part of `pixi run build` (`pixi run build-overlay`), and skipped by colcon unless its directory is named. Read [docs/DROP_IN_COLLISION_MONITOR.md](docs/DROP_IN_COLLISION_MONITOR.md) first. |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
 | `docker/` | Linux build and run-time image, both nodes. |
 | `bench/` | Benchmarks against upstream (`pixi run bench`, `pixi run bench-cm`), their results, and the Linux image in which the collision monitor comparison was run (`bench/cm_linux/`). Not part of the normal build. |
@@ -90,6 +92,16 @@ ros2 run roslean_collision_monitor collision_monitor --ros-args \
 ros2 lifecycle set /collision_monitor configure
 ros2 lifecycle set /collision_monitor activate
 ```
+
+Upstream's launch file and example parameter file are there too, under
+upstream's names and with the same arguments
+(`ros2 launch roslean_collision_monitor collision_monitor_node.launch.py`,
+`params/collision_monitor_params.yaml`). To run the node in the place of
+`nav2_collision_monitor` in an existing workspace, with or without editing
+launch files, see
+[docs/DROP_IN_COLLISION_MONITOR.md](docs/DROP_IN_COLLISION_MONITOR.md). It
+starts with what the node refuses, which includes Nav2's default
+configuration.
 
 ## Linux and deployment
 
@@ -352,6 +364,11 @@ and, in a copy of Nav2's `navigation_launch.py`,
 in both). Start Nav2 with `use_composition:=False`, or see
 [SPEC_NAV2.md, section 8.6](docs/collision_monitor/SPEC_NAV2.md) for the
 component and for the second form of the edit (`polygon_sub_topic`).
+Without a copy of the launch file: the package `nav2_collision_monitor` in
+`overlay/opt_in/` shadows upstream's package, and Nav2's unedited
+`navigation_launch.py` then starts the Lean node, as an executable or as a
+component ([docs/DROP_IN_COLLISION_MONITOR.md](docs/DROP_IN_COLLISION_MONITOR.md)).
+The edit of the parameters is needed either way.
 
 The stand-alone executable is the supported form. The component
 (`roslean_collision_monitor::CollisionMonitorNode`) loads and runs in the

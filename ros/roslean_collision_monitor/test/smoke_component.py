@@ -139,6 +139,10 @@ class Driver(Node):
 
 
 def main():
+    # Upstream's component is loaded beside the node: it must be upstream's.
+    from ament_index_python.packages import get_package_prefix
+    from cm_harness import refuse_overlay
+    refuse_overlay('nav2_collision_monitor', get_package_prefix('nav2_collision_monitor'))
     container = sys.argv[1] if len(sys.argv) > 1 else 'component_container_isolated'
     log = tempfile.NamedTemporaryFile(prefix='roslean_cm_component_', suffix='.log', delete=False)
     proc = subprocess.Popen(

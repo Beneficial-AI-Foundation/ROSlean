@@ -27,6 +27,7 @@ import os
 import signal
 import struct
 import subprocess
+import sys
 import time
 
 import rclpy
@@ -78,7 +79,22 @@ def resolve(node):
         return node
     package, executable = node.split('/')
     from ament_index_python.packages import get_package_prefix
-    return os.path.join(get_package_prefix(package), 'lib', package, executable)
+    prefix = get_package_prefix(package)
+    refuse_overlay(package, prefix)
+    return os.path.join(prefix, 'lib', package, executable)
+
+
+def refuse_overlay(package, prefix):
+    """Ends the test if `package` is the ROSlean overlay of that name.
+
+    overlay/nav2_collision_monitor of this repository is the Lean-backed node
+    under upstream's package name and installs the file checked here. A test
+    that asks for upstream's node by its package name would otherwise compare
+    the Lean-backed node with itself and pass.
+    """
+    if os.path.isfile(os.path.join(prefix, 'share', package, 'ROSLEAN_OVERLAY')):
+        sys.exit(f'{package} at {prefix} is the ROSlean overlay, not upstream: run the tests '
+                 'in an environment in which the overlay is not sourced')
 
 
 def scan_msg(spec, now_ns, default_frame):

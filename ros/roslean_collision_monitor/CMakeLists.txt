@@ -78,7 +78,9 @@ set_target_properties(collision_monitor_component PROPERTIES
 install(TARGETS collision_monitor DESTINATION lib/${PROJECT_NAME})
 install(TARGETS collision_monitor_component
   LIBRARY DESTINATION lib ARCHIVE DESTINATION lib RUNTIME DESTINATION bin)
-install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
+# launch/collision_monitor_node.launch.py and params/collision_monitor_params.yaml
+# have the names and the place of upstream's (docs/DROP_IN_COLLISION_MONITOR.md).
+install(DIRECTORY config launch params DESTINATION share/${PROJECT_NAME})
 
 # The tests and their configuration, so that they can be run from the install
 # tree against any node:
@@ -162,6 +164,15 @@ if(BUILD_TESTING)
   # ${_upstream} (and --no-tf if it uses no transforms, as the reference
   # node below). Lifecycle nodes are detected and brought to the active state.
   find_package(nav2_collision_monitor QUIET)
+  # overlay/nav2_collision_monitor of this repository is this same node under
+  # upstream's package name. Comparing the node with itself would prove
+  # nothing. (test/cm_harness.py refuses the overlay again when a test runs.)
+  if(nav2_collision_monitor_FOUND AND nav2_collision_monitor_IS_ROSLEAN_OVERLAY)
+    message(WARNING "the package nav2_collision_monitor that was found is the ROSlean "
+      "overlay, not upstream: build and test without the overlay in the environment "
+      "to get the comparison with upstream")
+    set(nav2_collision_monitor_FOUND FALSE)
+  endif()
   set(_test "${CMAKE_CURRENT_SOURCE_DIR}/test")
   set(_upstream "nav2_collision_monitor/collision_monitor")
   set(_reference "${_test}/reference_node.py")

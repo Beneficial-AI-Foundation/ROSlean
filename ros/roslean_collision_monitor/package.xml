@@ -6,6 +6,7 @@
   <description>Replacement for Nav2's collision monitor for stop and slowdown zones (one laser scan, circles, polygons, polygons fed by a topic; lifecycle node with bond, state topic, transforms from TF) whose decision logic is a Lean function with proved properties.</description>
   <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
   <license>Apache-2.0</license>
+  <url type="repository">https://github.com/Beneficial-AI-Foundation/ROSlean</url>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -23,9 +24,14 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
 
+  <!-- The launch files (launch/): the node with Nav2's lifecycle manager -->
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+
   <!-- Gazebo demo (demo/gazebo): begin -->
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
   <exec_depend>roslean_twist_mux</exec_depend>
   <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
@@ -34,7 +40,6 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_collision_monitor</exec_depend>
-  <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <!-- Gazebo demo: end -->
 

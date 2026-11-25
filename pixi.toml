@@ -28,6 +28,11 @@ ros-jazzy-rviz2 = ">=14.1.23,<15"
 [tasks]
 
 build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G Ninja" }
+# The packages under overlay/, which shadow upstream packages of the same name
+# (docs/DROP_IN_COLLISION_MONITOR.md). Kept in an install tree of their own: the tests
+# compare with upstream's packages and must not find these. Use with: source install_overlay/setup.bash
+# overlay/opt_in is skipped by colcon unless a package in it is named (its COLCON_IGNORE says why).
+build-overlay = { cmd = "bash -c 'source install/setup.bash && colcon build --base-paths overlay overlay/opt_in/nav2_collision_monitor --build-base build_overlay --install-base install_overlay --cmake-args -G Ninja'", depends-on = ["build"] }
 noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
 # The same without the tests labelled `long` in the CMakeLists (the random
