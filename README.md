@@ -17,6 +17,10 @@ Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
 - [docs/PLAN.md](docs/PLAN.md): development plan and status.
 - [docs/THEOREMS.md](docs/THEOREMS.md): the main theorems in plain words,
   with links to the statements.
+- [docs/DROP_IN_TWIST_MUX.md](docs/DROP_IN_TWIST_MUX.md): you use upstream
+  `twist_mux` today; what to change to run this node instead, how to check
+  and how to go back. The same as steps for a coding agent:
+  [docs/DROP_IN_TWIST_MUX_AGENTS.md](docs/DROP_IN_TWIST_MUX_AGENTS.md).
 - [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
   turtlesim experiment, step by step.
 - [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment
@@ -33,6 +37,7 @@ Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
 | `ros/roslean_core` | Compiles the C that Lean generates into `libroslean_core` and installs the Lean runtime it needs with it; C++ wrapper, FFI tests. |
 | `docker/` | Linux build and run-time image. |
 | `ros/roslean_twist_mux` | The node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. |
+| `overlay/twist_mux` | The same node as a package named `twist_mux`, which shadows upstream's in a workspace: same executable, launch file and config file names. Not under `ros/`, and not part of `pixi run build`, because the tests compare with upstream's package of that name (`pixi run build-overlay`). |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
 | `bench/` | Benchmarks against upstream (`pixi run bench`). Not part of the normal build. |
 
@@ -59,6 +64,11 @@ pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_
   --ros-args --params-file ros/roslean_twist_mux/config/example.yaml'
 ```
 
+Upstream's launch file is there too, with the same arguments
+(`ros2 launch roslean_twist_mux twist_mux_launch.py`). To replace upstream in
+an existing workspace without editing launch files, see
+[docs/DROP_IN_TWIST_MUX.md](docs/DROP_IN_TWIST_MUX.md).
+
 ## Linux and deployment
 
 A Lean installation is needed to build, not to run, and building the node
@@ -84,7 +94,10 @@ The image is built in two stages on the official `ros:jazzy-ros-base`
 (Ubuntu 24.04, ROS from apt). The first installs Lean, builds the packages,
 runs all tests including the comparison with apt's `ros-jazzy-twist-mux`, and
 checks that the install tree is self-contained; the build fails if any of
-that fails. The final image holds ROS and the install tree only.
+that fails. The final image holds ROS, apt's `ros-jazzy-twist-mux` (for its
+helper nodes) and the install tree only. In it, `ros2 run twist_mux twist_mux`
+and `ros2 launch twist_mux twist_mux_launch.py` start the Lean-backed node
+(the overlay package).
 `--build-arg RUN_TESTS=0` skips the tests.
 
 Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
