@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 
@@ -17,10 +17,8 @@
     <a class="brand" href="./">ROS<span>lean</span></a>
     <nav aria-label="Site">
       <a href="./">Overview</a>
-      <a href="./#packages">Packages</a>
-      <a href="details.html">twist_mux details</a>
-      <a href="details.html#collision-monitor">Collision monitor</a>
-      <a href="gaps.html" aria-current="page">What is missing</a>
+      <a href="twist_mux.html"><code>twist_mux</code></a>
+      <a href="collision_monitor.html" aria-current="page">Collision monitor</a>
       <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
     </nav>
   </div>
@@ -47,7 +45,7 @@
 
   <main>
     <div class="hero">
-      <p class="eyebrow"><a href="./#packages">Packages</a> / collision monitor</p>
+      <p class="eyebrow"><a href="./#packages">Packages</a> / <a href="collision_monitor.html">collision monitor</a> / what is missing</p>
       <h1>What the collision monitor does not do, and what its theorems rest on.</h1>
       <p class="lede">The ROSlean collision monitor is a gate for velocity commands with stop and slowdown zones. Its decision for each command is a Lean function with machine-checked theorems, and Nav2's lifecycle manager can launch it in place of <code>nav2_collision_monitor</code>. It is not a drop-in replacement for Nav2's default configuration, whose only zone uses the <code>approach</code> action, which this node refuses.</p>
     </div>
@@ -432,7 +430,7 @@ FootprintStop:
     <section id="more">
       <h2>Further reading</h2>
       <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>: rules, differences, trusted parts. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>: every theorem in plain words. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a>: the runs against upstream. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/UPSTREAM_BEHAVIOUR.md">UPSTREAM_BEHAVIOUR.md</a>: what upstream's binary does.</p>
-      <p><a href="details.html#collision-monitor">The collision monitor in detail</a> · <a href="./#collision_monitor">Back to the overview</a></p>
+      <p><a href="details.html#collision-monitor">The collision monitor in detail</a> · <a href="collision_monitor.html">Back to the overview</a></p>
     </section>
   </main>
 </div>
