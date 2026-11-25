@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 
@@ -159,6 +159,36 @@
       <h2><code>twist_mux</code></h2>
       <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
 
+      <h3 id="mux-split">What is in Lean, what in C++</h3>
+      <figure class="flow split">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 234" role="img" aria-labelledby="split-mux-t split-mux-d">
+          <title id="split-mux-t">twist_mux: what the C++ shim does and what Lean does</title>
+          <desc id="split-mux-d">The C++ shim reads parameters, subscribes, reads the clock and publishes. It passes an input index and a time to Lean. Lean tracks the sources, applies priorities, timeouts and locks, and answers forward or drop.</desc>
+          <defs><marker id="split-mux-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+          <g class="flow-other">
+            <rect x="12" y="12" width="290" height="210" rx="4"/>
+            <text x="30" y="42" class="flow-name flow-start">C++ shim</text>
+            <text x="284" y="41" class="flow-tag split-trusted flow-end">TRUSTED</text>
+            <text x="30" y="60" class="flow-sub flow-start">about 200 lines</text>
+          </g>
+          <circle class="split-dot" cx="34" cy="83" r="2.5"/><text x="46" y="88" class="split-item flow-start">reads the parameter file</text><circle class="split-dot" cx="34" cy="113" r="2.5"/><text x="46" y="118" class="split-item flow-start">subscribes to inputs and locks</text><circle class="split-dot" cx="34" cy="143" r="2.5"/><text x="46" y="148" class="split-item flow-start">reads the clock</text><circle class="split-dot" cx="34" cy="173" r="2.5"/><text x="46" y="178" class="split-item flow-start">publishes the chosen message</text>
+          <g class="flow-lean">
+            <rect x="438" y="12" width="290" height="210" rx="4"/>
+            <text x="456" y="42" class="flow-name flow-start">Lean</text>
+            <text x="710" y="41" class="flow-tag flow-end">PROVED</text>
+            <text x="456" y="60" class="flow-sub flow-start">one function, <tspan class="split-code">step</tspan></text>
+          </g>
+          <circle class="split-dot" cx="460" cy="83" r="2.5"/><text x="472" y="88" class="split-item flow-start">tracks when each source spoke</text><circle class="split-dot" cx="460" cy="113" r="2.5"/><text x="472" y="118" class="split-item flow-start">applies priorities and timeouts</text><circle class="split-dot" cx="460" cy="143" r="2.5"/><text x="472" y="148" class="split-item flow-start">applies locks</text><circle class="split-dot" cx="460" cy="173" r="2.5"/><text x="472" y="178" class="split-item flow-start">decides: forward or drop</text>
+          <path class="flow-line" d="M304,94 L436,94" marker-end="url(#split-mux-head)"/>
+          <text x="370" y="85" class="flow-label split-mid">input index, time</text>
+          <path class="flow-line" d="M436,163 L304,163" marker-end="url(#split-mux-head)"/>
+          <text x="370" y="154" class="flow-label split-mid">forward or drop</text>
+        </svg>
+        </div>
+        <figcaption>The message itself never enters Lean: the shim passes which input spoke and the clock reading in nanoseconds, and forwards the message unchanged when the answer is "forward". The shim makes no decision. It is trusted, not proved, as are Lean's compiler and runtime and ROS. <a href="details.html#theorems">Details</a></figcaption>
+      </figure>
+
       <h3 id="video">See it run</h3>
       <figure class="video">
         <video id="demo" controls playsinline preload="metadata" width="1920" height="1080"
@@ -202,6 +232,36 @@
       <h2>Collision monitor</h2>
       <p>Nav2's <a href="https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor"><code>nav2_collision_monitor</code></a> sits between Nav2's velocity smoother and the robot's base: it reads a laser scan, and when enough points lie in a configured zone it scales the velocity command down or replaces it by zero. The Lean version covers one laser scan source, circle and polygon zones, and the actions <code>stop</code> and <code>slowdown</code>. It is a lifecycle node with the same parameter format, topics and bond, so Nav2's lifecycle manager can launch it in place of Nav2's own monitor.</p>
       <p class="note">It is not a drop-in replacement for Nav2's default configuration. That configuration's only zone uses the <code>approach</code> action, which this node refuses; the zone has to be replaced by a stop zone, and the robot then stops where stock Nav2 would slow down gradually. With Nav2 driving in simulation, that stop held the robot for good in three tours of six. <a href="gaps.html#nav2">The edit, and everything else that is missing</a>.</p>
+
+      <h3 id="cm-split">What is in Lean, what in C++</h3>
+      <figure class="flow split">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 264" role="img" aria-labelledby="split-cm-t split-cm-d">
+          <title id="split-cm-t">Collision monitor: what the C++ shim does and what Lean does</title>
+          <desc id="split-cm-d">The C++ shim handles the lifecycle, parameters and topics, looks up transforms, computes the points of a scan in floating point, multiplies the command by the slowdown ratio and publishes. It passes values as bit patterns to Lean. Lean converts to millimetres and nanoseconds, refuses unusable parameters, checks the age of the scan, counts points in each zone and decides to pass, slow, stop or stay silent.</desc>
+          <defs><marker id="split-cm-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+          <g class="flow-other">
+            <rect x="12" y="12" width="290" height="240" rx="4"/>
+            <text x="30" y="42" class="flow-name flow-start">C++ shim</text>
+            <text x="284" y="41" class="flow-tag split-trusted flow-end">TRUSTED</text>
+            <text x="30" y="60" class="flow-sub flow-start">about 1,400 lines</text>
+          </g>
+          <circle class="split-dot" cx="34" cy="83" r="2.5"/><text x="46" y="88" class="split-item flow-start">lifecycle, parameters, topics</text><circle class="split-dot" cx="34" cy="113" r="2.5"/><text x="46" y="118" class="split-item flow-start">looks up transforms (tf2)</text><circle class="split-dot" cx="34" cy="143" r="2.5"/><text x="46" y="148" class="split-item flow-start">scan to points, in floating point</text><circle class="split-dot" cx="34" cy="173" r="2.5"/><text x="46" y="178" class="split-item flow-start">command × slowdown ratio</text><circle class="split-dot" cx="34" cy="203" r="2.5"/><text x="46" y="208" class="split-item flow-start">publishes velocity and state</text>
+          <g class="flow-lean">
+            <rect x="438" y="12" width="290" height="240" rx="4"/>
+            <text x="456" y="42" class="flow-name flow-start">Lean</text>
+            <text x="710" y="41" class="flow-tag flow-end">PROVED</text>
+            <text x="456" y="60" class="flow-sub flow-start">one function, <tspan class="split-code">step</tspan></text>
+          </g>
+          <circle class="split-dot" cx="460" cy="83" r="2.5"/><text x="472" y="88" class="split-item flow-start">converts to mm and ns, exactly</text><circle class="split-dot" cx="460" cy="113" r="2.5"/><text x="472" y="118" class="split-item flow-start">refuses unusable parameters</text><circle class="split-dot" cx="460" cy="143" r="2.5"/><text x="472" y="148" class="split-item flow-start">checks the age of the scan</text><circle class="split-dot" cx="460" cy="173" r="2.5"/><text x="472" y="178" class="split-item flow-start">counts the points in each zone</text><circle class="split-dot" cx="460" cy="203" r="2.5"/><text x="472" y="208" class="split-item flow-start">decides: pass, slow, stop, silent</text>
+          <path class="flow-line" d="M304,94 L436,94" marker-end="url(#split-cm-head)"/>
+          <text x="370" y="85" class="flow-label split-mid">values as bit patterns</text>
+          <path class="flow-line" d="M436,193 L304,193" marker-end="url(#split-cm-head)"/>
+          <text x="370" y="184" class="flow-label split-mid">the action</text>
+        </svg>
+        </div>
+        <figcaption>Every decision is made in Lean, on integers. Two pieces of arithmetic stay in C++ and are trusted, not proved: the points of a scan with their transform, and the multiplication of a slowdown. The theorems hold for whatever coordinates a command carries; that the shim computes the right ones is tested beside the original. <a href="gaps.html#proofs">What the theorems rest on</a></figcaption>
+      </figure>
 
       <h3 id="cm-theorem">Two of the theorems</h3>
       <p>The node demands a stop for a command <strong>if and only if</strong> the scan source is invalid (no scan, a scan older than the timeout, or no transform for it) or some stop zone is triggered by the scan's points:</p>

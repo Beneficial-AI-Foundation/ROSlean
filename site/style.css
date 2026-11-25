@@ -262,3 +262,10 @@ blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--cod
 .flow-line { fill: none; stroke: var(--muted); stroke-width: 1.8; }
 .flow-dash { stroke-dasharray: 5 4; }
 .flow-headfill { fill: var(--muted); }
+
+/* What the shim does and what Lean does: two boxes and what crosses. */
+.flow .split-item { font-size: 14.5px; }
+.flow .split-dot { fill: var(--muted); }
+.flow .split-mid { text-anchor: middle; }
+.flow .split-trusted { fill: var(--muted); }
+.flow .split-code { font-family: var(--font-mono); font-size: 12.5px; }
