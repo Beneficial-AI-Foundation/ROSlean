@@ -63,7 +63,7 @@
           <tbody>
             <tr><td><span class="kind proved">Proved</span></td><td>A Lean theorem, named here. No <code>sorry</code>, no <code>native_decide</code>, only Lean's three standard axioms.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/CollisionMonitor"><code>ROSlean/CollisionMonitor/</code></a></td></tr>
             <tr><td><span class="kind">Tested</span></td><td>Observed on running binaries, with the test and its counts named.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a></td></tr>
-            <tr><td><span class="kind">Trusted</span></td><td>Neither proved nor fully tested. Each item is one of the numbered trusted parts of SPEC.md, T1 to T10.</td><td>SPEC.md, "Where the velocity is computed"</td></tr>
+            <tr><td><span class="kind">Trusted</span></td><td>Neither proved nor fully tested. Each item is one of the numbered trusted parts of <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md#where-the-velocity-is-computed">SPEC.md</a>, T1 to T10.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md#where-the-velocity-is-computed">SPEC.md</a>, "Where the velocity is computed"</td></tr>
           </tbody>
         </table>
       </div>
@@ -91,7 +91,7 @@
 
     <section id="nav2">
       <h2>Under Nav2: what has to be edited</h2>
-      <p><code>nav2_bringup</code>'s <code>nav2_params.yaml</code> configures the monitor with one zone, <code>FootprintApproach</code>, with <code>action_type: approach</code> (SPEC.md, N21). The Lean node refuses that zone. The documented edit replaces it by the footprint as a fixed stop polygon (SPEC_NAV2.md, section 8.6):</p>
+      <p><code>nav2_bringup</code>'s <code>nav2_params.yaml</code> configures the monitor with one zone, <code>FootprintApproach</code>, with <code>action_type: approach</code> (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>, N21). The Lean node refuses that zone. The documented edit replaces it by the footprint as a fixed stop polygon (SPEC_NAV2.md, section 8.6):</p>
 <pre class="plain"><code>polygons: ["FootprintStop"]
 FootprintStop:
   type: "polygon"
@@ -269,7 +269,7 @@ FootprintStop:
         <p>The model's polygon zones are grown by a band of √5 mm so that rounding to integer millimetres never loses a point that the configured polygon contains.</p>
         <dl>
           <dt>Proved</dt><dd>The quantitative half. The band test is exactly "at most √5 mm from the segment" (<code>nearSegment_iff</code>). A point of the real polygon's boundary is, after rounding, within the band (<code>nearBoundary_of_rounded</code>; with room for the shim's floating-point transform, <code>contains_of_shim</code>, <code>contains_of_shim_fixed</code>). A point upstream's rule puts inside the rounded polygon is counted (<code>contains_polygon_iff</code>). For circles the whole claim is proved (<code>circle_safe</code>, <code>circle_safe_shim</code>).</dd>
-          <dt>Not proved</dt><dd>That one of the two cases always applies: if the real point is inside the real polygon and the rounded point is outside the rounded polygon, then the boundary passed over the point during rounding. This is prose in SPEC.md. Also not proved: the figures in the other direction (a point up to 3.5 mm outside a circle or 4.4 mm outside a polygon can count as inside). The repository has no definition of upstream's crossing rule over the real numbers and no continuity argument for it.</dd>
+          <dt>Not proved</dt><dd>That one of the two cases always applies: if the real point is inside the real polygon and the rounded point is outside the rounded polygon, then the boundary passed over the point during rounding. This is prose in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>. Also not proved: the figures in the other direction (a point up to 3.5 mm outside a circle or 4.4 mm outside a polygon can count as inside). The repository has no definition of upstream's crossing rule over the real numbers and no continuity argument for it.</dd>
           <dt>Tested instead</dt><dd><code>band_bounds</code>: 34.0 million points against upstream's own zone tests on 340 zones, on macOS and in the Linux container: upstream never counted a point the core did not, and the farthest point outside upstream's zone that the core counted was 3.409 mm for a circle and 4.167 mm for a polygon. Random comparison of the two nodes: below, under <a href="#direction">stricter or looser</a>.</dd>
         </dl>
       </article>
