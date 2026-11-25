@@ -82,6 +82,36 @@
           <span>More packages to come.</span>
         </li>
       </ul>
+
+      <h3 id="where">Where the two nodes sit</h3>
+      <p>Both sit on the path of the velocity command, between whatever wants to move the robot and the motors. Neither plans a path or drives a motor. Each makes one decision per command.</p>
+      <div class="chain" role="group" aria-label="The path of a velocity command through twist_mux and the collision monitor">
+        <div class="chain-sources">
+          <div class="chain-box"><b>Planner</b><span>wants to follow its path</span></div>
+          <div class="chain-box"><b>Joystick or keyboard</b><span>a person takes over</span></div>
+          <div class="chain-box"><b>Emergency stop</b><span>a lock, not a command</span></div>
+        </div>
+        <div class="chain-arrow" aria-hidden="true"><i></i><span>velocity commands, each source with a priority and a timeout</span></div>
+        <div class="chain-node">
+          <p class="chain-name"><a href="#twist_mux"><code>twist_mux</code></a><span class="tag ok">Lean</span></p>
+          <dl>
+            <dt>Reads</dt><dd>the commands of every source, the locks, the clock</dd>
+            <dt>Decides</dt><dd><b>whose</b> command goes on: the live source with the highest priority that no lock blocks, or nobody's</dd>
+          </dl>
+        </div>
+        <div class="chain-arrow" aria-hidden="true"><i></i><span>one command, unchanged</span></div>
+        <div class="chain-node">
+          <p class="chain-name"><a href="#collision_monitor">collision monitor</a><span class="tag ok">Lean</span></p>
+          <dl>
+            <dt>Reads</dt><dd>that command, the latest laser scan, the transform from the sensor to the robot, its zones</dd>
+            <dt>Decides</dt><dd><b>whether and how fast</b>: the command as it is, scaled down, zero, or nothing</dd>
+          </dl>
+          <p class="chain-side">from the side: <b>lidar</b> (scans) and <b>tf2</b> (transforms)</p>
+        </div>
+        <div class="chain-arrow" aria-hidden="true"><i></i><span>the command the robot gets</span></div>
+        <div class="chain-box end"><b>Base controller and motors</b><span>execute it</span></div>
+      </div>
+      <p class="note">This is the order in this project's Gazebo demo of the two nodes together. Nav2's own bring-up has the collision monitor after its velocity smoother and no mux; where a mux goes on a real robot is the integrator's choice. Neither node knows about the other: each reads a topic and publishes a topic.</p>
     </section>
 
     <section id="twist_mux">

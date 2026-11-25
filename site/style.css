@@ -242,3 +242,24 @@ footer .wrap { padding-block: 1.5rem 2.5rem; font-size: 0.9rem; color: var(--mut
 .kind.open { color: var(--accent); }
 td code, dd code { overflow-wrap: anywhere; }
 blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--code-bg); border-left: 3px solid var(--line); font: 0.84rem/1.5 var(--font-mono); overflow-wrap: anywhere; }
+
+/* The command path: sources, the two Lean nodes, the base. One column at
+   every width; the three sources wrap. */
+.chain { margin: 1.25rem 0 1rem; display: flex; flex-direction: column; align-items: stretch; }
+.chain-sources { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+@media (max-width: 36rem) { .chain-sources { grid-template-columns: 1fr; } }
+.chain-box, .chain-node { background: var(--surface); border: 1px solid var(--line); padding: 0.7rem 0.9rem; }
+.chain-box b { display: block; font: 600 0.98rem var(--font-display); }
+.chain-box span { color: var(--muted); font-size: 0.9rem; }
+.chain-box.end { text-align: center; }
+.chain-node { border: 1.5px solid var(--proved); }
+.chain-name { margin: 0 0 0.5rem; display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; font: 600 1.05rem var(--font-display); }
+.chain-name .tag { font: 500 0.72rem var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--proved); }
+.chain-node dl { margin: 0; display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.3rem 0.75rem; font-size: 0.95rem; }
+.chain-node dt { font: 500 0.72rem var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding-top: 0.25rem; }
+.chain-node dd { margin: 0; }
+.chain-side { margin: 0.6rem 0 0; padding-top: 0.5rem; border-top: 1px dashed var(--line); color: var(--muted); font-size: 0.9rem; }
+.chain-side b { color: var(--ink); font-weight: 600; }
+.chain-arrow { display: flex; align-items: center; gap: 0.75rem; padding: 0.15rem 0 0.15rem 1.5rem; color: var(--muted); font-size: 0.85rem; }
+.chain-arrow i { position: relative; width: 2px; height: 2rem; background: var(--muted); flex: none; }
+.chain-arrow i::after { content: ""; position: absolute; left: -4px; bottom: -1px; border: 5px solid transparent; border-top-color: var(--muted); border-bottom: 0; }
