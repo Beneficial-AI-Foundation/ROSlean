@@ -6,3 +6,11 @@
 /core/.lake
 node_modules/
 __pycache__/
+
+# macOS
+.DS_Store
+
+# Logs. The benchmark records under bench/results are cited by the documents
+# and stay tracked.
+*.log
+!bench/results/**/*.log
