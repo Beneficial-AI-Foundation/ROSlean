@@ -153,16 +153,16 @@ Decided by the user on 2026-11-24:
 | (T05) `test_cm_ffi` now takes 169 s (its leak test places a scan 650,000 times through the exact transform). | T06 reworks the C interface: it reduces the rounds or moves the leak test under `LABELS long`, so that `test-quick` stays short |
 | (T04) Which Nav2 parameter edit to document? | The footprint as a fixed polygon; the two-line `polygon_sub_topic` change is mentioned |
 
-Open or not confirmed (the rows are unchanged; they stood in the table above until
-task T11 grouped them). Each is built as its row says until the user decides:
+Decided by the user on 2026-11-25 (the rows stood as open or not confirmed
+until then). The issue texts are drafts in `issues/`, not yet GitHub issues:
 
 | Question | Decision |
 | --- | --- |
-| (T08, finding 1) A polygon message with a non-finite or out-of-range vertex: upstream accepts it and its zone can still stop; our node refuses the message (ND6) and can pass where upstream stops. Stop until a usable message arrives, or reproduce upstream's NaN arithmetic? | Stop: after such a message the zone demands its action (a stop zone stops) until a usable message arrives. Never less restrictive than upstream; a numbered difference. **Confirming the default** |
-| (T09) A zone marked unusable does its own action: a marked slowdown zone slows, it does not stop. Should a marked zone always stop? | No: its own action. **Not confirmed by the user** |
-| (T09) ND13: a refused refresh of a topic zone in another frame leaves the zone where it was; the one place left where the node can in principle be less restrictive than upstream (points about a kilometre from the base). Should it also make the zone demand its action? | Leave as build right now. Create an issue (in our own repository) arguing for a less restrictive version, why it is safe, and what it buys us.  |
-| (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's |
-| (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Not decided. Linux so far is an arm64 container on the Mac |
+| (T08, finding 1) A polygon message with a non-finite or out-of-range vertex: upstream accepts it and its zone can still stop; our node refuses the message (ND6) and can pass where upstream stops. Stop until a usable message arrives, or reproduce upstream's NaN arithmetic? | Stop: after such a message the zone demands its action (a stop zone stops) until a usable message arrives. Never less restrictive than upstream; a numbered difference. **Confirmed by the user on 2026-11-25.** Upstream's side as a hardening note: `findings/polygon_nan_vertex.md` |
+| (T09) A zone marked unusable does its own action: a marked slowdown zone slows, it does not stop. Should a marked zone always stop? | No: its own action. **Confirmed by the user on 2026-11-25** |
+| (T09) ND13: a refused refresh of a topic zone in another frame leaves the zone where it was; the one place left where the node can in principle be less restrictive than upstream (points about a kilometre from the base). Should it also make the zone demand its action? | Stays as built (user, 2026-11-25). The case for it, why it is safe and what it buys: issue draft `issues/nd13-refused-refresh.md` |
+| (T02, T03) The cost of a command: target? | T03's budget until the user says otherwise: 50 / 150 / 1500 µs per command at 360 / 1080 / 10,000 stored readings and two zones, in process. Met on macOS and in the Linux arm64 container (at most 45 % of it). The command callback is still 4 to 8 times upstream's. **Accepted by the user on 2026-11-25.** Improving the speed is experimental work: issue draft `issues/performance.md` |
+| (T02) A run on Linux on its own hardware or on x86-64 before the write-up? | Does not block the write-up (user, 2026-11-25). Issue draft with the steps: `issues/linux-hardware-run.md` |
 
 ## Watching the tasks
 

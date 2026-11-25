@@ -199,9 +199,11 @@ point markers. What follows is the rest.
   node); the one failed start of Nav2 in 28.
 - **The component in the simulator**, and how close `approach` lets the
   robot come: not run, not measured (T10).
-- **Open for the user** (tasks/PLAN.md, "Open or not confirmed"): the
-  default for a polygon message with an unusable vertex (ND6); whether a
-  marked slowdown zone should stop; ND13; the cost target.
+- **Decided by the user on 2026-11-25** (tasks/PLAN.md, "Decisions"): ND6
+  confirmed; a marked slowdown zone slows; ND13 stays as built; the cost
+  budget is accepted; a run on Linux hardware does not block the write-up.
+  Three issue drafts follow from it, in `issues/`. Still open: whether the
+  documented Nav2 edit stays a stop polygon (T10).
 - **CI.** As for twist_mux: nothing in CI builds the ROS packages or runs
   the tests.
 

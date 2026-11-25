@@ -64,7 +64,7 @@
             <tr><td><span class="kind proved">Proved</span></td><td>A Lean theorem, named here. No <code>sorry</code>, no <code>native_decide</code>, only Lean's three standard axioms.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/CollisionMonitor"><code>ROSlean/CollisionMonitor/</code></a></td></tr>
             <tr><td><span class="kind">Tested</span></td><td>Observed on running binaries, with the test and its counts named.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a></td></tr>
             <tr><td><span class="kind">Trusted</span></td><td>Neither proved nor fully tested. Each item has a number T1 to T10.</td><td>SPEC.md, "Where the velocity is computed"</td></tr>
-            <tr><td><span class="kind">Decided</span></td><td>A choice, with who made it. Some are defaults the user has not confirmed.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/tasks/PLAN.md">tasks/PLAN.md</a>, "Decisions"</td></tr>
+            <tr><td><span class="kind">Decided</span></td><td>A choice, with who made it. One default is still open for the user: whether the documented Nav2 edit stays a stop polygon.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/tasks/PLAN.md">tasks/PLAN.md</a>, "Decisions"</td></tr>
           </tbody>
         </table>
       </div>
@@ -425,16 +425,16 @@ FootprintStop:
         </table>
       </div>
 
-      <h3>Defaults the user has not confirmed, and open questions</h3>
+      <h3>Questions decided by the user on 2026-11-25</h3>
       <div class="table">
         <table>
           <thead><tr><th>Question</th><th>What is built</th><th>Status</th></tr></thead>
           <tbody>
-            <tr><td>After a polygon message with an unusable vertex (ND6)</td><td>The zone demands its action until a usable message arrives. Stops where upstream may pass.</td><td><span class="kind open">Not confirmed</span> Default chosen by the orchestrator.</td></tr>
-            <tr><td>Should a marked slowdown zone stop instead of slowing?</td><td>It slows: the zone does its own action.</td><td><span class="kind open">Not confirmed</span></td></tr>
-            <tr><td>A refused refresh of a zone in another frame (ND13)</td><td>The zone stays where it was. In principle less restrictive than upstream.</td><td><span class="kind open">Open</span> The orchestrator recommends making the zone demand its action, as ND6.</td></tr>
-            <tr><td>A run on x86-64 or on Linux on its own hardware</td><td>Not made.</td><td><span class="kind open">Not decided</span></td></tr>
-            <tr><td>The cost target for a command</td><td>A budget of 50, 150 and 1500 µs at 360, 1080 and 10,000 stored readings.</td><td>Holds until the user says otherwise.</td></tr>
+            <tr><td>After a polygon message with an unusable vertex (ND6)</td><td>The zone demands its action until a usable message arrives. Stops where upstream may pass.</td><td><span class="kind">Decided</span> Confirmed.</td></tr>
+            <tr><td>Should a marked slowdown zone stop instead of slowing?</td><td>It slows: the zone does its own action.</td><td><span class="kind">Decided</span> Confirmed: it slows.</td></tr>
+            <tr><td>A refused refresh of a zone in another frame (ND13)</td><td>The zone stays where it was. In principle less restrictive than upstream.</td><td><span class="kind">Decided</span> Stays as built. The case for it is written up as an issue draft (<code>issues/nd13-refused-refresh.md</code>).</td></tr>
+            <tr><td>A run on x86-64 or on Linux on its own hardware</td><td>Not made.</td><td><span class="kind">Decided</span> Not before the write-up. The steps are an issue draft (<code>issues/linux-hardware-run.md</code>).</td></tr>
+            <tr><td>The cost target for a command</td><td>A budget of 50, 150 and 1500 µs at 360, 1080 and 10,000 stored readings.</td><td><span class="kind">Decided</span> Accepted. Further speed is experimental work (<code>issues/performance.md</code>).</td></tr>
           </tbody>
         </table>
       </div>
