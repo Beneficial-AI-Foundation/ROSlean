@@ -2,6 +2,8 @@
 /.pixi
 /build
 /install
+/build_overlay
+/install_overlay
 /log
 /core/.lake
 node_modules/
