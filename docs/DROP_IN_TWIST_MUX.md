@@ -70,6 +70,9 @@ runtime it uses and can be copied to another machine of the same OS and
 architecture with ROS 2 Jazzy, provided it was built without
 `--symlink-install`. On Linux this includes `libleanshared.so`, about 190 MB.
 
+The build writes into the checkout (`core/.lake`), so the source directory
+must be writable.
+
 If your workspace also contains the source of upstream `twist_mux`, colcon
 refuses to build two packages of the same name. Remove one, or put a
 `COLCON_IGNORE` file in one of them.

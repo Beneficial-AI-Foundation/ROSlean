@@ -125,7 +125,8 @@ that also builds the demo package and `roslean_bench`, which downloads
 upstream's sources.
 
 If the build fails in `roslean_core` with `lake` or `lean` not found, `PATH`
-lacks `~/.elan/bin`. Any other failure: stop and report.
+lacks `~/.elan/bin`. If it fails there on a read-only source directory: the
+build writes `$ROSLEAN/core/.lake`; the checkout must be writable. Any other failure: stop and report.
 
 ## 4. Option A: overlay, no edits
 
