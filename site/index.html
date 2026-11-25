@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 
@@ -83,14 +83,21 @@
         </li>
       </ul>
 
-      <h3 id="where">Where the two nodes sit</h3>
+    </section>
+
+    <section id="twist_mux">
+      <p class="eyebrow">Package 1</p>
+      <h2><code>twist_mux</code></h2>
+      <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
+
+      <h3 id="mux-where">Where it sits</h3>
       <figure class="flow">
         <div class="flow-scroll">
-        <svg viewBox="0 0 740 500" role="img" aria-labelledby="flow-title flow-desc">
-          <title id="flow-title">The path of a velocity command</title>
-          <desc id="flow-desc">A planner, a joystick and an emergency stop feed twist_mux, which decides who drives. Its one output goes to the collision monitor, which also reads lidar scans and transforms and decides how fast. The result goes to the base controller and the motors.</desc>
+        <svg viewBox="0 0 740 500" role="img" aria-labelledby="where-mux-t where-mux-d">
+          <title id="where-mux-t">The path of a velocity command</title>
+          <desc id="where-mux-d">A planner, a joystick and an emergency stop feed twist_mux, which decides who drives. Its one output goes to the collision monitor, which also reads lidar scans and transforms and decides how fast. The result goes to the base controller and the motors.</desc>
           <defs>
-            <marker id="flow-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker>
+            <marker id="where-mux-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker>
           </defs>
 
           <!-- sources -->
@@ -105,9 +112,9 @@
             <text x="620" y="41" class="flow-name">Emergency stop</text>
             <text x="620" y="61" class="flow-sub">blocks lower priorities</text>
           </g>
-          <path class="flow-line" d="M120,74 L120,112 L290,112 L290,148" marker-end="url(#flow-head)"/>
-          <path class="flow-line" d="M370,74 L370,148" marker-end="url(#flow-head)"/>
-          <path class="flow-line flow-dash" d="M620,74 L620,112 L450,112 L450,148" marker-end="url(#flow-head)"/>
+          <path class="flow-line" d="M120,74 L120,112 L290,112 L290,148" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line" d="M370,74 L370,148" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line flow-dash" d="M620,74 L620,112 L450,112 L450,148" marker-end="url(#where-mux-head)"/>
           <text x="128" y="104" class="flow-label">command</text>
           <text x="378" y="104" class="flow-label">command</text>
           <text x="612" y="104" class="flow-label flow-end">lock</text>
@@ -119,7 +126,7 @@
             <text x="550" y="181" class="flow-tag flow-end">LEAN · PROVED</text>
             <text x="190" y="212" class="flow-decides flow-start">decides <tspan class="flow-strong">who drives</tspan></text>
           </g>
-          <path class="flow-line" d="M370,234 L370,288" marker-end="url(#flow-head)"/>
+          <path class="flow-line" d="M370,234 L370,288" marker-end="url(#where-mux-head)"/>
           <text x="382" y="266" class="flow-label">one command</text>
 
           <!-- side inputs -->
@@ -129,18 +136,18 @@
             <rect x="20" y="340" width="120" height="36" rx="4"/>
             <text x="80" y="363" class="flow-name small">tf2</text>
           </g>
-          <path class="flow-line" d="M140,310 L168,310" marker-end="url(#flow-head)"/>
-          <path class="flow-line" d="M140,358 L168,358" marker-end="url(#flow-head)"/>
+          <path class="flow-line" d="M140,310 L168,310" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line" d="M140,358 L168,358" marker-end="url(#where-mux-head)"/>
           <text x="20" y="394" class="flow-label">scans, transforms</text>
 
           <!-- collision monitor -->
-          <g class="flow-lean">
+          <g class="flow-other flow-dim">
             <rect x="170" y="290" width="400" height="84" rx="4"/>
             <text x="190" y="322" class="flow-name flow-start">collision monitor</text>
             <text x="550" y="321" class="flow-tag flow-end">LEAN · PROVED IN PART</text>
             <text x="190" y="352" class="flow-decides flow-start">decides <tspan class="flow-strong">how fast</tspan>: as commanded, slowed, or stopped</text>
           </g>
-          <path class="flow-line" d="M370,374 L370,428" marker-end="url(#flow-head)"/>
+          <path class="flow-line" d="M370,374 L370,428" marker-end="url(#where-mux-head)"/>
           <text x="382" y="406" class="flow-label">the command the robot gets</text>
 
           <!-- base -->
@@ -150,14 +157,8 @@
           </g>
         </svg>
         </div>
-        <figcaption>Green: the two nodes of this project. Grey: other nodes of a robot, unchanged. Neither Lean node plans a path or drives a motor; each makes one decision per command. The order shown is that of this project's Gazebo demo. Nav2's own bring-up has the collision monitor after its velocity smoother and no mux.</figcaption>
+        <figcaption>Green: <code>twist_mux</code>. It sits between everything that wants to move the robot and the rest of the command path, and decides whose command goes on. It does not plan a path, change a command or drive a motor. The collision monitor below it is the other package of this project; the order shown is that of this project's Gazebo demo.</figcaption>
       </figure>
-    </section>
-
-    <section id="twist_mux">
-      <p class="eyebrow">Package 1</p>
-      <h2><code>twist_mux</code></h2>
-      <p><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> sits between a robot's command sources and its motors. Each source has a priority and a timeout, and locks can block everything below a given priority. The Lean version takes the same parameter file and topics as the original.</p>
 
       <h3 id="mux-split">What is in Lean, what in C++</h3>
       <figure class="flow split">
@@ -232,6 +233,76 @@
       <h2>Collision monitor</h2>
       <p>Nav2's <a href="https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor"><code>nav2_collision_monitor</code></a> sits between Nav2's velocity smoother and the robot's base: it reads a laser scan, and when enough points lie in a configured zone it scales the velocity command down or replaces it by zero. The Lean version covers one laser scan source, circle and polygon zones, and the actions <code>stop</code> and <code>slowdown</code>. It is a lifecycle node with the same parameter format, topics and bond, so Nav2's lifecycle manager can launch it in place of Nav2's own monitor.</p>
       <p class="note">It is not a drop-in replacement for Nav2's default configuration. That configuration's only zone uses the <code>approach</code> action, which this node refuses; the zone has to be replaced by a stop zone, and the robot then stops where stock Nav2 would slow down gradually. With Nav2 driving in simulation, that stop held the robot for good in three tours of six. <a href="gaps.html#nav2">The edit, and everything else that is missing</a>.</p>
+
+      <h3 id="cm-where">Where it sits</h3>
+      <figure class="flow">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 500" role="img" aria-labelledby="where-cm-t where-cm-d">
+          <title id="where-cm-t">The path of a velocity command</title>
+          <desc id="where-cm-d">A planner, a joystick and an emergency stop feed twist_mux, which decides who drives. Its one output goes to the collision monitor, which also reads lidar scans and transforms and decides how fast. The result goes to the base controller and the motors.</desc>
+          <defs>
+            <marker id="where-cm-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker>
+          </defs>
+
+          <!-- sources -->
+          <g class="flow-other">
+            <rect x="20" y="16" width="200" height="58" rx="4"/>
+            <text x="120" y="41" class="flow-name">Planner</text>
+            <text x="120" y="61" class="flow-sub">follows its path</text>
+            <rect x="270" y="16" width="200" height="58" rx="4"/>
+            <text x="370" y="41" class="flow-name">Joystick, keyboard</text>
+            <text x="370" y="61" class="flow-sub">a person takes over</text>
+            <rect x="520" y="16" width="200" height="58" rx="4"/>
+            <text x="620" y="41" class="flow-name">Emergency stop</text>
+            <text x="620" y="61" class="flow-sub">blocks lower priorities</text>
+          </g>
+          <path class="flow-line" d="M120,74 L120,112 L290,112 L290,148" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line" d="M370,74 L370,148" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line flow-dash" d="M620,74 L620,112 L450,112 L450,148" marker-end="url(#where-cm-head)"/>
+          <text x="128" y="104" class="flow-label">command</text>
+          <text x="378" y="104" class="flow-label">command</text>
+          <text x="612" y="104" class="flow-label flow-end">lock</text>
+
+          <!-- twist_mux -->
+          <g class="flow-other flow-dim">
+            <rect x="170" y="150" width="400" height="84" rx="4"/>
+            <text x="190" y="182" class="flow-name flow-start">twist_mux</text>
+            <text x="550" y="181" class="flow-tag flow-end">LEAN · PROVED</text>
+            <text x="190" y="212" class="flow-decides flow-start">decides <tspan class="flow-strong">who drives</tspan></text>
+          </g>
+          <path class="flow-line" d="M370,234 L370,288" marker-end="url(#where-cm-head)"/>
+          <text x="382" y="266" class="flow-label">one command</text>
+
+          <!-- side inputs -->
+          <g class="flow-other">
+            <rect x="20" y="292" width="120" height="36" rx="4"/>
+            <text x="80" y="315" class="flow-name small">Lidar</text>
+            <rect x="20" y="340" width="120" height="36" rx="4"/>
+            <text x="80" y="363" class="flow-name small">tf2</text>
+          </g>
+          <path class="flow-line" d="M140,310 L168,310" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line" d="M140,358 L168,358" marker-end="url(#where-cm-head)"/>
+          <text x="20" y="394" class="flow-label">scans, transforms</text>
+
+          <!-- collision monitor -->
+          <g class="flow-lean">
+            <rect x="170" y="290" width="400" height="84" rx="4"/>
+            <text x="190" y="322" class="flow-name flow-start">collision monitor</text>
+            <text x="550" y="321" class="flow-tag flow-end">LEAN · PROVED IN PART</text>
+            <text x="190" y="352" class="flow-decides flow-start">decides <tspan class="flow-strong">how fast</tspan>: as commanded, slowed, or stopped</text>
+          </g>
+          <path class="flow-line" d="M370,374 L370,428" marker-end="url(#where-cm-head)"/>
+          <text x="382" y="406" class="flow-label">the command the robot gets</text>
+
+          <!-- base -->
+          <g class="flow-other">
+            <rect x="220" y="430" width="300" height="52" rx="4"/>
+            <text x="370" y="462" class="flow-name">Base controller, motors</text>
+          </g>
+        </svg>
+        </div>
+        <figcaption>Green: the collision monitor. It is the last node before the base: it receives one command, reads the lidar scan and the transforms, and decides how fast. The order shown is that of this project's Gazebo demo, with <code>twist_mux</code> above it. Nav2's own bring-up has the collision monitor after its velocity smoother and no mux.</figcaption>
+      </figure>
 
       <h3 id="cm-split">What is in Lean, what in C++</h3>
       <figure class="flow split">
