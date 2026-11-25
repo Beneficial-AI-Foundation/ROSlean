@@ -106,7 +106,7 @@ section + section { border-top: 1px solid var(--line); }
 /* Package list: one row per verified package */
 .packages { list-style: none; margin: 1.25rem 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
 .packages li {
-  display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 9rem minmax(0, 1fr) 9.5rem 10.5rem;
   gap: 0.25rem 1rem; align-items: baseline; padding: 0.8rem 1rem; font-size: 0.95rem;
 }
 .packages li + li { border-top: 1px solid var(--line); }

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -50,6 +50,14 @@
           <a id="twist_mux" href="twist_mux.html"><code>twist_mux</code></a>
           <span>Selects a velocity source, such as a planner or joystick. Locks block lower-priority sources.</span>
           <div class="status">
+            <span class="tag ok">Ported</span>
+            <button class="info" type="button" aria-label="What ported means here" aria-expanded="false" aria-controls="twist_mux-ported">i</button>
+            <div class="pop" id="twist_mux-ported" role="note">
+              <p><b>Ported</b>The <code>twist_mux</code> node: the same parameter file, topics, priorities, timeouts and locks as the original.</p>
+              <p><b>Not ported</b>The diagnostics publisher, the helper nodes <code>twist_marker</code> and <code>joystick_relay</code>, and the launch file. <a href="details.html">Full account</a></p>
+            </div>
+          </div>
+          <div class="status">
             <span class="tag ok">Verified</span>
             <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="twist_mux-verified">i</button>
             <div class="pop" id="twist_mux-verified" role="note">
@@ -61,6 +69,14 @@
         <li>
           <a href="collision_monitor.html">collision monitor</a>
           <span>Passes, slows, or stops velocity commands using one lidar and configured zones.</span>
+          <div class="status">
+            <span class="tag ok">Ported in part</span>
+            <button class="info" type="button" aria-label="What ported means here" aria-expanded="false" aria-controls="cm-ported">i</button>
+            <div class="pop" id="cm-ported" role="note">
+              <p><b>Ported</b>One laser scan source, circle and polygon zones, the actions <code>stop</code> and <code>slowdown</code>, the lifecycle interface, the state topic, transforms, and zones fed by a topic.</p>
+              <p><b>Not ported</b>The actions <code>approach</code> and <code>limit</code>, point clouds and other sources, several sources, velocity polygons. Nav2's default configuration uses <code>approach</code>. <a href="gaps.html">Full account</a></p>
+            </div>
+          </div>
           <div class="status">
             <span class="tag ok">Verified, in part</span>
             <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="cm-verified">i</button>
