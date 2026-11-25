@@ -1,50 +1,12 @@
 # Collision monitor: the main theorems
 
-What is proved about the Lean core of the collision monitor, in plain words,
-with a link to each statement. The theorems are in
-`ROSlean/CollisionMonitor/`, are checked by `lake build` in the repository
-root, and use no `sorry`, no `native_decide` and no axioms beyond Lean's
-three standard ones (`propext`, `Classical.choice`, `Quot.sound`; checked
-with `#print axioms` on 71 theorems, listed in
-[`tasks/reports/T05b.md`](../../tasks/reports/T05b.md), and on the 52 of
-`NoClock.lean`, `Fast.lean` and the changed ones of `FFI.lean`, listed in
-[`tasks/reports/T03.md`](../../tasks/reports/T03.md): the characterisations
-of each output and action, the properties, the lifecycle, shape, margin
-and trace theorems, and the end-to-end theorems of the C interface; the
-sources contain no `axiom` declaration). Rule numbers
-(R…), differences (D…), assumptions (A…) and trusted parts (T…) refer to
-[SPEC.md](SPEC.md), and so do N… and ND… since task T09 made it one
-document again; E1–E8 are the events of [SPEC_NAV2.md](SPEC_NAV2.md),
-section 3.2.
+Run `lake build` from the repository root to check the proofs. The
+proofs use Lean’s three standard axioms: `propext`, `Classical.choice`,
+and `Quot.sound`. The [audit](../AUDIT.md) lists the axiom checks.
 
-**Added and changed by task T09** (the fixes after the review CM5): the
-mark of an unusable polygon message (ND6: "The Nav2 extension", row
-"Unusable message", and `run_stop_after_unusable` under "Over sequences of
-events"); what holds from start-up after a command without a clock reading
-(`noClock_unreachable`, `mixed_from_init`: "A command without a clock
-reading"); the statements of `acceptShape_eq_some_iff`, `withShape_fields`,
-`withShape_of_topic`, `withShapes_action`, `liveConfig_action`,
-`evaluate_stopZone_only_if` and `evaluate_slowdown_only_if`, which gained
-the case of the mark. `#print axioms` on the 33 new and changed theorems and on seven unchanged headline theorems that rest on the changed model (`stepCmdFast_eq` among them):
-the three standard axioms, listed in
-[`tasks/reports/T09.md`](../../tasks/reports/T09.md).
-
-The model contains the Nav2 extension of SPEC_NAV2.md, sections 3 and 4: the
-lifecycle, the points and vertices that arrive with each command, zones
-whose shape arrives on a topic, and the report for the state topic. Since task T06 the C
-interface and the node have it too; see "The C interface and the
-conversions" for the theorems that tie the exported calls to the model.
-
-**The sensor-to-base transform is not in the model** (the user's decision
-for option A of SPEC_NAV2.md, section 5; task T05b). The C++ shim applies it
-in `double`, as upstream does, and the model receives coordinates in the
-base frame. Task T05 had built the transform into the model in exact
-arithmetic and proved that every scan point is the exact image of its
-reading, truncated; those theorems are gone, and "What T05 proved and
-option A does not have" below says what replaces each.
-
-Links point to line numbers as of 2026-11-24; if a link lands a few lines
-off, search the file for the theorem name.
+Rule numbers refer to [SPEC.md](SPEC.md). Lean reasons about the
+coordinates supplied with each command. The C++ node computes those
+coordinates using TF and floating-point arithmetic.
 
 | File | Content |
 | --- | --- |
@@ -56,8 +18,8 @@ off, search the file for the theorem name.
 | [`Margin.lean`](../../ROSlean/CollisionMonitor/Margin.lean) | The conversions of the base-frame coordinates a command carries; the polygon margin with room for the shim's floating-point transform |
 | [`Bits.lean`](../../ROSlean/CollisionMonitor/Bits.lean) | The IEEE-754 bit-pattern helpers |
 | [`Convert.lean`](../../ROSlean/CollisionMonitor/Convert.lean) | The conversions at the boundary: millimetres, nanoseconds, refusals |
-| [`FFI.lean`](../../ROSlean/CollisionMonitor/FFI.lean) | The C interface computes the model; refused configurations stop every command |
-| [`NoClock.lean`](../../ROSlean/CollisionMonitor/NoClock.lean) | A command without a valid clock reading (D15): always a stop |
+| [`FFI.lean`](../../ROSlean/CollisionMonitor/FFI.lean) | C interface equivalence and the active-phase fallback for a refused configuration |
+| [`NoClock.lean`](../../ROSlean/CollisionMonitor/NoClock.lean) | Invalid clock: zero for finite commands received while active (D15) |
 | [`Fast.lean`](../../ROSlean/CollisionMonitor/Fast.lean) | The command path that C calls computes the same function as `step` |
 
 ## What the theorems are about
@@ -75,7 +37,7 @@ and, for bit patterns, points and the two conversions the model applies,
 | [`State.init`](../../core/ROSleanCore/CollisionMonitor.lean#L279) | The state at start-up, for a configuration: unconfigured, no scan, no shape. |
 | [`Phase`](../../core/ROSleanCore/CollisionMonitor.lean#L211) | `unconfigured`, `inactive`, `active`, `finalized`. |
 | [`Output`](../../core/ROSleanCore/CollisionMonitor.lean#L591) | `silent` (nothing is published, on any topic), or `answer velocity report` for a processed command: `velocity` is the action to publish or `none` if it is withheld (R15); `report` is the state message or `none`. `answer none none` differs from `silent`: the zone polygons are published (N16). [`Output.velocity`](../../core/ROSleanCore/CollisionMonitor.lean#L604) and [`Output.report`](../../core/ROSleanCore/CollisionMonitor.lean#L609) read the two parts and are `none` for `silent`. |
-| [`Action`](../../core/ROSleanCore/CollisionMonitor.lean#L477) | `pass` (command unchanged), `slowdown k r` (multiply by the double with bit pattern `r`; zone `k`), `stopZone k` (zero; zone `k`), `stopSource` (zero; the source is invalid). |
+| [`Action`](../../core/ROSleanCore/CollisionMonitor.lean#L477) | `pass` (preserve the planar velocity), `slowdown k r` (multiply by the double with bit pattern `r`; zone `k`), `stopZone k` (zero; zone `k`), `stopSource` (zero; the source is invalid). |
 | [`Report`](../../core/ROSleanCore/CollisionMonitor.lean#L220) | `normal`, `stop k`, `slowdown k`, `source`: what a state message says (N13). [`Action.report`](../../core/ROSleanCore/CollisionMonitor.lean#L583): what an action reports for a command. |
 | [`evaluate`](../../core/ROSleanCore/CollisionMonitor.lean#L559) | The action demanded at a given time with given coordinates. It does not depend on the command's velocity. |
 | [`sourcePoints`](../../core/ROSleanCore/CollisionMonitor.lean#L506) | The points the zones are tested against, or `none` if the source is invalid. |
@@ -104,9 +66,8 @@ which is the answer to "which zone is named when several trigger". The zones
 are always those in force, `(liveConfig cfg st zoneVerts).zones`.
 
 Two more name the source:
-[`SourceInvalid`](../../ROSlean/CollisionMonitor/Basic.lean#L98) (the source is enabled, its timeout is not 0, and no scan
-is stored, or the stored scan's stamp is more than the timeout before `now`,
-or the command carries no usable coordinates for it) and
+[`SourceInvalid`](../../ROSlean/CollisionMonitor/Basic.lean#L98) (the source is enabled and its timeout is positive, and the scan is
+missing, stale, or has no usable coordinates) and
 [`NoScanPoints`](../../ROSlean/CollisionMonitor/Basic.lean#L79) (the command carries no coordinates for the scan, or a
 list that does not have one pair per reading of the stored scan).
 

@@ -6,12 +6,9 @@ Two one-minute videos of the same run of the Gazebo demo
 - [`twist_mux_gazebo.mp4`](../site/media/twist_mux_gazebo.mp4): the run as filmed by a
   camera in the Gazebo world, with captions and a panel that shows which
   input the mux is forwarding.
-- [`twist_mux_generated.mp4`](../site/media/twist_mux_generated.mp4): the same run drawn in
-  3D from the recording (not Gazebo), with a better-looking robot and the
-  same captions and panel.
+- [`twist_mux_generated.mp4`](../site/media/twist_mux_generated.mp4): a 3D replay of the recorded path and decisions, with the same captions and panel.
 
-The files are in [`site/media/`](../site/media), from where the project page
-shows them: the generated one first, with a button for the Gazebo one.
+The project page plays the 3D replay first and lets viewers switch to Gazebo footage.
 
 ## What is real in them
 

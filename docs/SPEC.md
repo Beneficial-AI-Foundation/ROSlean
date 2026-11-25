@@ -81,8 +81,7 @@ theorems.
   `locks.<name>.{topic,timeout,priority}`, `use_stamped` (default `true`).
   A missing field is a fatal error, and so is a field of the wrong YAML
   type: `timeout: 0` (integer) or `priority: 10.0` terminates the node.
-  Parameters are read once at start-up. Empty or absent `topics` / `locks`
-  is legal; the node then never publishes.
+  Parameters are read once at start-up. Empty or absent `topics` or `locks` is legal. With no inputs there is no velocity output. With no locks the node still forwards eligible inputs.
 - R15. Output topic `cmd_vel_out`, QoS keep-last 1. Subscriptions use system
   default QoS. Inputs and output are all `TwistStamped` if `use_stamped`,
   else all `Twist`; the two cannot be mixed.
@@ -113,7 +112,7 @@ theorems.
 | D1 | — | — | Withdrawn. ROSlean used to reject equal input priorities at start-up; it now reproduces R10, and the node obtains the handle order from the same `list_parameters` call as upstream. The number is kept so that D2–D9 stay stable. |
 | D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout; see "Extent of D2" below. |
 | D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
-| D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). Differs only for timeouts of the order of the callback's own run time: upstream can find an input expired inside its own callback; ROSlean cannot. |
+| D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). An expiry check can cross the timeout boundary during the callback. Upstream can expire even the input that just arrived if its timeout is short enough. |
 | D5 | NaN, infinite or very large timeouts are accepted; beyond ±2⁶³ ns the conversion is undefined behaviour | Non-finite timeouts and timeouts of magnitude 9.2e9 s or more are rejected at start-up | Avoids undefined behaviour. (Slightly conservative: 9.2e9 s to 9.22e9 s is still well defined upstream.) |
 | D6 | Priority read as 32-bit `int` before clamping | Clamped from the 64-bit parameter value | Differs only for priorities beyond ±2³¹. |
 | D7 | A start-up error escapes `main` and aborts the process (SIGABRT) | Logged as FATAL, exit code 1 | Clean failure. Visible to launch files that inspect exit codes. |
@@ -148,11 +147,9 @@ ROSlean's behaviour is the documented rule (R4) applied exactly.
 - A1. Events are delivered one at a time with the node-clock reading taken at
   delivery (R16).
 - A2. Nothing is assumed about time being monotonic for the safety
-  properties. If the clock jumps backwards (e.g. a simulation reset),
-  `now − stamp` is negative and the handle is not expired, as upstream. The
-  consequence is fail-open: a dead high-priority input stays live and a dead
-  lock publisher reads as unlocked until the clock again exceeds
-  `stamp + timeout`.
+  properties. If the clock moves back to or before `stamp + timeout`,
+  an expired input can become live again, and a lock active only because
+  of expiry can become inactive. A lock last set to true stays active.
 - A3. Stopping the robot when all inputs are silent is the base driver's job
   (R13).
 

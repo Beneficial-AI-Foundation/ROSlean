@@ -1,39 +1,14 @@
 # Tutorial: the collision monitor in Gazebo
 
-You will run two Lean-backed nodes in series on a simulated TurtleBot3: the
-`twist_mux` of the [Gazebo tutorial](TUTORIAL_GAZEBO.md) picks a velocity
-command, and the collision monitor passes it on, scales it down or replaces
-it by zero, depending on what the lidar sees. A box dropped in the robot's
-path makes it slow down and stop; when the box is taken away it drives on.
-In step 7 Nav2's own bring-up starts the Lean monitor in the place of
-`nav2_collision_monitor`.
+Run the mux and collision monitor on a TurtleBot3 in Gazebo. The robot
+slows and stops when a box enters its zones, then resumes when the box
+is removed. Step 7 shows how Nav2 can launch the Lean monitor.
 
-Do steps 1 and 2 of the [Gazebo tutorial](TUTORIAL_GAZEBO.md) first (install
-elan and pixi, clone, `pixi run build`). The build now ends with
-`Summary: 4 packages finished`. Time: about 20 minutes.
-
-What has been run where:
-
-- **macOS on Apple silicon:** everything below, driven by scripts and
-  mostly without windows (`gui:=false`): the scenario of step 3, the
-  commands of step 4 (with a script publishing what the keyboard would), the
-  checks of steps 5 and 6, and step 7 as far as it says.
-- **The windows, on 2026-11-25.** The demos of steps 3 and 7 were run with
-  their windows on an unlocked screen and the Gazebo window (and, in step
-  7, RViz) was captured from the screen about four times a second by a
-  script. The pictures in this tutorial and the two clips
-  ([step 3](../site/media/cm_gazebo_window.mp4),
-  [step 7](../site/media/cm_nav2_window.mp4)) are those captures; the
-  frames were inspected afterwards and show what the log says: the box,
-  the robot at rest in front of it, the box gone, the robot driving on.
-  The camera was moved next to the robot by Gazebo's `/gui/move_to/pose`
-  service; in each clip six frames are left out where the launch file put
-  the camera back to its overview. No person sat in front of the windows,
-  the zones were not shown in RViz, and nobody has driven this demo with a
-  real keyboard.
-- **Linux:** the check of step 5 in a cloud session without a graphics card
-  (`pixi run cm-check-cloud`, task T00, with the node as it was then);
-  nothing of step 7.
+First [install the tools and build](TUTORIAL_GAZEBO.md#2-get-the-code-and-build).
+Allow about 20 minutes after setup. The demos and checks below were run
+on macOS arm64. An earlier version of the box check also ran on Linux
+x86-64 with a virtual display. The [mux demo clip](../site/media/cm_gazebo_window.mp4)
+and [Nav2 clip](../site/media/cm_nav2_window.mp4) show the box scenarios.
 
 ## 1. What is in the simulation
 
@@ -65,8 +40,7 @@ uses them from where `roslean_twist_mux` installs them. New are:
           -0.14       0           0.30                  0.70   x (ahead, m)
   ```
 
-  If at least four lidar points lie in the stop zone, every command is
-  replaced by zero. Otherwise, if at least four lie in the slowdown zone,
+  If at least four lidar points lie in the stop zone, the monitor demands zero. After the stop publication timeout it withholds velocity until the demand changes. Otherwise, if at least four lie in the slowdown zone,
   the command is multiplied by 0.4. Otherwise it passes unchanged. The robot
   itself reaches from x = −0.10 to x = +0.04.
 - **A box**, 0.4 m on each side, which a script puts in front of the robot

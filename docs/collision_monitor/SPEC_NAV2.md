@@ -1,43 +1,13 @@
 # Collision monitor: the Nav2 extension, design record and what is still missing
 
-Written by task T04 as the specification of three additions to the node of
-[SPEC.md](SPEC.md), so that Nav2's lifecycle manager can run it in place of
-`nav2_collision_monitor`, still with the `stop` and `slowdown` actions only:
+[SPEC.md](SPEC.md) describes the current behavior. This document
+records the design of the lifecycle interface, TF handling, and
+topic-fed zones. See [§8.6](#86-what-a-user-changes-to-run-it-in-nav2)
+for Nav2 setup and [§12](#12-what-still-separates-this-from-nav2s-default-configuration) for remaining gaps.
 
-1. the lifecycle interface, the state topic and the polygon publishers;
-2. transforms from TF, with base shift correction;
-3. zones whose shape arrives on a topic (the route by which the robot's
-   footprint becomes a zone).
-
-**The specification of the node is [SPEC.md](SPEC.md), one document (task
-T09).** What this file held as rules of the node has moved there: upstream's
-rules N1–N36 with their sources and markings (was section 1), what the
-documentation does not say (section 2), the differences ND1–ND13 (section
-6) and the trusted parts (section 7; `T1`–`T10` in SPEC.md). The section
-numbers below are unchanged, so that references to them still hold. What
-stays here:
-
-- sections 3 and 4, the model and the properties **as designed** by T04 and
-  as corrected by T05 and T05b. SPEC.md, "The model" and "Properties", is
-  the description that is kept up to date; where the two differ SPEC.md
-  holds. One thing differs since T09: a polygon message with an unusable
-  vertex is not ignored (E7 below) but makes its zone demand its action
-  (SPEC.md, ND6);
-- section 5, where the transform is applied, with the measurements;
-- section 8, the shim boundary as proposed and as built by T06 (8.3 lacks
-  what T09 added: tf2's second condition in the wait, the clearing of the
-  TF buffer by the node, the query `roslean_cm_shape_unusable`: SPEC.md,
-  "Shim boundary");
-- sections 9 to 11, the edits made to SPEC.md, the test plan with where
-  each row is tested, the implementation plan;
-- **section 12, what still separates the node from Nav2's default
-  configuration**, corrected by T09 for what was built;
-- section 13, the questions that were put to the user, with what was
-  decided.
-
-Marks in the text: "(T05)", "(T05b)", "(T06)" where a task changed what
-T04 wrote. The sensor-to-base transform is applied in C++ (option A of
-section 5), decided by the user on 2026-11-24.
+The design sections keep their original numbering. For current
+behavior of unusable polygon messages, transform waits, and TF buffer
+resets, use ND6, N26, and N28 in [SPEC.md](SPEC.md).
 
 ## Sources, and how each statement is marked
 

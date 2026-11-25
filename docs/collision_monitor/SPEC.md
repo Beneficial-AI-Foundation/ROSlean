@@ -1,62 +1,20 @@
 # Collision monitor core: specification
 
-Taken from the upstream C++ source of `nav2_collision_monitor`,
-`ros-navigation/navigation2`, branch `jazzy` at commit `c704655` (package
-version 1.3.14). The files cited below are byte-identical in tags 1.3.12 and
-1.3.13, the versions `pixi.lock` resolves to. Paths are relative to
-`nav2_collision_monitor/` unless they start with `nav2_util/` or `rclcpp/`.
+This specification covers one laser scan source, one velocity input,
+circle and polygon zones, and the `stop` and `slowdown` actions. It also
+covers the Nav2 lifecycle and bond, state and polygon topics, TF, base
+shift correction, and topic-fed polygons.
 
-Rule numbers `R…` and `N…`, differences `D…` and `ND…`, trusted parts `T…`
-and assumptions `A…` are referenced from the Lean model,
-`core/ROSleanCore/CollisionMonitor.lean`, its examples,
-`ROSlean/CollisionMonitor/Examples.lean`, the node and the tests.
+The upstream reference is Nav2 Jazzy commit `c704655` (1.3.14). The
+cited files are identical in 1.3.12 and 1.3.13, the versions pinned by
+`pixi.lock`. Paths start in `nav2_collision_monitor/` unless shown
+otherwise. The Lean model, C++ node, and tests cite the rule and
+difference numbers below.
 
-Scope of this specification: one laser scan source, one velocity command
-input, circle zones and polygon zones (fixed, or with a shape that arrives
-on a topic), the `stop` and `slowdown` actions; as a lifecycle node with a
-bond, a state topic and zone polygons, with transforms from TF and base
-shift correction. Rules are stated for that subset; what upstream does
-beyond it is listed under "Excluded features".
-
-**This is one document again (task T09).** The Nav2 extension (the
-lifecycle and the bond, the state topic and the zone polygons, transforms
-from TF with base shift correction, polygon zones whose shape arrives on a
-topic) was specified by task T04 in a file of its own,
-[SPEC_NAV2.md](SPEC_NAV2.md). Its rules `N1`–`N36`, its differences `ND…`
-and its trusted parts are here now: "Rules of the Nav2 extension as
-implemented upstream", "Deliberate differences" and the list `T1`–`T10`
-under "Where the velocity is computed". The model, the properties and the
-shim boundary below have described the node with the extension since task
-T06. SPEC_NAV2.md keeps what is not a rule of the node: the design record
-(why the transform is applied in C++ and what that costs, its section 5;
-the interface as proposed and as built, section 8; the test plan and where
-each row is tested, section 10; the implementation plan), the list of what
-still separates the node from Nav2's default configuration (section 12) and
-the questions that were put to the user (section 13). References of the
-form "SPEC_NAV2.md, section 5" below point there. The events of the model
-are numbered `E1`–`E8` as in its section 3.2, and `E9` for a command
-without a clock reading (D15).
-
-The sensor-to-base transform is **not** in the model: the user decided that
-the C++ shim applies it in `double`, as upstream does (option A of
-SPEC_NAV2.md, section 5); the shim's code for it is
-`ros/roslean_collision_monitor/include/roslean_collision_monitor/transforms.hpp`.
-
-**Changed by task T09, after the review CM5** ([REVIEWS.md](../REVIEWS.md)):
-ND6 (a polygon message with an unusable vertex makes its zone demand its
-action; before, the message was ignored and the node could pass where
-upstream stops); N26 and N28 (the wait for a transform ends when the clock
-jumps back by more than 3 s, and the TF buffer is cleared at the jump); N16
-(a disabled zone is not published); N29 (unusable `points` fall back to the
-topic); ND3 (a stop can be delayed by the lookups of later zones); ND13
-(new: a refused refresh); T10 (new: the Lean runtime in the node's
-threads); D15 and ND10 (D15 holds for the stand-alone executable only).
-
-**Added by task T03.** D15 (a `/clock` message with a negative time), with
-the model's transition `stepNoClock`, the call `roslean_cm_on_cmd_no_clock`
-and the trusted part T9; and under "Command event" that the exported command
-call is a second, fast way to compute `step`, proved equal to it, with the
-budget for the cost of a command.
+For design decisions and Nav2 setup, see [SPEC_NAV2.md](SPEC_NAV2.md).
+For changes after review, see [REVIEWS.md](../REVIEWS.md). C++ applies the
+sensor transform in `double` in `transforms.hpp`. Lean receives the
+transformed points.
 
 ## Rules as implemented upstream
 
@@ -1828,7 +1786,7 @@ created; the node stays unconfigured and the process stays up (N3).
 | D6 | Slowdown selection and the zero test use the computed floating-point velocity | Selection by exact order of the ratios; zero iff stop, or the command is zero, or the selected ratio is 0 | The core does not compute velocities. Three differences. (a) When a product or squared norm underflows or overflows (command components below about 10⁻¹⁶² or above 10¹⁵⁴ in magnitude, or a ratio below about 10⁻¹⁶² with an ordinary command), or two ratios are within rounding of each other: upstream then passes the command unscaled or picks the other zone, and a product that underflows to zero is not treated as zero for R15. (b) For a command that is zero in the three components, in a triggered slowdown zone: upstream takes no action (`0 < 0` is false), the model returns `slowdown k r`. The published bits are the same (zero), but the action, and so `out_kind` and any log line, differ. That `evaluate` does not depend on the command is therefore a difference from upstream, not one of its rules. |
 | D7 | The clock is read at the start of `process` and again in `publishVelocity` | One reading per event, taken before the lookups (ND2) | A decision is a function of (state, event). Differs by the run time of the callback, which now includes any wait for a transform (up to `transform_tolerance` per lookup); only for the boundary of `stop_pub_timeout`. |
 | D8 | A scan stamp with negative seconds ends the process with an uncaught exception when the next command arrives | The stamp is taken as 0: under a non-zero timeout the scan is too old once the node clock is past the timeout (`0 + source_timeout < now`) | The node must not crash on input. The scan is **used** with timeout 0, and also while the node clock is still at or below the timeout (simulated time shortly after start: with `source_timeout: 2.0` and the clock at 1.5 s the scan counts as fresh). The shim's sum does not detect every stamp upstream refuses (`sec = -1` with `nanosec ≥ 10⁹` is positive); see REVIEWS, CM1/CM2 finding 9. |
-| D9 | Negative timeouts accepted (a negative `source_timeout` makes nearly every scan too old; a negative `stop_pub_timeout` publishes zero once); non-finite or huge ones are undefined behaviour in the conversion | Negative, non-finite, and timeouts of 9.2·10⁹ s or more are refused, in Lean (`timeoutNs`); a monitor with a refused timeout stops every command | Keeps times in `Nat`; avoids undefined behaviour. A refused value never becomes 0, which would switch the source check off. Accepted values are upstream's, to the nanosecond, including the default of `<source>.source_timeout` (R17). |
+| D9 | Negative timeouts accepted (a negative `source_timeout` makes nearly every scan too old; a negative `stop_pub_timeout` publishes zero once); non-finite or huge ones are undefined behaviour in the conversion | Negative, non-finite, and timeouts of 9.2·10⁹ s or more are refused, in Lean (`timeoutNs`); the core returns a stop for a refused timeout only in the active phase | Keeps times in `Nat`; avoids undefined behaviour. A refused value never becomes 0, which would switch the source check off. Accepted values are upstream's, to the nanosecond, including the default of `<source>.source_timeout` (R17). |
 | D10 | `max_points` overrides `min_points`; `min_points` read into a 32-bit `int`, so `min_points: 4294967297` is 1 | `max_points` refused; `min_points` outside −2³¹ … 2³¹ − 1 refused | One rule for the threshold in the core. Inside the range the two agree; outside it upstream's value is the wrapped one, and taking the number at face value would make a zone that triggers upstream never trigger here. |
 | D11 | Scan points transformed to `base_frame_id` by TF, by default with correction for the robot's motion since the stamp; a failed lookup stops the robot (R8) | (Replaced by task T06.) The same: TF is used as upstream uses it, base shift correction included (N22–N27), and a tilted sensor is projected as upstream projects it (N25). The transform is applied in the shim, never fused (ND1). `<source>.roslean_sensor_pose` is removed and refused | SPEC_NAV2.md, sections 5 and 6. |
 | D12 | Coordinates unbounded | Coordinates saturate at ±1000 m; zones must lie inside | Bounded integers at the boundary; see "Safe direction". |

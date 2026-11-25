@@ -107,7 +107,7 @@ Used by the proofs above; worth knowing if you extend the model.
 
 - **That the model equals upstream `twist_mux`.** That is tested, not proved:
   both nodes are run on the same messages and their decisions compared. The
-  one known difference is at exact timeout boundaries (SPEC, D2).
+  tests exercise ordinary arbitration. Timeout arithmetic, clock reads, and clamping very large priorities can change decisions (SPEC D2, D4, D6).
 - **Anything about the C++ shim:** mapping topics to indices, reading the
   clock, converting seconds to nanoseconds, and publishing on `true`.
 - **That the mux stops the robot when all inputs go silent.** It publishes
@@ -115,8 +115,8 @@ Used by the proofs above; worth knowing if you extend the model.
 - **Anything about concurrent callbacks.** The model handles one event at a
   time, and the node uses a single-threaded executor.
 - **That time moves forward.** No theorem assumes it. If the clock jumps
-  back, expired inputs and silent lock publishers count as fresh again until
-  the clock catches up, which the theorems state faithfully.
+  back, expired inputs can become live again. A lock active only because of
+  expiry can become inactive. A lock last set to true stays active.
 
 Two consequences that are easy to miss: a lock blocks only *strictly* lower
 priorities, and priorities are capped at 255, so an input at 255 can never be

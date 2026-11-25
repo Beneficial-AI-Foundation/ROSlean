@@ -7,7 +7,9 @@ the black-box harness that pins down upstream's `nav2_collision_monitor`
 random cases, under fault injection, and under load. Rule numbers `R…`,
 differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
 
-**Short answer.**
+**Latest behavior results.** See [the final comparison](#after-the-fixes-of-the-review-cm5-task-t09) for the lifecycle node: 318 core checks, 289 Nav2 checks, 109 fault checks, and two randomized suites. The [fresh-machine audit](../AUDIT.md) covers the full ROS suite and a repeat of the command benchmark.
+
+**Earlier measurements.** The summary below describes the original comparison and the follow-up command-path optimization.
 
 - *Behaviour.* In every fixed scenario and every random case the Lean node
   differs from upstream only where the SPEC says it does. No divergence in
@@ -55,7 +57,7 @@ differences `D…` and trusted items `T…` are those of [SPEC.md](SPEC.md).
   the binary was confirmed (18 new scenarios), by both versions of upstream
   that were run.
 
-Everything was run on 2026-11-24, on two platforms, with the Lean node as
+The original comparison ran on 2026-11-24 on two platforms, with the Lean node as
 on the branch `collision-monitor` at commit `b503265` (Lean 4.37.0-rc1):
 after the fixes of the review CM3/CM4 and after the core's model was
 extended for transforms and the lifecycle (task T05; the node itself, the
@@ -1334,6 +1336,8 @@ non-finite vertex, a backward jump of the clock, a wait for a transform
 (`transform_tolerance` is 0 there); those are covered by the scenarios only.
 
 ## What was not tested
+
+These limits apply to the original comparison. The final comparison above covers the lifecycle, state topic, TF, and base shift correction.
 
 - **Linux on its own hardware, x86-64.** The Linux runs are a container in
   Docker's virtual machine on an Apple processor. Behaviour is covered by

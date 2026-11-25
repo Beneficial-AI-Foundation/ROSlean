@@ -1,66 +1,23 @@
 # ROSlean
 
-ROS 2 nodes whose decision logic is written and proved in Lean. Two nodes so
-far:
+ROSlean implements decision logic for two ROS 2 Jazzy nodes in Lean.
+Lean checks the rules for selecting or changing velocity commands. ROS,
+the C++ integration, and the robot hardware are outside those proofs.
 
-- [`twist_mux`](https://index.ros.org/p/twist_mux/), which picks one of
-  several velocity command sources by priority, freshness and locks. A
-  drop-in replacement for the upstream node.
-- The stop and slowdown core of Nav2's
-  [`nav2_collision_monitor`](https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor),
-  which passes a velocity command on, scales it down or replaces it by zero,
-  depending on what a laser scan shows in configured zones. Nav2's lifecycle
-  manager can launch it in place of its own monitor. It is **not** a drop-in
-  replacement for Nav2's default configuration, which uses the `approach`
-  action; see [The collision monitor](#the-collision-monitor).
+- **`roslean_twist_mux`** selects a velocity source by priority, timeout, and locks. It accepts the upstream YAML format and uses the same command topics. See the [compatibility differences](docs/SPEC.md#deliberate-differences-in-roslean).
+- **`roslean_collision_monitor`** supports one lidar, circle and polygon zones, and the `stop` and `slowdown` actions. To use it with Nav2, [edit the launch file and replace the default `approach` zone](#under-nav2).
 
-Project page: <https://beneficial-ai-foundation.github.io/ROSlean/> (source in
-[`site/`](site), deployed by the `pages.yml` workflow on pushes to `main`).
+| | twist_mux | Collision monitor |
+| --- | --- | --- |
+| Run a demo | [Turtlesim](docs/TUTORIAL.md), [Gazebo](docs/TUTORIAL_GAZEBO.md) | [Gazebo and Nav2](docs/TUTORIAL_COLLISION_MONITOR.md) |
+| Read the rules | [Specification](docs/SPEC.md) | [Specification](docs/collision_monitor/SPEC.md), [Nav2 integration](docs/collision_monitor/SPEC_NAV2.md) |
+| Read the proofs | [Theorems](docs/THEOREMS.md) | [Theorems](docs/collision_monitor/THEOREMS.md) |
+| Compare with upstream | [Benchmarks](docs/BENCHMARK.md) | [Tests and benchmarks](docs/collision_monitor/COMPARISON.md), [upstream behavior](docs/collision_monitor/UPSTREAM_BEHAVIOUR.md) |
 
-Documents, twist_mux:
-
-- [twist_mux.md](twist_mux.md): scope, and where to start as a new reader.
-- [docs/SPEC.md](docs/SPEC.md): the rules, read from the upstream C++ source,
-  and every deliberate difference.
-- [docs/THEOREMS.md](docs/THEOREMS.md): the main theorems in plain words,
-  with links to the statements.
-- [docs/TUTORIAL.md](docs/TUTORIAL.md): from an empty machine to the
-  turtlesim experiment, step by step.
-- [docs/TUTORIAL_GAZEBO.md](docs/TUTORIAL_GAZEBO.md): the same experiment
-  on a TurtleBot3 in a furnished apartment in Gazebo, with Nav2.
-- [docs/BENCHMARK.md](docs/BENCHMARK.md): run-time comparison with upstream
-  `twist_mux`, and what it means on a robot.
-
-Documents, collision monitor:
-
-- [docs/collision_monitor/SPEC.md](docs/collision_monitor/SPEC.md): upstream's
-  rules (R1–R19, N1–N36), every difference (D1–D15, ND1–ND13), what is
-  trusted (T1–T10), the assumptions (A1–A4).
-- [docs/collision_monitor/THEOREMS.md](docs/collision_monitor/THEOREMS.md):
-  the theorems in plain words, and what is not proved.
-- [docs/collision_monitor/UPSTREAM_BEHAVIOUR.md](docs/collision_monitor/UPSTREAM_BEHAVIOUR.md):
-  what upstream's binary does, found by black-box tests.
-- [docs/collision_monitor/COMPARISON.md](docs/collision_monitor/COMPARISON.md):
-  the Lean node beside upstream: scenarios, random cases, fault injection,
-  run time.
-- [docs/collision_monitor/SPEC_NAV2.md](docs/collision_monitor/SPEC_NAV2.md):
-  the design record of the Nav2 extension; section 8.6 is what a user
-  changes to run the node in Nav2, section 12 what still separates it from
-  Nav2's default configuration.
-- [docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md):
-  the Gazebo demo.
-- [site/gaps.html](site/gaps.html) (on the project page: "What is
-  missing"): every gap, what the node does there today, and what closing it
-  would take.
-
-Both:
-
-- [docs/PLAN.md](docs/PLAN.md): development plan, status, what is not done,
-  lessons.
-- [docs/REVIEWS.md](docs/REVIEWS.md): the independent reviews and what was
-  done about each finding.
-- [tasks/PLAN.md](tasks/PLAN.md): the task list of the collision monitor
-  work and the decisions, with who took each.
+See the [project site](https://beneficial-ai-foundation.github.io/ROSlean/),
+[development plan](docs/PLAN.md), and [review findings](docs/REVIEWS.md).
+GitHub Pages publishes [`site/`](site/) on pushes to `main` that change the
+site or its workflow.
 
 ## Layout
 
@@ -81,52 +38,34 @@ Both:
 
 ## Quick start
 
-Requires `git`, `curl`, [elan](https://github.com/leanprover/elan) and
-[pixi](https://pixi.sh), with `lake` and `pixi` on `PATH` (each installer
-adds its directory to the `PATH` of new shells only, so open a new terminal
-after installing). On macOS, `git` comes with the Xcode command line tools.
-The ROS 2 Jazzy environment (RoboStack, with Nav2 and Gazebo; 4.5 GB on
-macOS arm64, 6 GB on Linux arm64, and up to as much again in pixi's download
-cache) is installed into `.pixi/` on first use; the first build also
-downloads the Lean toolchain (3 GB in `~/.elan`), and the first
-`pixi run prove` downloads Mathlib (8 GB in `.lake/`). Altogether a fresh
-machine needs about 21 GB of disk; the demos need a display. On Linux the
-build needs two more steps for now: see "What has been run where".
+Install Git, curl, [elan](https://github.com/leanprover/elan), and
+[pixi](https://pixi.sh). On macOS, install the Xcode Command Line Tools
+for Git and the SDK. Open a new terminal so `lake` and `pixi` are on
+`PATH`. Pixi installs ROS 2 Jazzy, Nav2, and Gazebo locally. Allow roughly
+21–24 GB for the environment, caches, Lean, and Mathlib if you run every
+step. The graphical demos need a display.
+
+To get both nodes from this branch, clone `collision-monitor`. Run the
+build commands from the repository root.
 
 ```sh
-git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git && cd ROSlean
-pixi run build        # lake build of the core + colcon build of the ROS packages
-pixi run test-quick   # the tests without the long comparisons with upstream; about 7 minutes
-pixi run test         # all tests; about 40 minutes
-pixi run prove        # check all theorems (first run fetches or builds Mathlib)
-pixi run demo         # turtlesim driven through the Lean-backed mux
+git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+cd ROSlean
+pixi run build        # build the Lean core and four ROS packages
+pixi run test-quick   # skip tests labeled long
+pixi run test         # full suite, about 40 minutes in the audit
+pixi run prove        # fetch Mathlib's cache and check the proofs
+pixi run demo         # run turtlesim with the mux
 ```
 
-What has been run where:
+The [fresh-machine audit](docs/AUDIT.md) ran the build, proofs, tests,
+and demos on macOS arm64. It also ran the full suite in Linux arm64
+containers using Docker and pixi. The pixi run needed two fixes, now in
+the branch. The repaired build passed five ROS smoke and interface tests.
+The twist mux and an earlier collision monitor were tested on Linux
+x86-64. See the [platform results](site/gaps.html#platforms) for details.
 
-- **macOS arm64:** everything. From a fresh clone with an empty home
-  directory (the audit, [docs/AUDIT.md](docs/AUDIT.md)): build, proofs,
-  `pixi run test` with `29 tests, 0 errors, 0 failures`, the turtlesim demo
-  and the three Gazebo checks.
-- **Linux arm64 through pixi** (the same audit; a plain `ubuntu:24.04`
-  container in Docker on that Mac): at the audited commit `pixi run build`
-  failed there, first for want of `strip`, then linking `test_cm_ffi`;
-  with two workarounds `pixi run test` gave `28 tests, 0 errors, 0 failures`
-  (beside upstream 1.3.13, which is what `pixi.lock` pins on Linux).
-  Both were repaired after the audit (commits `f9fcdeb`, `da8fd3d`: `strip` is found from the compiler's name, `test_cm_ffi` links `Threads`). On the repaired tree, in the same kind of container, `pixi run build` succeeds as written, the library is stripped, and five tests were run and pass (`test_mux_ffi`, `test_cm_ffi`, `smoke_conversions`, `smoke_transforms`, `smoke_node`); the full suite was not run again there.
-  `pixi run prove` needs neither step. The demos and `pixi run cm-check`
-  need a display.
-- **Linux x86-64** (Ubuntu 24.04, through pixi): twist_mux: `pixi run build`
-  and `pixi run test` pass and the turtlesim demo runs. The collision
-  monitor: one cloud session ran build, all tests then present (11 tests,
-  0 failures), `lake build` of all theorems then present, and the headless
-  Gazebo check, on the node as it was **before** it became a lifecycle node
-  with transforms from TF. The node as it is now has not been run on x86-64.
-- **Linux arm64:** a container in Docker on the same Mac, for the collision
-  monitor's comparison with upstream (`bench/cm_linux/`) and the Docker
-  build below. Not Linux on its own hardware.
-
-Run the mux the same way as upstream:
+Run the mux with the example parameters.
 
 ```sh
 pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_mux \
@@ -154,47 +93,33 @@ ros2 lifecycle set /collision_monitor activate
 
 ## Linux and deployment
 
-A Lean installation is needed to build, not to run, and building the nodes
-never needs Mathlib. `roslean_core` installs `libroslean_core` together with
-the Lean runtime it uses, so the install tree does not refer to the Lean
-toolchain or to this checkout. Built normally (without `--symlink-install`,
-which `pixi run build` uses for development), it can be copied to another
-machine of the same OS and architecture that has ROS 2 Jazzy.
-
-- **macOS:** the runtime is linked statically into `libroslean_core` (2.5 MB).
-- **Linux:** Lean's static runtime cannot be put in a shared library, so a
-  stripped copy of Lean's shared runtime, `libleanshared.so` (about 190 MB),
-  is installed next to `libroslean_core.so`.
+Builds need Lean. The installed nodes carry the Lean runtime with them.
+Use a regular colcon install to copy the tree to a machine with the same
+OS, architecture, and ROS 2 Jazzy dependencies. The development build
+uses `--symlink-install`.
 
 ```sh
 docker build -f docker/Dockerfile -t roslean-twist-mux .
-docker run --rm --network host roslean-twist-mux                # example config
-docker run --rm --network host -v $PWD/my.yaml:/cfg.yaml roslean-twist-mux \
+docker run --rm --network host roslean-twist-mux
+docker run --rm --network host -v "$PWD/my.yaml:/cfg.yaml" roslean-twist-mux \
   ros2 run roslean_twist_mux twist_mux --ros-args --params-file /cfg.yaml
+docker run --rm --network host roslean-twist-mux \
+  ros2 launch roslean_collision_monitor collision_monitor_launch.py
 ```
 
-The image is built in two stages on the official `ros:jazzy-ros-base`
-(Ubuntu 24.04, ROS from apt). The first installs Lean, builds the packages,
-runs the tests including the comparison with apt's `ros-jazzy-twist-mux`, and
-checks that the install tree is self-contained; the build fails if any of
-that fails. The final image holds ROS and the install tree only.
-`--build-arg RUN_TESTS=0` skips the tests. The collision monitor is in the
-same image. With the collision monitor in its present form the image was
-built once on arm64 with the tests (the audit, docs/AUDIT.md): `28 tests,
-0 errors, 0 failures` beside apt's `nav2_collision_monitor` 1.3.14 and
-`twist_mux` 4.5.0, 39 minutes in all; four scenarios that need
-`nav2_bringup`'s parameter file are not run there. Not built on x86-64 in
-this form.
+The image builds both nodes on Ubuntu 24.04 with ROS 2 Jazzy. It runs
+the available ROS tests and verifies the install tree before copying it
+into the runtime image. Use `--build-arg RUN_TESTS=0` to skip the tests.
+Four Nav2 scenarios require `nav2_bringup`, which the image omits. The
+[arm64 audit](docs/AUDIT.md) recorded 28 passing tests in 39 minutes.
 
-Without Docker, on a Linux machine with ROS 2 Jazzy and elan installed:
-`colcon build --base-paths ros` in this directory, which is what the
-Dockerfile does.
+On a Linux host with the ROS dependencies and elan installed, source
+`/opt/ros/jazzy/setup.bash` and run `colcon build --base-paths ros`.
 
 ## Demo
 
-A turtlesim turtle driven through the mux by three sources: a scripted
-planner (priority 10), keyboard teleop (priority 100) and an e-stop lock
-(priority 255).
+In turtlesim, the mux selects between a planner (priority 10) and the
+keyboard (100). The e-stop lock (255) blocks both inputs.
 
 ```sh
 pixi run demo            # terminal 1: turtlesim, mux, planner, narrator
@@ -205,8 +130,8 @@ pixi run demo-release    #             release it
 
 The turtle circles under the planner. Holding a teleop key takes over; half
 a second after the key is released the planner resumes. Engaging the e-stop
-freezes the turtle whatever else is publishing. The narrator in terminal 1
-prints each change together with the theorem that explains it, for example:
+blocks both sources. The simulator stops when its last command expires.
+The narrator prints each change and the corresponding theorem.
 
 ```
 >>> teleop drives; planner messages are dropped while teleop is live
@@ -238,7 +163,9 @@ pixi run cm-check --monitor nav2_collision_monitor   # the same with upstream's 
 See [docs/TUTORIAL_COLLISION_MONITOR.md](docs/TUTORIAL_COLLISION_MONITOR.md),
 which also covers Nav2 as the planner and Nav2 launching the Lean node in
 place of its own monitor (section 7; `pixi run cm-gazebo-bringup`,
-`pixi run cm-check --nav2`). The check passed in nine runs of nine on macOS
+`pixi run cm-check --nav2`). On Linux the check still needs a display for
+lidar rendering. Use `pixi run cm-check-cloud` with `xvfb-run` on a
+headless host. The check passed in nine runs of nine on macOS
 with an earlier version of the node (the robot at rest 0.255 to 0.268 m from
 the box, 0 to 14 mm after the first zero command) and in three runs of three
 with the node as a lifecycle node that reads TF (at rest 0.254 to 0.260 m,
@@ -275,8 +202,7 @@ What is **not** proved, and is trusted or only tested:
 
 - **That the model matches upstream `twist_mux`.** The model is a reading of
   the C++ source, checked by running both nodes on the same event sequences
-  (fixed scenarios and a randomised differential test). The one known
-  difference in decisions is at exact timeout boundaries (SPEC, D2).
+  (fixed scenarios and a randomised differential test). Integer time arithmetic and one clock read per event can change decisions near timeout boundaries. Large priority values can also be clamped differently (SPEC D2, D4, D6).
 - **The C++ shim** (`twist_mux_node.cpp`, `roslean_core/mux.hpp`): mapping
   subscriptions to indices, reading the clock, converting timeouts from
   seconds to nanoseconds, reference counting of Lean objects, calling the
@@ -284,11 +210,12 @@ What is **not** proved, and is trusted or only tested:
 - **The declared C signatures.** They are checked against Lean's generated C
   at build time, except that Lean passes `Int64` as `uint64_t`, so signedness
   is not checked.
-- **One event at a time.** The node uses a single-threaded executor; the
+- **One event at a time.** The mux uses a single-threaded executor; the
   theorems say nothing about concurrent callbacks.
 - **The clock.** Theorems are about recorded clock readings. If the clock
-  jumps backwards (a simulation reset), expired inputs and dead lock
-  publishers count as fresh again until the clock catches up, as in upstream.
+  jumps backwards, an expired input can become live again. A lock active
+  only because of expiry can become inactive. A lock last set to true
+  stays active.
 - **The order of inputs.** Ties between equal priorities go to the earlier
   input. The theorems take the order as given; the shim gets it from
   `list_parameters` (ASCII order of the handle names), as upstream does.
@@ -308,14 +235,10 @@ Two things the theorems make precise that are easy to get wrong:
 (Jazzy): one laser scan source; circle and polygon zones with fixed shapes,
 and polygon zones whose shape arrives on a topic; the actions `stop` and
 `slowdown`; as a lifecycle node with a bond, the state topic and the zone
-polygons, with transforms from TF and base shift correction. Anything else
-in a parameter file (`approach`, `limit`, velocity polygons, point cloud,
-range and polygon sources, several sources) fails the `configure`
-transition with one message that names every refused parameter.
+polygons, with transforms from TF and base shift correction. Configuring `approach`, `limit`, velocity polygons, non-scan sources, or several sources fails the `configure` transition. The error lists the refused parameters.
 
-The claim is about commands, not physics: which velocity the node publishes
-for the messages it received. Whether a robot then avoids an obstacle
-depends also on the sensor, the zone sizes, the transforms and the base.
+The proofs cover velocity decisions. Obstacle avoidance also depends on
+the sensor, zone sizes, transforms, and base controller.
 
 ### What is proved
 
@@ -326,56 +249,48 @@ assumes, is [docs/collision_monitor/THEOREMS.md](docs/collision_monitor/THEOREMS
 
 | Property | Theorem | Statement |
 | --- | --- | --- |
-| What is answered | `processed_iff` | An event produces output iff it is a command, the node is active, and the command has no infinite or NaN component. |
-| Decision | `evaluate_eq_stopSource_iff`, `evaluate_eq_stopZone_iff`, `evaluate_eq_slowdown_iff`, `evaluate_eq_pass_iff` | Four if-and-only-if statements, one per action: stop for an invalid source; stop by the first triggered stop zone; slowdown by the triggered slowdown zone with the smallest ratio, only if no stop zone is triggered; pass otherwise. |
-| What is published | `velocity_eq_some_iff` | The demanded action is published unless it yields zero, the previous one did too, and `stop_pub_timeout` has passed since the zero first appeared; then nothing is published. |
-| Stop | `stop`, `run_stop` | With a triggered stop zone the node publishes zero or nothing, never a non-zero velocity (`stop`). `run_stop` says the same after any sequence of events since start-up, for a stop zone with a fixed shape, an enabled source, a scan that is not too old and coordinates that fit it. |
+| What is answered | `processed_iff` | The model processes only finite commands received while active. A processed command can still produce no ROS messages. |
+| Decision | `evaluate_eq_stopSource_iff`, `evaluate_eq_stopZone_iff`, `evaluate_eq_slowdown_iff`, `evaluate_eq_pass_iff` | Four if-and-only-if statements, one per action: Stop for an invalid source or the first triggered stop zone. Otherwise apply the smallest triggered slowdown ratio below 1, breaking ties by zone order, or pass. |
+| What is published | `velocity_eq_some_iff` | For a processed command, withhold velocity after `stop_pub_timeout` if the demanded velocity stays zero. State and visualization have separate rules. |
+| Stop | `stop`, `run_stop` | For an active monitor and a finite command, a triggered stop zone yields zero or withheld velocity. The trace theorem covers fixed zones with an enabled source, a current scan, and matching coordinates. |
 | Stale data, no transform | `stale`, `no_transform`, `run_stale`, `run_no_transform` | With the source enabled and a non-zero `source_timeout`: no scan, a scan older than the timeout, or no usable transform for it gives the stop for an invalid source. |
 | No amplification | `no_amplification`, `run_no_amplification`, `published_ratio_in_unit_interval` | Every published action is pass, a stop, or a slowdown whose ratio is the configured one of the zone named, with a value in [0, 1). |
 | Slowdown bound | `slowdown_bound` | The ratio applied is at most that of every triggered slowdown zone. |
-| Pass-through | `pass_through`, `run_pass_through` | With a valid source and no zone triggered, a non-zero command is published unchanged. |
+| Pass-through | `pass_through`, `run_pass_through` | With an active monitor, a valid source, and no triggered zone, a finite command with nonzero planar velocity keeps its planar components. |
 | Monotonicity | `zonesAction_stop_mono`, `evaluate_isStop_mono` | Adding points never lifts a stop. |
 | Bad data | `output_filter_validBeam`, `step_cmd_of_not_finite` | Readings that are NaN or outside the range limits never change a decision; a non-finite command is ignored and leaves the state unchanged. |
 | Lifecycle | `output_of_not_active`, `run_silent_before_activate`, `run_silent_after_shutdown` | Nothing is published while the node is not active, nor after a shutdown. |
 | After the zero period | `run_withheld_last_published_zero` | In any run from start-up, when a velocity is withheld, the last velocity this node published was a zero. |
-| Unusable polygon message | `evaluate_isStop_of_unusable`, `run_stop_after_unusable` | After a polygon message with a non-finite or out-of-range vertex, an enabled stop zone fed by that topic stops every command until a usable message arrives (ND6). |
-| Without a clock | `noClock_velocity` | A finite command that arrives while the node has no valid clock reading is answered with zero, whatever the configuration (D15). |
-| Rounding errs towards "inside" | `circle_safe`, `nearBoundary_of_rounded`, `contains_of_shim` | A point strictly inside a configured circle is inside the model's integer circle. For polygons the quantitative half of the same claim is proved; see below. |
-| Code that runs | `cm_readBack_after_fast`, `stepCmdFast_eq`, `cm_not_ok_after` | The five numbers the node reads from the C interface after any sequence of calls determine the model's whole output for the command; the fast command path that C calls is the same function as the model's `step`; a refused configuration stops every command. |
+| Unusable polygon message | `evaluate_isStop_of_unusable`, `run_stop_after_unusable` | For an enabled topic stop zone, a polygon with at least three vertices and a usable transform triggers the zone if any transformed vertex is unusable. A usable shape or cleanup clears it (ND6). |
+| Without a clock | `noClock_velocity` | The active standalone node answers finite commands with zero while its clock is invalid (D15). |
+| Rounding errs towards "inside" | `circle_safe`, `nearBoundary_of_rounded`, `contains_of_shim` | For an accepted radius and finite coordinates, the model counts points strictly inside the circle. The polygon proof covers the rounding margin under its stated assumptions. |
+| Code that runs | `cm_readBack_after_fast`, `stepCmdFast_eq`, `cm_not_ok_after` | For an accepted configuration with at most 2³² zones, the fast C interface returns the model's output after the calls covered by the theorem. No-clock commands use a separate path. A refused core configuration returns a stop only in the active phase. The ROS node fails configuration and stays inactive. |
 
 ### What is not proved, and is trusted or only tested
 
 The trusted parts are numbered T1 to T10 in
 [SPEC.md](docs/collision_monitor/SPEC.md), "Where the velocity is computed".
 
-- **That a demanded stop is published.** It is not always, as upstream's is
-  not: zero is published for `stop_pub_timeout` and then nothing, whatever
-  the cause of the zero (R15). The theorems say "zero or nothing" (`stop`)
-  and "the last velocity published was a zero"
-  (`run_withheld_last_published_zero`). That keeps the robot stopped only if
-  the base holds its last command and nothing else commands it (assumption
-  A3). The user decided to keep upstream's behaviour;
-  [findings/stop_pub_timeout_theorem.md](findings/stop_pub_timeout_theorem.md)
-  has the sequence and what would make the theorem strong.
+- **When a stop is withheld.** After `stop_pub_timeout` of zero demand,
+  the monitor stops publishing velocity. Its last published velocity was
+  zero. The base must hold that command and receive no other commands
+  for this to keep the robot stopped (A3).
+  [Example and proof](findings/stop_pub_timeout_theorem.md).
 - **That the model matches upstream.** Read from the source and tested
   against the binary. On the final node on macOS: 318 checks in 73 scenario
   runs and 289 checks in 44 runs of the Nav2 extension, 0 failures, every
   difference a numbered one; 300 random cases with 26,951 commands, none
   outside the stated bounds, the Lean node the more restrictive one in each
-  of the 586 commands that differed; 300 random cases of the extension with
+  of the 586 commands that differed in demanded velocity; 300 random cases of the extension with
   16,797 commands, no disagreement. In the Linux arm64 container: the 289
   checks and 20 random cases. Details and the earlier, larger runs:
   [COMPARISON.md](docs/collision_monitor/COMPARISON.md).
 - **The slowdown multiplication** (T1). The core returns the ratio's bit
-  pattern; the shim multiplies in `double`. That the product is no larger
-  than the command is IEEE-754's, not a Lean theorem.
+  pattern; the shim multiplies in `double`. Lean proves the ratio bound. The shim relies on IEEE-754 for the product.
 - **The points of a scan** (T2, T6, T7). The shim computes each scan point,
   looks the transform up in TF and applies it in `double`
-  (`transforms.hpp`), as upstream does; the user decided this over an exact
-  transform in Lean, which was built and cost about 20 times upstream's time
-  per command. The theorems hold for whatever coordinates a command carries;
-  that they are the right ones is tested (`smoke_transforms`, the `tf-*` and
-  `shift-*` scenarios), not proved.
+  (`transforms.hpp`). The proofs use those coordinates as inputs.
+  `smoke_transforms` and the `tf-*` and `shift-*` scenarios check them.
 - **The topological half of the polygon margin argument.** That a point
   inside the configured polygon which ends up outside the rounded one was
   passed over by the boundary is prose. Tested: 34.0 million points against
@@ -397,17 +312,16 @@ The trusted parts are numbered T1 to T10 in
   circle of radius 0.
 - Lean's compiler and runtime, tf2, rclcpp, the middleware.
 
-Where the node is fail-open, as upstream is, by the user's decision: a zone
-fed by a topic takes no action until its first message; `source_timeout: 0`
-switches off the stop for an old or missing scan and for a missing
-transform; a scan with no valid reading, or with unusable range limits,
-reads as free space; without incoming commands the node publishes nothing.
+A topic zone takes no action before its first usable shape or unusable
+message that triggers ND6. A zero `source_timeout` disables stops for
+missing or stale scans and missing transforms. A scan with no valid
+readings supplies zero points, and the zone rules still run. Without
+incoming commands the monitor publishes no velocity.
 
-Where it differs from upstream it is the more restrictive one (zones grown
-by up to 3.5 mm for a circle and 4.4 mm for a polygon, D4; ND6; D15; refused
-parameter values), with one exception in principle: ND13, a zone in another
-frame whose recomputed vertices lie about a kilometre from the base stays
-where it was. One difference is a delay, not a decision: ND3.
+ROSlean was stricter in the randomized zone cases that differed from
+upstream. Other differences affect timing or edge cases. For example,
+ND13 leaves a moving zone in its previous position if the recomputed
+vertices are out of range. See [the difference table](docs/collision_monitor/SPEC.md#deliberate-differences-in-roslean).
 
 ### Under Nav2
 

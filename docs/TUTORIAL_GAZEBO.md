@@ -1,37 +1,13 @@
 # Tutorial: the experiment in Gazebo
 
-You will run the Lean-backed `twist_mux` on a simulated TurtleBot3 in a
-furnished apartment, first with a simple patrol as the planner and then with
-Nav2, the standard ROS 2 navigation stack, and watch the mux arbitrate
-between the planner, your keyboard and an emergency stop.
+Run the Lean-backed `twist_mux` on a TurtleBot3 in Gazebo. A patrol script
+or Nav2 supplies commands. The keyboard can take over, and a stop lock
+blocks both sources.
 
-This is the same experiment as in the [turtlesim tutorial](TUTORIAL.md), in a
-simulator with physics, a lidar and furniture. If you have done that
-tutorial, skip to step 3.
-
-Time: about 20 minutes on top of the downloads. Disk: about 8 GB on macOS
-(ROS with Gazebo and Nav2 4.5 GB, the Lean toolchain 3.3 GB), about 9 GB on
-Linux (5.9 GB and 3.3 GB).
-
-What has been run where:
-
-- **macOS on Apple silicon:** every step below, checked by scripts that
-  publish the same messages your keyboard would and by screenshots of the
-  Gazebo and RViz windows. Two things need a person and have not been tried:
-  driving with the real keyboard, and clicking a goal in RViz.
-- **Linux (Ubuntu 24.04, x86-64):** steps 1 to 5 in part. The machine had
-  no screen, no graphics card and no access to Gazebo's model library, so:
-  the windows were drawn on a virtual display (Xvfb) with software
-  rendering and checked by screenshot; the keyboard was replaced by a
-  script that publishes the same messages; and the furniture was taken out
-  of the world file for the run, leaving the walls, the floor and the
-  robot. In that reduced room the patrol, the keyboard take-over, the
-  e-stop and its release behaved as described in step 4, and with Nav2
-  (step 5) the robot localised, reached the first stop of the tour and
-  obeyed the keyboard and the e-stop. Not run on Linux: the furnished
-  apartment, a desktop session with a graphics card and a real keyboard,
-  a look at the RViz view, clicking a goal in RViz, and the experiments in
-  steps 6 and 8.
+Allow about 20 minutes after setup. If you built the project in the
+[turtlesim tutorial](TUTORIAL.md), skip to step 3. The furnished demo was
+checked on macOS arm64. The Linux x86-64 run used Xvfb, software rendering,
+and a room without furniture.
 
 ![The apartment in Gazebo](images/gazebo.png)
 
@@ -54,13 +30,13 @@ without its window.
 ## 2. Get the code and build
 
 ```sh
-git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
+git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ROSlean
 pixi run build
 ```
 
 The first build downloads the ROS environment and the Lean toolchain. It
-ends with `Summary: 3 packages finished`. All commands below are run in this
+ends with `Summary: 4 packages finished`. All commands below are run in this
 folder.
 
 ## 3. What is in the simulation

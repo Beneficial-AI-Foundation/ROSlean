@@ -27,57 +27,50 @@
 <main>
   <div class="wrap hero">
     <p class="eyebrow">Beneficial AI Foundation</p>
-    <h1>ROS 2 packages written in Lean, with machine-checked proofs of what they do.</h1>
-    <p class="lede">ROSlean replaces the decision logic of a ROS node with a Lean function and proves theorems about that function. The node that runs on the robot executes the same code the theorems are about.</p>
+    <h1>ROS 2 nodes, written in Lean</h1>
+    <p class="lede">We prove safety and correctness properties of the Lean-implemented decision logic.</p>
   </div>
 
   <div class="wrap">
     <section id="goal">
       <h2>The goal</h2>
-      <p>Robots run on ROS packages that decide which command reaches the motors, when to stop, and who is in control. Today those rules live in C++ and in documentation that does not always match it. Tests cover the cases someone thought of.</p>
-      <p>We want ROS packages where the rules are stated once, in Lean, and hold for every input and every sequence of events. A package built this way is used like any other: same topics, same parameter files, same <code>ros2 run</code>. Lean is needed to build it, not to run it.</p>
-      <p>The theorems are about the messages a node publishes for the messages it receives. They are not about what the robot then does.</p>
+      <p>The proofs cover the Lean decision logic. The C++ integration, ROS, and the robot hardware are outside their scope. ROSLean nodes can be used as a drop-in replacement for existing packages.</p>
       <ol class="pipeline">
         <li><span class="tag">Write</span><b>Logic in Lean</b>The node's decisions are one pure function: state and event in, new state and decision out.</li>
-        <li><span class="tag ok">Prove</span><b>Theorems in Lean</b>Lean checks statements about that function for all configurations and all event histories.</li>
+        <li><span class="tag ok">Prove</span><b>Theorems in Lean</b>Lean checks each property under the conditions in its statement.</li>
         <li><span class="tag">Run</span><b>An ordinary ROS node</b>Lean compiles the function to C. A thin C++ shim handles topics, parameters and the clock.</li>
       </ol>
     </section>
 
     <section id="packages">
       <h2>Packages</h2>
-      <p>Each package replaces the decision logic of an existing ROS 2 package. <code>twist_mux</code> is a drop-in replacement. The collision monitor covers the stop and slowdown zones of Nav2's monitor and not its other actions; <a href="gaps.html">what is missing</a> is listed in full.</p>
+      <p>Both packages use familiar ROS topics and parameter formats. Check each package for compatibility details.</p>
       <ul class="packages">
         <li>
-          <a href="twist_mux.html"><code>twist_mux</code></a>
-          <span>Chooses between velocity command sources such as a planner, a joystick and an emergency stop.</span>
+          <a id="twist_mux" href="twist_mux.html"><code>twist_mux</code></a>
+          <span>Selects a velocity source, such as a planner or joystick. Locks block lower-priority sources.</span>
           <div class="status">
             <span class="tag ok">Verified</span>
             <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="twist_mux-verified">i</button>
             <div class="pop" id="twist_mux-verified" role="note">
-              <p><b>Proved</b>Lean checks theorems about one function, <code>step</code>, which makes every forward-or-drop decision. They hold for every configuration and every sequence of events.</p>
-              <p><b>Run</b>The node on the robot runs that same function, compiled by Lean to C. A thin C++ shim handles topics, parameters and the clock, and makes no decisions.</p>
-              <p><b>How they connect</b>A further theorem, <code>muxForward_after</code>, shows that the decision the node reads through the C interface is the one <code>step</code> makes. The shim, Lean's compiler and runtime, and ROS are trusted, not proved.</p>
-              <p><b>Not proved</b>That it behaves like the original C++ <code>twist_mux</code>. This is tested by running both side by side. <a href="details.html#theorems">Full account</a></p>
+              <p><b>Proved</b>Lean proves when the mux forwards a command, including after any event history.</p>                          
+              <p><b>Tested</b>That it behaves like the original C++ <code>twist_mux</code> with no performance penalty. This is tested by running both side by side.</p>
             </div>
           </div>
         </li>
         <li>
           <a href="collision_monitor.html">collision monitor</a>
-          <span>The stop and slowdown core of Nav2's <code>nav2_collision_monitor</code>: passes a velocity command on, scales it down or replaces it by zero, depending on what a laser scan shows in configured zones.</span>
+          <span>Passes, slows, or stops velocity commands using one lidar and configured zones.</span>
           <div class="status">
             <span class="tag ok">Verified, in part</span>
             <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="cm-verified">i</button>
             <div class="pop" id="cm-verified" role="note">
-              <p><b>Proved</b>Theorems about one function, <code>step</code>, which decides for every command whether it passes, is slowed, is stopped or is withheld. They hold for every configuration and every sequence of events.</p>
-              <p><b>Run</b>The node runs that function, compiled by Lean to C. A further theorem, <code>cm_readBack_after_fast</code>, shows that what the node reads through the C interface is the output of <code>step</code>.</p>
+              <p><b>Proved</b>Lean checks when the model passes a command, slows it, demands a stop, or withholds velocity.</p>
+              <p><b>Run</b>For an accepted configuration, the fast C interface returns the model’s output for commands with a valid clock and the supported call history.</p>
               <p><b>Trusted, not proved</b>The C++ shim computes the scan's points and their transform in floating point, and multiplies the command by the ratio in a slowdown. Lean's compiler and runtime, tf2 and ROS.</p>
               <p><b>Not covered</b>Nav2's <code>approach</code> and <code>limit</code> actions, point clouds, several sources. Nav2's default configuration uses <code>approach</code>. <a href="gaps.html">Full account</a></p>
             </div>
           </div>
-        </li>
-        <li class="next">
-          <span>More packages to come.</span>
         </li>
       </ul>
 
@@ -85,7 +78,7 @@
 
     <section id="demo-section">
       <h2 id="video">See it run</h2>
-      <p>A TurtleBot3 in Gazebo with the Lean <code>twist_mux</code> between a planner, a person at the keyboard and an emergency stop.</p>
+      <p>A TurtleBot3 in Gazebo with the Lean <code>twist_mux</code> between a planner, scripted keyboard commands, and a stop lock.</p>
       <figure class="video">
         <video id="demo" controls playsinline preload="metadata" width="1920" height="1080"
                poster="media/twist_mux_generated.jpg" src="media/twist_mux_generated.mp4"
@@ -99,7 +92,7 @@
           <button id="demo-switch" type="button">Watch the original Gazebo footage</button>
         </figcaption>
       </figure>
-      <p class="note">The collision monitor has a Gazebo demo of its own, described on <a href="collision_monitor.html#cm-demo">its page</a>.</p>
+      <p class="note"><a id="theorem" href="twist_mux.html#theorem">Mux forwarding theorem</a> · <a href="collision_monitor.html#cm-demo">Collision monitor demo</a></p>
     </section>
 
   </div>
