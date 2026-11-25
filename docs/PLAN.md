@@ -177,11 +177,11 @@ point markers. What follows is the rest.
   format cannot state the 32 checks that follow from stated velocity
   differences. `scenario_nav2.py` and `random_nav2.py` compare them, without
   boundary cases.
-- **The demo on a screen.** Nobody has seen the Gazebo demo, in either
-  variant, in a window: the screen of the machine was locked during T10 and
-  during the audit (T12). The two pictures in the tutorial are Gazebo's own
-  captures of the 3D scene. RViz was started and not looked at; the
-  keyboard was not used. (T10 rewrote the tutorial for the node as it is
+- **The demo on a screen.** On 2026-11-25 both variants were run with
+  their windows on an unlocked screen; a script captured the Gazebo window
+  and RViz, and the frames were inspected (tutorial, top; two clips in
+  `site/media/`). No person sat in front of the windows, the zones were
+  not shown in RViz, and the keyboard was not used. (T10 rewrote the tutorial for the node as it is
   and replaced the four theorem names that the Lean sources do not
   contain, in the tutorial and in `demo/gazebo/monitor_narrator.py`.)
   `check_demo.py` does not notice when Gazebo exits early and waits for

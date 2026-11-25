@@ -18,13 +18,19 @@ What has been run where:
   mostly without windows (`gui:=false`): the scenario of step 3, the
   commands of step 4 (with a script publishing what the keyboard would), the
   checks of steps 5 and 6, and step 7 as far as it says.
-- **Not looked at by a person: the windows.** The demos of steps 3 and 7
-  were started with their windows and ran through, but the machine's screen
-  was locked, so nobody watched, and a capture of the screen shows the lock
-  screen. The two pictures in this tutorial were saved by the Gazebo
-  window itself (its `/gui/screenshot` service) while the scenario ran;
-  they show the 3D scene, not the screen. RViz was started and not looked
-  at. Nobody has driven this demo with a real keyboard.
+- **The windows, on 2026-11-25.** The demos of steps 3 and 7 were run with
+  their windows on an unlocked screen and the Gazebo window (and, in step
+  7, RViz) was captured from the screen about four times a second by a
+  script. The pictures in this tutorial and the two clips
+  ([step 3](../site/media/cm_gazebo_window.mp4),
+  [step 7](../site/media/cm_nav2_window.mp4)) are those captures; the
+  frames were inspected afterwards and show what the log says: the box,
+  the robot at rest in front of it, the box gone, the robot driving on.
+  The camera was moved next to the robot by Gazebo's `/gui/move_to/pose`
+  service; in each clip six frames are left out where the launch file put
+  the camera back to its overview. No person sat in front of the windows,
+  the zones were not shown in RViz, and nobody has driven this demo with a
+  real keyboard.
 - **Linux:** the check of step 5 in a cloud session without a graphics card
   (`pixi run cm-check-cloud`, task T00, with the node as it was then);
   nothing of step 7.
@@ -142,9 +148,9 @@ a quarter of a metre from the box:
 
 ![The robot at rest in front of the box](images/cm_gazebo_stop.png)
 
-*The Gazebo scene at that moment, saved by the Gazebo window's own
-screenshot service with the camera moved next to the robot (the screen
-itself was locked; see the top of this page).*
+*The Gazebo window at that moment, captured from the screen, with the
+camera moved next to the robot (see the top of this page). The run as a
+clip: [cm_gazebo_window.mp4](../site/media/cm_gazebo_window.mp4).*
 
 The patrol does not know any of this and keeps commanding 0.18 m/s. One
 second later the monitor's output changes once more:
@@ -573,9 +579,15 @@ publishes on Nav2's state topic, `collision_monitor_state`:
 
 ![The robot at rest in front of the box, Nav2 variant](images/cm_nav2_stop.png)
 
-*The Gazebo scene while the robot stood in front of the box in this
-variant, saved by the Gazebo window's own screenshot service (the screen
-itself was locked; see the top of this page).*
+*The Gazebo window while the robot stood in front of the box in this
+variant, captured from the screen. The run as a clip:
+[cm_nav2_window.mp4](../site/media/cm_nav2_window.mp4).*
+
+![RViz at the same moment](images/cm_nav2_rviz.png)
+
+*RViz at the same moment, with Nav2's default view: the map, the
+costmaps, the scan, and both of Nav2's panels reporting `active`. The
+window's title bar is cut off.*
 
 After `stop_pub_timeout`, here Nav2's 2 s, the monitor is silent, as in
 step 3. No base watchdog follows it in this variant, as none does in a
