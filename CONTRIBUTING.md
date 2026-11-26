@@ -89,10 +89,7 @@ of proof escape hatches:
    pass, and that CI is green.
 4. Write a clear PR description: what changed, why, and how you verified it.
 5. By contributing, you agree your contribution is licensed under this
-   repository's license (see `LICENSE` and `NOTICE`), and you certify the
-   [Developer Certificate of Origin](https://developercertificate.org/) — add a
-   `Signed-off-by: Your Name <you@example.com>` line to your commits
-   (`git commit -s`).
+   repository's license (see `LICENSE` and `NOTICE`).
 
 ## Reporting issues
 
