@@ -1,25 +1,8 @@
 # Tutorial: from an empty machine to the simulation experiment
 
-You will build a `twist_mux` node whose decisions are made by a Lean function,
-check the proofs about that function, and watch it arbitrate between a
-planner, a keyboard and an emergency stop in the turtlesim simulator.
-
-Time: about 30 minutes, most of it downloads. Disk: about 6 GB on macOS for
-the experiment (ROS 2.4 GB, the Lean toolchain 3.3 GB) and about 9 GB on
-Linux (ROS 5.9 GB, the Lean toolchain 3.3 GB), and another 8 GB for Mathlib
-if you also check the proofs (step 5).
-
-What has been run where:
-
-- **macOS on Apple silicon:** every step below.
-- **Linux (Ubuntu 24.04, x86-64):** steps 1 to 4 and the experiment in
-  step 6, on a machine without a screen: the turtlesim window was drawn on a
-  virtual display (Xvfb) and checked by screenshot, and the keyboard was
-  replaced by a script that publishes the same messages. The teleop program
-  itself was checked separately by feeding it key presses. Not run on Linux:
-  step 5 (the proofs), a desktop session with a real keyboard, and
-  Linux on arm64 through pixi. The Docker build in step 9 has been run on
-  Linux arm64.
+Build the Lean-backed `twist_mux` and use turtlesim to see how it handles
+planner commands, keyboard input, and a stop lock. See the
+[README](../README.md#quick-start) for disk space and platform results.
 
 ## 1. Install the two tools
 
@@ -59,38 +42,29 @@ All commands from here on are run in this folder.
 pixi run build
 ```
 
-The first run downloads the ROS environment into `.pixi/` and the Lean
-toolchain into `~/.elan/`; later runs take a few seconds. It then does two
-things:
+The first build downloads the ROS environment and Lean toolchain. Lean
+compiles the core to C. Colcon builds four packages from `ros/`:
+`roslean_core`, `roslean_twist_mux`, `roslean_collision_monitor`, and
+`roslean_noop`.
 
-1. Lean compiles the model in `core/ROSleanCore/` to C.
-2. colcon builds three ROS packages from `ros/`: `roslean_core` (that C, as a
-   library), `roslean_twist_mux` (the node) and `roslean_noop` (a minimal
-   example).
-
-It ends with `Summary: 3 packages finished`.
-
-## 4. Test against the original node (optional, 8 to 12 minutes)
+## 4. Test against the original node (optional)
 
 ```sh
 pixi run test
 ```
 
-This runs the Lean-backed node and the original `twist_mux` side by side on
-the same messages, under a simulated clock, and compares every decision. Look
-for these lines near the end:
+The full suite tests both nodes and took about 40 minutes in the audit.
+For just the mux scenarios and comparison, run this from the repository
+root after building:
 
-```
-ok    main: both nodes agree on all 23 decisions
-ok    tie: both nodes agree on all 10 decisions
-0 divergence(s) in 20 random cases
-Summary: 3 tests, 0 errors, 0 failures, 0 skipped
+```sh
+pixi run bash -c 'source install/setup.bash &&
+  colcon test --base-paths ros --packages-select roslean_twist_mux --event-handlers console_direct+ &&
+  colcon test-result --test-result-base build/roslean_twist_mux --verbose'
 ```
 
-Nothing visible happens on screen while it runs. Do not run the demo at the
-same time. Most of the time goes to the random test, which runs 20
-cases of 350–550 events each (about 7 minutes). On the Linux machine the
-whole step took 8 minutes.
+The mux tests compare forwarding decisions on scripted and random inputs
+under a simulated clock.
 
 ## 5. Check the proofs (optional)
 
@@ -223,7 +197,7 @@ parameters, subscribes, reads the clock and publishes.
 
 ```sh
 pixi run bash -c 'source install/setup.bash && \
-  ros2 launch roslean_twist_mux demo_launch.py mux_package:=twist_mux'
+  ros2 launch roslean_demos demo_launch.py mux_package:=twist_mux'
 ```
 
 **Watch the messages.** While the demo runs, in another terminal:
@@ -233,7 +207,7 @@ pixi run bash -c 'source install/setup.bash && ros2 topic echo /turtle1/cmd_vel'
 ```
 
 **Change the configuration.** The demo's inputs and priorities are in
-`ros/roslean_twist_mux/demo/demo.yaml`. For example, give `teleop` priority
+`ros/roslean_demos/turtlesim/demo.yaml`. For example, give `teleop` priority
 255 and restart the demo: the e-stop no longer stops the keyboard, because a
 lock blocks only *strictly* lower priorities. The node warns about this at
 start-up.
@@ -263,9 +237,7 @@ the planner. It has its own tutorial:
 
 ## 9. Without pixi: the Docker build (Linux)
 
-This builds the node on Ubuntu 24.04 with ROS from apt, runs the same tests,
-and produces an image with no Lean installation in it. There is no simulator
-window in this route.
+Docker builds both nodes for ROS 2 Jazzy on Ubuntu 24.04 and runs the tests available in the image. The runtime image includes the installed nodes and their dependencies.
 
 ```sh
 docker build -f docker/Dockerfile -t roslean-twist-mux .
@@ -284,4 +256,3 @@ README for running it with your own parameter file.
 | `pixi run demo-estop` prints `Waiting for at least 2 matching subscription(s)` and does not return | The demo is not running (terminal 1), or it was started on another machine or `ROS_DOMAIN_ID`. Stop the command with Ctrl-C. |
 | `could not connect to display` (Linux) | There is no graphical session. Run the demo from a terminal on the desktop, not over plain SSH. |
 | Narrator prints `UNEXPECTED` | A message was forwarded while the lock was on. That would contradict `not_forward_of_top_lock`; please report it with the terminal output. |
-| Tests fail only while the demo is running | They share the machine's ROS network; stop the demo and rerun. |

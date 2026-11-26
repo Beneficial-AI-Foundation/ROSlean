@@ -1,0 +1,24 @@
+a command with 1080 stored readings, per reading and zone (and per command):
+      back to back, median of 400
+        two circles            937.1 ns  (2024.0 us)
+        two 4-vertex polygons 1165.0 ns  (2516.3 us)
+      one every 20 ms, median of 100
+        two circles           2667.2 ns  (5761.2 us)
+        two 4-vertex polygons 3138.9 ns  (6780.1 us)
+FAIL  polygon zones cost at most 25 ns per reading and zone, back to back
+a command with 1080 stored readings, per reading and zone (and per command):
+      back to back, median of 400
+        two circles            942.7 ns  (2036.1 us)
+        two 4-vertex polygons 1174.6 ns  (2537.1 us)
+      one every 20 ms, median of 100
+        two circles           2639.6 ns  (5701.6 us)
+        two 4-vertex polygons 3143.2 ns  (6789.2 us)
+FAIL  polygon zones cost at most 25 ns per reading and zone, back to back
+a command with 1080 stored readings, per reading and zone (and per command):
+      back to back, median of 400
+        two circles            947.6 ns  (2046.9 us)
+        two 4-vertex polygons 1178.8 ns  (2546.2 us)
+      one every 20 ms, median of 100
+        two circles           2647.2 ns  (5718.0 us)
+        two 4-vertex polygons 3157.1 ns  (6819.4 us)
+FAIL  polygon zones cost at most 25 ns per reading and zone, back to back

@@ -1,0 +1,17 @@
+yaw and translation: 1613 ns per point (2000 x 1000 points), checksum 1046564000
+general quaternion: 1271 ns per point (2000 x 1000 points), checksum 1046326000
+fixed point, yaw and translation: 431 ns per point, checksum 1046566000
+fixed point, general quaternion: 448 ns per point, checksum 1046322000
+largest difference between the exact and the fixed-point result: 1 mm
+(1, 0) m under yaw 0.3 rad and translation (0.2, 0.1) m: (1155, 395) mm; by hand (1155, 395)
+# libcollision_monitor_core.dylib, nav2_collision_monitor::Scan::getData:
+  fmul s1, s1, s10 
+  fcvt d1, s1  
+  fmul s0, s0, s10 
+  fcvt d0, s0  
+  fmul d3, d3, d0 
+  fmadd d2, d2, d1, d3
+  fmadd d2, d3, d9, d2
+  fmul d0, d3, d0 
+  fmadd d0, d4, d1, d0
+  fmadd d0, d5, d9, d0

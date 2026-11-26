@@ -1,0 +1,73 @@
+# The `collision_monitor` section of Nav2's parameter file for the variant in
+# which Nav2's own bring-up starts the Lean node (cm_nav2_launch.py,
+# docs/TUTORIAL_COLLISION_MONITOR.md, step 7). cm_nav2_launch.py puts it in
+# the place of the same section of the twist_mux demo's nav2_params.yaml.
+#
+# Against the section in nav2_bringup's nav2_params.yaml (Nav2 1.3, Jazzy):
+#   - `enable_stamped_cmd_vel: true` is added, as in every other section,
+#     because the simulated robot takes stamped velocities;
+#   - the zone `FootprintApproach` (`action_type: approach`, the footprint
+#     from `/local_costmap/published_footprint`) is replaced by two fixed
+#     polygons, `FootprintStop` and `FootprintSlow`.
+# Everything else is Nav2's: the topics, `state_topic`,
+# `base_shift_correction: True`, the timeouts, the source.
+#
+# The same section is given to upstream's node for comparison
+# (monitor_package:=nav2_collision_monitor).
+collision_monitor:
+  ros__parameters:
+    enable_stamped_cmd_vel: true
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # The footprint Nav2 uses for this robot is a circle of radius 0.105 m
+    # (`robot_radius` of both costmaps); as a fixed polygon it is the square
+    # from -0.105 to +0.105 m. A stop zone of exactly that outline would act
+    # only when readings are already inside the robot's outline, and the
+    # lidar reports nothing closer than 0.12 m to itself. So the stop zone is
+    # larger than the footprint:
+    #   ahead    0.20 m  (to x = 0.305). At 0.2 m/s the robot covers 4 cm
+    #                    between two scans (5 a second), a scan can be that
+    #                    old again when a command is judged, and the lidar's
+    #                    noise is 1 cm. The rest keeps the stop ahead of the
+    #                    patrol script's own guard, which turns the robot when
+    #                    something is 0.30 m from the lidar (x = 0.268).
+    #   sideways 0.05 m  (to y = +-0.155) and
+    #   behind   0.05 m  (to x = -0.155). Kept small on purpose: in a stop
+    #                    zone every command becomes zero, turning included, so
+    #                    every centimetre here is a centimetre the planner has
+    #                    to keep away from walls and furniture.
+    polygons: ["FootprintStop", "FootprintSlow"]
+    FootprintStop:
+      type: "polygon"
+      points: "[[0.305, 0.155], [0.305, -0.155], [-0.155, -0.155], [-0.155, 0.155]]"
+      action_type: "stop"
+      min_points: 6
+      visualize: True
+      polygon_pub_topic: "polygon_stop"
+      enabled: True
+    # The slowdown zone reaches 0.40 m further ahead (to x = 0.705) and 0.05 m
+    # further to the sides and behind. At 0.4 times 0.2 m/s the robot needs
+    # five seconds to cross it.
+    FootprintSlow:
+      type: "polygon"
+      points: "[[0.705, 0.205], [0.705, -0.205], [-0.205, -0.205], [-0.205, 0.205]]"
+      action_type: "slowdown"
+      slowdown_ratio: 0.4
+      min_points: 6
+      visualize: True
+      polygon_pub_topic: "polygon_slowdown"
+      enabled: True
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True

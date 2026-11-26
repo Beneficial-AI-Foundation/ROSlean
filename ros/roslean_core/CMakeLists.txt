@@ -15,7 +15,7 @@ find_package(ament_cmake REQUIRED)
 # Lean (elan) is needed at build time only.
 #
 # How the Lean runtime gets in differs by platform:
-#   macOS  linked statically into libroslean_core (about 4 MB).
+#   macOS  linked statically into libroslean_core (about 2.5 MB).
 #   Linux  Lean's static runtime cannot go into a shared library there (it is
 #          compiled for thread-local storage in executables only), so
 #          libroslean_core links Lean's own shared runtime, libleanshared.so,
@@ -58,7 +58,12 @@ endif()
 # run it once now so that they exist, and again on every build so that colcon
 # picks up changes to the Lean sources.
 set(_ir "${ROSLEAN_ROOT}/.lake/build/ir")
-set(ROSLEAN_MODULES ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop)
+set(ROSLEAN_MODULES
+  ROSleanCore ROSleanCore/Mux ROSleanCore/FFI ROSleanCore/Noop
+  ROSleanCore/CollisionMonitorPoint
+  ROSleanCore/CollisionMonitor ROSleanCore/CollisionMonitorConvert
+  ROSleanCore/CollisionMonitorFast
+  ROSleanCore/CollisionMonitorFFI)
 set(_generated)
 foreach(_m ${ROSLEAN_MODULES})
   list(APPEND _generated "${_ir}/${_m}.c")
@@ -123,10 +128,33 @@ else()
   find_library(LEAN_SHARED_LIBRARY NAMES leanshared
     HINTS "${LEAN_SYSROOT}/lib/lean" NO_DEFAULT_PATH REQUIRED)
   set(_leanshared "${CMAKE_CURRENT_BINARY_DIR}/libleanshared.so")
-  add_custom_command(OUTPUT "${_leanshared}"
-    COMMAND "${CMAKE_STRIP}" --strip-unneeded -o "${_leanshared}" "${LEAN_SHARED_LIBRARY}"
-    DEPENDS "${LEAN_SHARED_LIBRARY}"
-    COMMENT "Copying and stripping libleanshared.so")
+  # CMAKE_STRIP is not found in a pixi (conda) environment on Linux: its
+  # binutils have prefixed names only (`aarch64-conda-linux-gnu-strip`), next
+  # to the compiler (audit T12, finding 1). The name is taken from the
+  # compiler's. Without any strip the library is copied as it is: larger,
+  # otherwise the same.
+  set(_strip "${CMAKE_STRIP}")
+  if(NOT _strip OR NOT EXISTS "${_strip}")
+    get_filename_component(_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(_cxx_name "${CMAKE_CXX_COMPILER}" NAME)
+    string(REGEX REPLACE "(c\\+\\+|g\\+\\+|clang\\+\\+)$" "strip" _strip_name "${_cxx_name}")
+    find_program(ROSLEAN_STRIP
+      NAMES "${_strip_name}" "${CMAKE_SYSTEM_PROCESSOR}-conda-linux-gnu-strip" strip llvm-strip
+      HINTS "${_cxx_dir}")
+    set(_strip "${ROSLEAN_STRIP}")
+  endif()
+  if(_strip)
+    add_custom_command(OUTPUT "${_leanshared}"
+      COMMAND "${_strip}" --strip-unneeded -o "${_leanshared}" "${LEAN_SHARED_LIBRARY}"
+      DEPENDS "${LEAN_SHARED_LIBRARY}"
+      COMMENT "Copying and stripping libleanshared.so")
+  else()
+    message(WARNING "no strip program found: libleanshared.so is installed unstripped")
+    add_custom_command(OUTPUT "${_leanshared}"
+      COMMAND "${CMAKE_COMMAND}" -E copy "${LEAN_SHARED_LIBRARY}" "${_leanshared}"
+      DEPENDS "${LEAN_SHARED_LIBRARY}"
+      COMMENT "Copying libleanshared.so (no strip program found)")
+  endif()
   add_custom_target(roslean_core_leanshared DEPENDS "${_leanshared}")
   add_dependencies(roslean_core roslean_core_leanshared)
   target_link_libraries(roslean_core PRIVATE
@@ -171,6 +199,15 @@ if(BUILD_TESTING)
   target_compile_options(test_mux_ffi PRIVATE -Wall -Wextra -Wpedantic)
   target_link_libraries(test_mux_ffi roslean_core)
   add_test(NAME test_mux_ffi COMMAND test_mux_ffi)
+  add_executable(test_cm_ffi test/test_cm_ffi.cpp)
+  # -ffp-contract=off: the reference computations in the test must be the
+  # same IEEE operations on every platform.
+  target_compile_options(test_cm_ffi PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
+  # The test uses std::thread. With an older glibc (the pixi environment's
+  # sysroot has 2.28) pthread is a library of its own (audit T12, finding 2).
+  find_package(Threads REQUIRED)
+  target_link_libraries(test_cm_ffi roslean_core Threads::Threads)
+  add_test(NAME test_cm_ffi COMMAND test_cm_ffi)
 endif()
 
 ament_export_targets(export_roslean_core HAS_LIBRARY_TARGET)

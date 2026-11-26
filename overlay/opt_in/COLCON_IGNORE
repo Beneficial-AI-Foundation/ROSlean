@@ -1,0 +1,12 @@
+This file makes colcon skip this directory when it looks for packages.
+
+The package below, nav2_collision_monitor, shadows Nav2's package of the same
+name with the Lean-backed node, which refuses every configuration that is not
+stop or slowdown zones on one laser scan, Nav2's default included. It must
+not be built because this repository happens to be in a workspace. To build
+it, name its directory:
+
+  colcon build --base-paths src src/ROSlean/overlay/opt_in/nav2_collision_monitor \
+    --packages-up-to nav2_collision_monitor
+
+See docs/DROP_IN_COLLISION_MONITOR.md.

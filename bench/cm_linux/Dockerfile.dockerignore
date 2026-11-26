@@ -1,0 +1,10 @@
+.git
+.lake
+.pixi
+build
+install
+log
+**/.lake
+**/__pycache__
+bench/results
+bench/experiments

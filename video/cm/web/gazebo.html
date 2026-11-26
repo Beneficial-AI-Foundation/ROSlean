@@ -1,0 +1,155 @@
+<!doctype html>
+<!-- The collision monitor video, filmed: the Gazebo footage of the run with
+     captions and the panel on top. The footage is a fixed, high-resolution
+     camera; this page pans and zooms inside it to follow the robot, and
+     draws on the floor the robot's trail, the two zones (the shapes of
+     monitor.yaml, at the recorded pose; lit when the monitor's state topic
+     names them) and the lidar's points. The box is in the footage. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../web/common.css">
+<link rel="stylesheet" href="cm.css">
+<style>
+  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  #world img, #world svg { position: absolute; left: 0; top: 0; display: block; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="world"><img id="frame"><svg id="marks"></svg></div>
+  <div id="tag"></div>
+</div>
+<script src="data.js"></script>
+<script src="story.js"></script>
+<script>
+const D = window.DATA, [W, H] = D.size, FPS = 30;
+const update = buildStory({ footer: 'Lean 4 · ROS 2 Jazzy · Gazebo' });
+document.getElementById('brand').insertAdjacentHTML('beforeend', '<div class="where">GAZEBO SIMULATION · TURTLEBOT3</div>');
+const world = document.getElementById('world'), frame = document.getElementById('frame');
+const marks = document.getElementById('marks'), tag = document.getElementById('tag');
+world.style.width = frame.style.width = W + 'px'; world.style.height = frame.style.height = H + 'px';
+marks.setAttribute('width', W); marks.setAttribute('height', H); marks.setAttribute('viewBox', `0 0 ${W} ${H}`);
+const LIDAR_Z = 0.18;
+
+// World point -> pixel of the footage. The camera looks along its own x axis.
+const cam = D.camera, fx = W / 2 / Math.tan(cam.hfov / 2);
+function project(x, y, z) {
+  const dx = x - cam.pos[0], dy = y - cam.pos[1], dz = z - cam.pos[2];
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const hx = cy * dx + sy * dy, hy = -sy * dx + cy * dy;      // undo yaw
+  const fwd = cp * hx - sp * dz, up = sp * hx + cp * dz;      // undo pitch
+  return [W / 2 - fx * hy / fwd, H / 2 - fx * up / fwd];
+}
+
+function poseAt(t) {
+  const P = D.pose;
+  let lo = 0, hi = P.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= t) lo = m; else hi = m; }
+  const a = P[lo], b = P[hi], k = clamp((t - a[0]) / Math.max(1e-6, b[0] - a[0]));
+  let dyaw = b[3] - a[3]; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+  return [a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + dyaw * k];
+}
+// A point of the base frame at pose (x, y, yaw), as a pixel of the footage.
+function fromBase(pose, bx, by, z) {
+  const c = Math.cos(pose[2]), s = Math.sin(pose[2]);
+  return project(pose[0] + c * bx - s * by, pose[1] + s * bx + c * by, z);
+}
+
+// Trail: the path so far, each piece in the colour of what the monitor published.
+const TRAIL = [];
+for (let t = 0; t < LENGTH; t += 1 / 15) {
+  const [x, y] = poseAt(t), s = monitorState(t);
+  TRAIL.push({ t, w: [x, y], p: project(x, y, 0.01), color: s.kind === 'idle' ? null : stateColor(s) });
+}
+
+// Virtual camera: wide at the start and the end, close on the robot between.
+const TIGHT = 1760, AIM = [0.54, 0.56];
+const N = Math.round(LENGTH * FPS);
+const raw = [];
+for (let k = 0; k < N; k++) {
+  const t = k / FPS, [x, y] = poseAt(t);
+  // While the box is there, aim between the robot and the box.
+  const boxed = 0.45 * window01(t, D.box.from - 0.6, D.box.to + 1.0, 1.6);
+  raw.push(project(x + (D.box.x - x) * boxed, y + (D.box.y - y) * boxed, 0.08));
+}
+function blur(a, r) {
+  return a.map((_, i) => { let sx = 0, sy = 0, n = 0;
+    for (let j = Math.max(0, i - r); j <= Math.min(a.length - 1, i + r); j++) { sx += a[j][0]; sy += a[j][1]; n++; }
+    return [sx / n, sy / n]; });
+}
+const soft = blur(blur(raw, 30), 30);
+function crop(k) {
+  const t = k / FPS;
+  const w = smooth((t - 3.2) / 3.4) * (1 - smooth((t - (CARD.endStart - 1.0)) / 3.0));
+  const ch = TIGHT * 9 / 16;
+  const left = clamp(soft[k][0] - AIM[0] * TIGHT, 0, W - TIGHT), top = clamp(soft[k][1] - AIM[1] * ch, 0, H - ch);
+  return { left: left * w, top: top * w, cw: W + (TIGHT - W) * w };
+}
+
+function nearestFrame(t) {
+  let lo = 0, hi = D.frames.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D.frames[m] <= t) lo = m; else hi = m; }
+  return t - D.frames[lo] <= D.frames[hi] - t ? lo : hi;
+}
+
+// How strongly a zone is lit: 1 while the state topic names it (short ramp).
+function litAt(name, t) {
+  const k = lastAtOrBefore(D.stateT, t);
+  if (k < 0) return 0;
+  const on = D.stateZone[k] === name, before = k > 0 && D.stateZone[k - 1] === name;
+  const ramp = clamp((t - D.stateT[k]) / 0.12);
+  return on ? (before ? 1 : ramp) : (before ? 1 - ramp : 0);
+}
+
+window.totalFrames = N;
+window.renderFrame = async function (k) {
+  const t = k / FPS;
+  frame.src = `frames/${String(nearestFrame(t)).padStart(6, '0')}.jpg`;
+  await frame.decode();
+  const { state, body, color } = update(t);
+  const c = crop(k), scale = 1920 / c.cw;
+  world.style.transform = `scale(${scale}) translate(${-c.left}px, ${-c.top}px)`;
+
+  const pose = poseAt(t), [x, y] = pose;
+  let svg = '';
+  const px = 1 / scale;                                   // one screen pixel, in footage pixels
+  for (let i = 1; i < TRAIL.length && TRAIL[i].t <= t; i++) {
+    const a = TRAIL[i - 1], b = TRAIL[i], age = t - b.t;
+    if (!b.color || age > 16) continue;
+    if (Math.hypot(b.w[0] - x, b.w[1] - y) < 0.12) continue;      // not across the robot itself
+    svg += `<line x1="${a.p[0]}" y1="${a.p[1]}" x2="${b.p[0]}" y2="${b.p[1]}" stroke="${b.color}" ` +
+           `stroke-width="${4 * px}" stroke-linecap="round" opacity="${0.85 * (1 - age / 16)}"/>`;
+  }
+  // The zones, on the floor around the robot. Slowdown first, stop on top.
+  const names = Object.keys(D.zones).sort((a, b) => (D.zones[a].action === 'stop') - (D.zones[b].action === 'stop'));
+  for (const name of names) {
+    const z = D.zones[name], zc = z.action === 'stop' ? COLORS.stop : COLORS.slow, lit = litAt(name, t);
+    const pts = z.points.map(([bx, by]) => fromBase(pose, bx, by, 0.01).join(',')).join(' ');
+    svg += `<polygon points="${pts}" fill="${zc}" fill-opacity="${0.08 + 0.32 * lit}" stroke="${zc}" ` +
+           `stroke-width="${(3 + 1.5 * lit) * px}" stroke-opacity="${0.85 + 0.15 * lit}" stroke-linejoin="round"/>`;
+  }
+  // The lidar's points of the newest scan, at the height of its beam.
+  const n = lastAtOrBefore(D.scanT, t);
+  if (n >= 0) {
+    const at = poseAt(D.scanT[n]), pts = D.scan[n], fade = 0.95 - 0.4 * clamp((t - D.scanT[n]) / 0.2);
+    for (let i = 0; i < pts.length; i += 2) {
+      const d = Math.hypot(pts[i], pts[i + 1]);
+      if (d > 1.6) continue;
+      const p = fromBase(at, pts[i], pts[i + 1], LIDAR_Z);
+      svg += `<circle cx="${p[0]}" cy="${p[1]}" r="${3 * px}" fill="#c9f3ff" opacity="${fade}"/>`;
+    }
+  }
+  marks.innerHTML = svg;
+  marks.style.opacity = body;
+
+  const top = fromBase(pose, -0.03, 0, 0.30);
+  tag.style.left = (top[0] - c.left) * scale + 'px';
+  tag.style.top = (top[1] - c.top) * scale - 12 + 'px';
+  tag.style.background = color;
+  tag.textContent = stateLabel(state);
+  tag.style.opacity = body;
+};
+</script>
+</body>
+</html>

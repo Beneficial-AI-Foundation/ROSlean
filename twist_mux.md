@@ -9,31 +9,12 @@ was built. If you are new to the repository, read the next section first.
 
 ## Start here
 
-**What this is.** A re-implementation of the ROS 2 `twist_mux` node in which
-the decision "forward this message or drop it" is made by a Lean function,
-and the rules that function obeys are Lean theorems. The C++ that remains
-only reads parameters, subscribes, reads the clock and publishes.
+Lean decides which velocity messages to forward. C++ handles parameters,
+topics, and the clock. The upstream YAML format works with the
+[documented differences](docs/SPEC.md#deliberate-differences-in-roslean).
 
-**Status (2026-11-20).** Everything in the build plan below is done except the
-optional "silence leads to zero" rule. There are two demos: turtlesim, and a
-TurtleBot3 in Gazebo with Nav2. The node accepts the same configurations as upstream `twist_mux` 4.5 (except
-non-finite or absurdly large timeouts, SPEC D5) and
-makes the same decisions in every comparison run so far; the one known
-exception is at exact timeout boundaries ([docs/SPEC.md](docs/SPEC.md), D2).
-Built and tested on macOS arm64 (pixi) and on Linux (pixi on Ubuntu 24.04 x86-64; Docker, Ubuntu 24.04 with ROS from apt).
-
-**Set-up.** Install [elan](https://github.com/leanprover/elan) (Lean) and
-[pixi](https://pixi.sh) (ROS 2 Jazzy from RoboStack) and put both on `PATH`.
-Nothing else is needed; no system ROS installation is used.
-
-```sh
-pixi run build     # Lean core + the three ROS packages (first run downloads about 1 GB)
-pixi run test      # C interface tests, then both nodes side by side against upstream
-pixi run prove     # check every theorem (first run fetches Mathlib)
-pixi run demo      # turtlesim: planner, keyboard teleop and an e-stop lock
-```
-
-The same commands work on Linux. To get an image to run on a robot, `docker build -f docker/Dockerfile -t roslean-twist-mux .` builds, tests and packages the node; the result needs no Lean installation at run time (see the README).
+Start with the [README](README.md#quick-start) to build, test, check the
+proofs, or run a demo.
 
 **Reading order.**
 
@@ -115,7 +96,7 @@ Three things are left open by the documentation and were settled from the C++ so
 
 ## Lean model and properties
 
-The whole node reduces to one pure function over a small state, and every documented rule becomes a theorem.
+The Lean model uses one pure function to update state and make forwarding decisions.
 
 ### Model
 

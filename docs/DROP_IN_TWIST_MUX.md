@@ -60,10 +60,10 @@ source install/setup.bash
 ```
 
 For the renamed package instead of the overlay, build
-`--packages-up-to roslean_twist_mux`. That package also holds the demos, and
-its `package.xml` names their dependencies (turtlesim, Gazebo, Nav2), so
-`rosdep` would install them. The overlay package depends only on `rclcpp`,
-`geometry_msgs`, `std_msgs`, `launch_ros` and `ament_index_python`.
+`--packages-up-to roslean_twist_mux`. Both packages depend only on `rclcpp`,
+`geometry_msgs`, `std_msgs`, `launch_ros` and `ament_index_python`; the demos
+and their dependencies (turtlesim, Gazebo, Nav2) are in the package
+`roslean_demos`.
 
 Lean is needed to build, not to run. The install tree contains the Lean
 runtime it uses and can be copied to another machine of the same OS and
@@ -244,9 +244,8 @@ copying the install tree to another machine; a merged install
   binary` for `roslean_core` and `roslean_twist_mux` on an Ubuntu 24.04
   machine with elan is the likely route. To be settled: the generated rules
   must not strip or rewrite the bundled `libleanshared.so`; the build needs
-  network access for the Lean toolchain unless it is installed beforehand;
-  the demo dependencies of `roslean_twist_mux` would become dependencies of
-  the `.deb` unless the demos move to a package of their own. A release
+  network access for the Lean toolchain unless it is installed beforehand.
+  A release
   through the ROS build farm is not possible as long as Lean is not available
   there. The overlay package cannot be a `.deb` installed into
   `/opt/ros/jazzy`: its files would collide with `ros-jazzy-twist-mux`.

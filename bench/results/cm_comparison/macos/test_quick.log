@@ -1,0 +1,1037 @@
+✨ Pixi task (build): colcon build --symlink-install --base-paths ros --cmake-args -G Ninja
+Starting >>> roslean_core
+Finished <<< roslean_core [0.20s]
+Starting >>> roslean_twist_mux
+Starting >>> roslean_noop
+Finished <<< roslean_noop [0.06s]
+Finished <<< roslean_twist_mux [0.07s]
+Starting >>> roslean_collision_monitor
+Finished <<< roslean_collision_monitor [0.06s]
+
+Summary: 4 packages finished [0.38s]
+
+✨ Pixi task (test-quick): colcon test --base-paths ros --event-handlers console_direct+ --ctest-args -LE long && colcon test-result --verbose
+Starting >>> roslean_core
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_core
+UpdateCTestConfiguration  from :<repo>/build/roslean_core/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_core/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_core
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_core
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_core"
+SetCMakeVariable:CTEST_TEST_TIMEOUT:10000000
+UpdateCTestConfiguration  from :<repo>/build/roslean_core/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_core/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_core
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_core
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_core"
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_core
+SetCTestConfiguration:SourceDirectory:<repo>/ros/roslean_core
+Test project <repo>/build/roslean_core
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: test_mux_ffi
+
+1: Test command: <repo>/build/roslean_core/test_mux_ffi
+1: Working Directory: <repo>/build/roslean_core
+1: Test timeout computed to be: 10000000
+1: ok    noop
+1: ok    planner is input 0
+1: ok    teleop is input 1
+1: ok    lock is lock 0
+1: ok    planner drives when alone
+1: ok    teleop takes over
+1: ok    planner suppressed while teleop is live
+1: ok    planner still suppressed exactly at teleop's timeout
+1: ok    planner resumes strictly after teleop's timeout
+1: ok    planner is input 0
+1: ok    teleop is input 1
+1: ok    lock is lock 0
+1: ok    teleop drives
+1: ok    lock blocks teleop
+1: ok    lock blocks planner
+1: ok    released lock restores teleop
+1: ok    planner is input 0
+1: ok    teleop is input 1
+1: ok    lock is lock 0
+1: ok    planner drives while lock is fresh and false
+1: ok    silent lock publisher blocks planner
+1: ok    equal-priority lock does not block teleop
+1: ok    planner is input 0
+1: ok    teleop is input 1
+1: ok    lock is lock 0
+1: ok    out-of-range input is not forwarded
+1: ok    out-of-range lock has no effect
+1: ok    high input drives
+1: ok    low input suppressed at 5 s
+1: ok    low input resumes after 5 s + 1 ns
+1: ok    second of a tied pair drives while the first is expired
+1: ok    first of a tied pair takes over at once
+1: ok    second is dropped while the first is live
+1: ok    lower input is dropped
+1: ok    second still dropped exactly at the first's timeout
+1: ok    second drives 1 after the first's timeout
+1: ok    empty mux forwards nothing
+1: ok    high input drives at t >= 2^63
+1: ok    low input suppressed at the timeout, t >= 2^63
+1: ok    low input resumes after the timeout, t >= 2^63
+1: ok    high input drives near 2^64
+1: ok    stamp + timeout beyond 2^64 does not wrap
+1: ok    index UINT32_MAX is not forwarded
+1: ok    fresh false lock does not block
+1: ok    lock 1 expires after its own timeout
+1: ok    low lock (1) true does not block input (10)
+1: ok    lock 1 true blocks
+1: ok    2^40 clamps to 255 and loses the tie to the earlier 255
+1: ok    the earlier 255 drives
+1: ok    builder is empty after a build
+1: ok    two muxes from one builder are independent
+1: ok    move-constructed mux works
+1: ok    move-assigned mux works
+1: ok    moved-from mux throws instead of crashing
+1: ok    negative priority is never forwarded
+1: ok    never-heard input with a negative timeout stays live
+1: ok    input with a negative timeout drives
+1: ok    and never expires
+1: ok    two negative priorities: neither is selected
+1: ok    20000 build cycles, half of them with tied priorities
+1: ok    planner is input 0
+1: ok    teleop is input 1
+1: ok    lock is lock 0
+1: ok    teleop forwarded throughout a long run
+1: 0 failure(s)
+1/2 Test #1: test_mux_ffi .....................   Passed    0.85 sec
+test 2
+    Start 2: test_cm_ffi
+
+2: Test command: <repo>/build/roslean_core/test_cm_ffi
+2: Working Directory: <repo>/build/roslean_core
+2: Test timeout computed to be: 10000000
+2:       peak RSS 4464 kB after 50000 rounds, +0 kB after 600000 more
+2: ok    no leak: peak memory does not grow over 600000 rounds of every wrapper call
+2: ok    standard configuration is accepted
+2: ok    zone_error: none for both zones, no such zone beyond the last
+2: ok    no scan yet: stop for an invalid source
+2: ok    points outside every zone: pass
+2: ok    points in the slowdown zone: zone 1, ratio 0.5
+2: ok    points in the stop zone: stop, zone 0
+2: ok    scan not too old exactly at the timeout
+2: ok    scan too old 1 ns after the timeout
+2: ok    a scan stamped in the future is valid
+2: ok    a point on the stop circle is outside it
+2: ok    a point 1 mm inside the stop circle
+2: ok    one point is below min_points 2
+2: ok    two points reach min_points 2
+2: ok    (180, 240) is on the 300 mm circle: outside
+2: ok    negative coordinates keep their sign
+2: ok    negative y alone
+2: ok    positive y alone
+2: ok    599.9999 mm truncates to 599, either sign: inside
+2: ok    0.6 as a double is just below 600 mm: truncated to 599, inside
+2: ok    600.0001 mm is 600: on the circle, outside
+2: ok    readings outside the limits, NaN and inf are skipped
+2: ok    readings equal to the limits are valid
+2: ok    an infinite reading is valid if range_max is infinite
+2: ok    NaN range_min: no reading is valid
+2: ok    NaN range_max: no reading is valid
+2: ok    range_min above range_max: no reading is valid
+2: ok    0 and -0 are equal
+2: ok    an empty scan is free space
+2: ok    an obstacle
+2: ok    an empty scan replaces the stored one
+2: ok    39 bytes are one record: the partial record is ignored
+2: ok    40 bytes are two records
+2: ok    41 bytes are two records
+2: ok    19 bytes are no record
+2: ok    usable scan: pass
+2: ok    unusable scan: stop for an invalid source
+2: ok    and it stays so
+2: ok    the next usable scan restores the source
+2: ok    timeout 0: obstacle stops
+2: ok    timeout 0: an unusable scan contributes no points, as upstream
+2: ok    stop published
+2: ok    still published exactly at stop_pub_timeout
+2: ok    silent 1 ns after stop_pub_timeout
+2: ok    NaN in linear.z: ignored
+2: ok    a zero command continues the silence
+2: ok    a non-zero command is published
+2: ok    zero command: published as pass
+2: ok    zero command still published at the timeout
+2: ok    and dropped after it
+2: ok    a non-finite value in any of the six components: silent
+2: ok    a non-zero command ends the zero phase
+2: ok    planar-zero command starts a zero phase
+2: ok    linear.z, angular.x, angular.y do not make it non-zero
+2: ok    linear.y counts
+2: ok    zero again: published
+2: ok    angular.z counts
+2: ok    accepted
+2: ok    negative min_points: triggers without points
+2: ok    a disabled stop zone does not stop
+2: ok    timeout 0: never too old
+2: ok    own timeout 1 s is used, not the node's 5 s
+2: ok    without an own timeout the node's 5 s is used
+2: ok    disabled source, no scan: pass
+2: ok    disabled source: its points are not used
+2: ok    action code 7 is stop; flag 9 is enabled
+2: ok    seventh zone is zone 6
+2: ok    ratios of 1, NaN and infinity are accepted
+2: ok    smallest ratio, earlier of two equal zones
+2: ok    a later stop zone wins over slowdown zones
+2: ok    ratios of 1 and above never take effect
+2: ok    ratio 0 is accepted; 1e-8 s is 10 ns
+2: ok    ratio 0: slowdown with pattern 0
+2: ok    published at the timeout (10 ns)
+2: ok    silent after it
+2: ok    box accepted
+2: ok    inside the box, negative y
+2: ok    x and y are not swapped or negated
+2: ok    2 mm outside an edge: within the margin (D4)
+2: ok    3 mm outside an edge
+2: ok    3 mm outside the edge at x = 0
+2: ok    saturated points are in no zone
+2: ok    far negative box accepted
+2: ok    inside the far negative box
+2: ok    the mirrored point is outside
+2: ok    a polygon left with three vertices is refused
+2: ok    zone_error names the triangle
+2: ok    vertices go to the polygon added last
+2: ok    radius -0.3 is accepted
+2: ok    radius -0.3: a point at 0.2 m stops, as with +0.3
+2: ok    radius -0.3: a point at 0.31 m is outside
+2: ok    radii below 1000 m are accepted
+2: ok    radii whose zone would exceed 1000 m are refused, either sign
+2: ok    non-finite and huge radii are refused
+2: ok    and the monitor is not ok
+2: ok    sign-clear ratios accepted
+2: ok    ratios with the sign bit refused (D5)
+2: ok    the ratio of a stop zone is ignored
+2: ok    min_points within the int range is accepted
+2: ok    min_points beyond the int range is refused
+2: ok    vertices within 999.997 m
+2: ok    vertices beyond 999.997 m are refused
+2: ok    non-finite vertices are refused
+2: ok    a NaN vertex among four good ones refuses the zone
+2: ok    timeouts from 0 to below 9.2e9 s are accepted, -0.0 included
+2: ok    negative, non-finite and huge source_timeout refused (D9)
+2: ok    the node's source_timeout is checked even if the source has its own
+2: ok    the source's own timeout
+2: ok    stop_pub_timeout
+2: ok    one code per zone
+2: ok    no zones: accepted
+2: ok    not ok, every command is stopped: negative source_timeout
+2: ok    not ok, every command is stopped: NaN stop_pub_timeout
+2: ok    not ok, every command is stopped: NaN radius
+2: ok    not ok, every command is stopped: min_points 4294967297
+2: ok    not ok, every command is stopped: negative slowdown ratio
+2: ok    not ok, every command is stopped: polygon without vertices
+2: ok    not ok, every command is stopped: new builder
+2: ok    not ok, every command is stopped: zones and stop_pub_timeout, but no set_source
+2: ok    the same through the C functions: add_circle, cm_new, a command
+2: ok    no stray vertex: accepted
+2: ok    not ok, every command is stopped: a NaN vertex before any zone
+2: ok    not ok, every command is stopped: a NaN vertex after a circle
+2: ok    not ok, every command is stopped: a finite vertex before any zone
+2: ok    not ok, every command is stopped: a finite vertex after a circle
+2: ok    not ok, every command is stopped: a refused source_timeout followed by a good one
+2: ok    not ok, every command is stopped: a refused own timeout followed by a good one
+2: ok    not ok, every command is stopped: a refused stop_pub_timeout followed by a good one
+2: ok    and a build clears the builder's refusals
+2: ok    extreme timeouts and min_points accepted
+2: ok    no scan at t = 2^64 - 1
+2: ok    5 + 9.1e18 < 2^64 - 1: too old
+2: ok    stamp 2^63 - 1: not too old exactly at the timeout
+2: ok    and too old 1 ns after it
+2: ok    stamp -1 counts as 0: valid at the timeout
+2: ok    and too old after it
+2: ok    stamp INT64_MIN counts as 0
+2: ok    little-endian record: (0.25, -2.0) m is outside
+2: ok    (0.25, -0.0) and (0.25, 0.0) m are inside 300 mm
+2: ok    byte 6 of x is in the exponent: 0.5 m
+2: ok    all-ones records: NaN ranges, skipped
+2: ok    all-ones limits
+2: ok    1,000,000 readings outside
+2:       1,000,000 readings: scan event 202.1 ns per reading (decoding and conversion to mm), command event 2563.0 ns per reading (two zones)
+2: ok    the last two of 1,000,000 readings are inside
+2: ok    1,000,000 readings inside
+2: ok    builder is empty after a build
+2: ok    a build resets the source: the next monitor is not ok until set_source is called again
+2: ok    first monitor has the source timeout: no scan, stop
+2: ok    second monitor is independent, with the source settings of its own set_source
+2: ok    move-constructed monitor works
+2: ok    move-assigned monitor works
+2: ok    a moved-from monitor throws instead of crashing
+2: ok    an exception thrown after calls into Lean is caught
+2: ok    20000 build cycles
+2: ok    300000 scan and command events
+2: ok    coord_mm(0)
+2: ok    exact millimetre values are kept
+2: ok    just below +250 mm truncates to 249
+2: ok    just above +250 mm stays 250
+2: ok    just inside -250 mm truncates to -249
+2: ok    just beyond -250 mm stays -250
+2: ok    less than 1 mm is 0, either sign
+2: ok    1.9999 mm is 1, either sign
+2: ok    0.3 (just below 300 mm) truncates to 299: exact, where the rounded product gives 300
+2: ok    denormals and tiny values are 0
+2: ok    just inside the limit
+2: ok    at the limit
+2: ok    beyond the limit
+2: ok    huge values
+2: ok    infinities
+2: ok    NaN of either sign saturates to the positive limit
+2: ok    300000 random coordinates: equal to the exact truncation
+2: ok    300000 random bit patterns: equal to the exact truncation
+2: ok    0.25 m: 250 + 1, either sign
+2: ok    just above 0.25 m: rounded up to 251, + 1
+2: ok    just below 0.25 m: rounded up to 250, + 1
+2: ok    0 m: 0 + 1; the smallest positive value: 1 + 1
+2: ok    0.3 as a double is below 300 mm: 301. 0.1 is above 100 mm: 102
+2: ok    the limit
+2: ok    NaN, infinite and huge radii are refused
+2: ok    200000 random radii: equal to the exact ceiling plus 1
+2: ok    200000 random radii: at least 1 mm above the magnitude
+2: ok    exact values
+2: ok    0.3f
+2: ok    0.4 mm rounds to 0
+2: ok    0.6 mm rounds to 1, either sign
+2: ok    299.6 and -299.4 mm
+2: ok    62.5 mm (exact in binary) rounds away from zero
+2: ok    zeros
+2: ok    non-finite refused
+2: ok    huge values are reported at the query's limit
+2: ok    200000 random vertices: equal to the exact rounding
+2: ok    whole seconds
+2: ok    fractions; truncated, not rounded
+2: ok    below 1 ns is 0 (R7)
+2: ok    2.094 s is 2,093,999,999 ns, as upstream
+2: ok    the limit
+2: ok    negative, non-finite and huge timeouts are refused
+2: ok    300000 random timeouts: equal to (int64_t)(seconds * 1e9)
+2: ok    and the default of the source's timeout equals the double conversion
+2: ok    which differs from the single conversion for some of them
+2: ok    node timeout 2.094 s as the source's default: 2,093,999,998 ns (1 ns lost, as upstream)
+2: ok    set on the source itself: 2,093,999,999 ns
+2: ok    own value used; either value can be refused
+2: 0 failure(s)
+2/2 Test #2: test_cm_ffi ......................   Passed  169.68 sec
+
+100% tests passed out of 2
+
+Total Test time (real) = 170.54 sec
+Finished <<< roslean_core [2min 51s]
+Starting >>> roslean_twist_mux
+Starting >>> roslean_noop
+Finished <<< roslean_noop [0.02s]
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_twist_mux
+UpdateCTestConfiguration  from :<repo>/build/roslean_twist_mux/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_twist_mux/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_twist_mux
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_twist_mux
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_twist_mux"
+SetCMakeVariable:CTEST_TEST_TIMEOUT:10000000
+UpdateCTestConfiguration  from :<repo>/build/roslean_twist_mux/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_twist_mux/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_twist_mux
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_twist_mux
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_twist_mux"
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_twist_mux
+SetCTestConfiguration:SourceDirectory:<repo>/ros/roslean_twist_mux
+Test project <repo>/build/roslean_twist_mux
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: scenario
+
+1: Test command: <repo>/.pixi/envs/default/bin/python3 "<repo>/ros/roslean_twist_mux/test/scenario.py" "<repo>/build/roslean_twist_mux/twist_mux" "twist_mux/twist_mux"
+1: Working Directory: <repo>/build/roslean_twist_mux
+1: Environment variables: 
+1:  ROS_DOMAIN_ID=87
+1: Test timeout computed to be: 600
+1: --- main (roslean_twist_mux)
+1: ok    dropped    nav blocked: watchdog lock (50) never heard
+1: ok    forwarded  key (90) passes the watchdog lock (50)
+1: ok    forwarded  nav drives: watchdog fresh, key expired
+1: ok    forwarded  key takes over
+1: ok    dropped    nav suppressed by live key (watchdog fresh)
+1: ok    forwarded  joy takes over
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  pause lock (100) does not block joy (100)
+1: ok    dropped    key blocked
+1: ok    dropped    e_stop lock (255) blocks joy
+1: ok    dropped    e_stop lock blocks nav
+1: ok    forwarded  joy restored after e_stop released
+1: ok    dropped    joy still live exactly at its timeout
+1: ok    forwarded  joy and key expired 1 ns after their timeout
+1: ok    forwarded  watchdog still fresh exactly at its timeout
+1: ok    dropped    watchdog expired 1 ns after its timeout
+1: ok    dropped    watchdog reports true
+1: ok    forwarded  watchdog reports false again
+1: ok    dropped    message on an unconfigured topic
+1: ok    dropped    after a backwards jump joy (heard at 101) counts as live
+1: ok    forwarded  joy drives after the jump
+1: ok    dropped    watchdog is fresh but key (heard at 101) counts as live
+1: ok    forwarded  key drives: joy expired
+1: DECISIONS main 01110101000101100100101
+1: --- main (twist_mux)
+1: ok    dropped    nav blocked: watchdog lock (50) never heard
+1: ok    forwarded  key (90) passes the watchdog lock (50)
+1: ok    forwarded  nav drives: watchdog fresh, key expired
+1: ok    forwarded  key takes over
+1: ok    dropped    nav suppressed by live key (watchdog fresh)
+1: ok    forwarded  joy takes over
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  pause lock (100) does not block joy (100)
+1: ok    dropped    key blocked
+1: ok    dropped    e_stop lock (255) blocks joy
+1: ok    dropped    e_stop lock blocks nav
+1: ok    forwarded  joy restored after e_stop released
+1: ok    dropped    joy still live exactly at its timeout
+1: ok    forwarded  joy and key expired 1 ns after their timeout
+1: ok    forwarded  watchdog still fresh exactly at its timeout
+1: ok    dropped    watchdog expired 1 ns after its timeout
+1: ok    dropped    watchdog reports true
+1: ok    forwarded  watchdog reports false again
+1: ok    dropped    message on an unconfigured topic
+1: ok    dropped    after a backwards jump joy (heard at 101) counts as live
+1: ok    forwarded  joy drives after the jump
+1: ok    dropped    watchdog is fresh but key (heard at 101) counts as live
+1: ok    forwarded  key drives: joy expired
+1: DECISIONS main 01110101000101100100101
+1: ok    main: both nodes agree on all 23 decisions
+1: --- main-unstamped (roslean_twist_mux)
+1: ok    dropped    nav blocked: watchdog lock (50) never heard
+1: ok    forwarded  key (90) passes the watchdog lock (50)
+1: ok    forwarded  nav drives: watchdog fresh, key expired
+1: ok    forwarded  key takes over
+1: ok    dropped    nav suppressed by live key (watchdog fresh)
+1: ok    forwarded  joy takes over
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  pause lock (100) does not block joy (100)
+1: ok    dropped    key blocked
+1: ok    dropped    e_stop lock (255) blocks joy
+1: ok    dropped    e_stop lock blocks nav
+1: ok    forwarded  joy restored after e_stop released
+1: ok    dropped    joy still live exactly at its timeout
+1: ok    forwarded  joy and key expired 1 ns after their timeout
+1: ok    forwarded  watchdog still fresh exactly at its timeout
+1: ok    dropped    watchdog expired 1 ns after its timeout
+1: ok    dropped    watchdog reports true
+1: ok    forwarded  watchdog reports false again
+1: ok    dropped    message on an unconfigured topic
+1: ok    dropped    after a backwards jump joy (heard at 101) counts as live
+1: ok    forwarded  joy drives after the jump
+1: ok    dropped    watchdog is fresh but key (heard at 101) counts as live
+1: ok    forwarded  key drives: joy expired
+1: DECISIONS main-unstamped 01110101000101100100101
+1: --- main-unstamped (twist_mux)
+1: ok    dropped    nav blocked: watchdog lock (50) never heard
+1: ok    forwarded  key (90) passes the watchdog lock (50)
+1: ok    forwarded  nav drives: watchdog fresh, key expired
+1: ok    forwarded  key takes over
+1: ok    dropped    nav suppressed by live key (watchdog fresh)
+1: ok    forwarded  joy takes over
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  pause lock (100) does not block joy (100)
+1: ok    dropped    key blocked
+1: ok    dropped    e_stop lock (255) blocks joy
+1: ok    dropped    e_stop lock blocks nav
+1: ok    forwarded  joy restored after e_stop released
+1: ok    dropped    joy still live exactly at its timeout
+1: ok    forwarded  joy and key expired 1 ns after their timeout
+1: ok    forwarded  watchdog still fresh exactly at its timeout
+1: ok    dropped    watchdog expired 1 ns after its timeout
+1: ok    dropped    watchdog reports true
+1: ok    forwarded  watchdog reports false again
+1: ok    dropped    message on an unconfigured topic
+1: ok    dropped    after a backwards jump joy (heard at 101) counts as live
+1: ok    forwarded  joy drives after the jump
+1: ok    dropped    watchdog is fresh but key (heard at 101) counts as live
+1: ok    forwarded  key drives: joy expired
+1: DECISIONS main-unstamped 01110101000101100100101
+1: ok    main-unstamped: both nodes agree on all 23 decisions
+1: --- start-up (roslean_twist_mux)
+1: ok    dropped    never-heard key and joy count as live near clock 0
+1: ok    forwarded  joy drives; watchdog lock not yet expired
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  joy expired; key (90) passes the expired watchdog (50)
+1: ok    dropped    nav blocked by the expired watchdog
+1: DECISIONS start-up 01010
+1: --- start-up (twist_mux)
+1: ok    dropped    never-heard key and joy count as live near clock 0
+1: ok    forwarded  joy drives; watchdog lock not yet expired
+1: ok    dropped    key suppressed by live joy
+1: ok    forwarded  joy expired; key (90) passes the expired watchdog (50)
+1: ok    dropped    nav blocked by the expired watchdog
+1: DECISIONS start-up 01010
+1: ok    start-up: both nodes agree on all 5 decisions
+1: --- odd (roslean_twist_mux)
+1: ok    dropped    never-heard inputs without a timeout suppress low (R5)
+1: ok    dropped    priority-0 input is never forwarded (R9)
+1: ok    dropped    mid suppressed by never-heard sticky (timeout 0)
+1: ok    forwarded  sticky (300, clamped to 255) drives
+1: ok    forwarded  a 255 lock does not block a 255 input (R10a)
+1: ok    dropped    mid blocked
+1: ok    forwarded  still driving 900 s later
+1: ok    dropped    sticky never expires
+1: DECISIONS odd 00011010
+1: --- odd (twist_mux)
+1: ok    dropped    never-heard inputs without a timeout suppress low (R5)
+1: ok    dropped    priority-0 input is never forwarded (R9)
+1: ok    dropped    mid suppressed by never-heard sticky (timeout 0)
+1: ok    forwarded  sticky (300, clamped to 255) drives
+1: ok    forwarded  a 255 lock does not block a 255 input (R10a)
+1: ok    dropped    mid blocked
+1: ok    forwarded  still driving 900 s later
+1: ok    dropped    sticky never expires
+1: DECISIONS odd 00011010
+1: ok    odd: both nodes agree on all 8 decisions
+1: --- tie (roslean_twist_mux)
+1: ok    forwarded  tablet (100) drives alone: joystick never heard, expired
+1: ok    forwarded  joystick (100) takes over at once: it is first by name (R10)
+1: ok    dropped    tablet dropped while the equal-priority joystick is live
+1: ok    dropped    nav suppressed
+1: ok    forwarded  pause lock (100) blocks neither of the tied pair
+1: ok    dropped    tie-break unchanged under the lock
+1: ok    dropped    joystick still live exactly at its timeout
+1: ok    forwarded  tablet drives 1 ns after the joystick timeout
+1: ok    dropped    nav suppressed by tablet
+1: ok    forwarded  joystick takes over again
+1: DECISIONS tie 1100100101
+1: --- tie (twist_mux)
+1: ok    forwarded  tablet (100) drives alone: joystick never heard, expired
+1: ok    forwarded  joystick (100) takes over at once: it is first by name (R10)
+1: ok    dropped    tablet dropped while the equal-priority joystick is live
+1: ok    dropped    nav suppressed
+1: ok    forwarded  pause lock (100) blocks neither of the tied pair
+1: ok    dropped    tie-break unchanged under the lock
+1: ok    dropped    joystick still live exactly at its timeout
+1: ok    forwarded  tablet drives 1 ns after the joystick timeout
+1: ok    dropped    nav suppressed by tablet
+1: ok    forwarded  joystick takes over again
+1: DECISIONS tie 1100100101
+1: ok    tie: both nodes agree on all 10 decisions
+1: --- start-up errors
+1: ok    refuses to start: integer timeout (R14) (exit code 1)
+1: ok    refuses to start: missing priority (R14) (exit code 1)
+1: ok    refuses to start: non-finite timeout (D5) (exit code 1)
+1: 0 failure(s)
+1/1 Test #1: scenario .........................   Passed   58.42 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =  58.42 sec
+Finished <<< roslean_twist_mux [58.5s]
+Starting >>> roslean_collision_monitor
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_collision_monitor
+UpdateCTestConfiguration  from :<repo>/build/roslean_collision_monitor/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_collision_monitor/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_collision_monitor
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_collision_monitor
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_collision_monitor"
+SetCMakeVariable:CTEST_TEST_TIMEOUT:10000000
+UpdateCTestConfiguration  from :<repo>/build/roslean_collision_monitor/CTestConfiguration.ini
+Parse Config file:<repo>/build/roslean_collision_monitor/CTestConfiguration.ini
+SetCMakeVariable:CTEST_SITE:Ivans-MacBook-Pro.local
+SetCMakeVariable:CTEST_SOURCE_DIRECTORY:<repo>/ros/roslean_collision_monitor
+SetCMakeVariable:CTEST_BINARY_DIRECTORY:<repo>/build/roslean_collision_monitor
+SetCMakeVariable:CTEST_CONFIGURE_COMMAND:"<repo>/.pixi/envs/default/bin/cmake" "<repo>/ros/roslean_collision_monitor"
+SetCTestConfiguration:BuildDirectory:<repo>/build/roslean_collision_monitor
+SetCTestConfiguration:SourceDirectory:<repo>/ros/roslean_collision_monitor
+Test project <repo>/build/roslean_collision_monitor
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start  1: smoke_conversions
+
+1: Test command: <repo>/build/roslean_collision_monitor/smoke_conversions
+1: Working Directory: <repo>/build/roslean_collision_monitor
+1: Test timeout computed to be: 10000000
+1: ok    bits_of(double)
+1: ok    bits_of(float)
+1: ok    double_of_bits
+1: ok    a NaN pattern survives the round trip
+1: ok    a scan of zero length gives no bytes
+1: ok    range 1 at angle 0: 20 bytes, little-endian
+1: ok    range 1 at angle pi: x = -1.0
+1: ok    angle 0: (1, 0) m
+1: ok    angle pi/2: (0, 1000) mm; the tiny negative x truncates to 0
+1: ok    angle -pi/2: (0, -1000) mm
+1: ok    the product is single precision, widened
+1: ok    0.2f is 0.2000000030 m: 200 mm
+1: ok    0.7f is 0.6999999881 m: truncated to 699 mm
+1: ok    the same toward -x: -699 mm, toward the origin
+1: ok    and toward -y
+1: ok    exactly 250 mm stays 250, either sign
+1: ok    the float just below 250 mm truncates to 249, either sign
+1: ok    the float just above 250 mm stays 250, either sign
+1: ok    999.99f is 999.98999 m: 999989 mm
+1: ok    a reading of 1000 m saturates
+1: ok    saturation toward -x
+1: ok    five readings, five records
+1: ok    NaN reading: bits kept, point saturated
+1: ok    +inf reading
+1: ok    -inf reading
+1: ok    negative reading
+1: ok    zero reading
+1:       0 of 400000 coordinates differ from the reference
+1: ok    200 scans of 1000 readings: bit for bit the points of an optimised build of upstream's loop
+1: ok    which is distinguishable from a double-precision computation of the angle
+1: ok    100000 random readings: the point never moves away from the origin
+1: ok    100000 random readings: it moves by less than 1 mm per axis
+1: ok    pose (1, 2, 0)
+1: ok    yaw pi/2
+1: ok    yaw -pi/2
+1: ok    yaw pi: a sensor mounted backwards sees ahead what is behind
+1: ok    -0.5 + 0.2000000030 = -0.2999999970 m: truncated toward zero to -299 mm
+1: ok    0.5 + 0.2000000030: 700 mm
+1: ok    pose pushes beyond the limit
+1: ok    NaN with a pose
+1: ok    infinite reading with a pose: both coordinates saturated
+1:       0 of 2000 coordinates differ from the unfused reference
+1: ok    1000 readings with a pose: no multiplication is fused with an addition
+1: ok    the scan of the next two checks has a coordinate of -0.0
+1: ok    a pose of [0, 0, 0] gives the points of a scan in the base frame, bit for bit
+1: ok    and so does a pose of [-0, -0, -0]
+1: ok    while the smallest yaw or shift is applied
+1: ok    upstream's example box
+1: ok    values are floats, in order
+1: ok    no spaces
+1: ok    exponents, tabs and stray separators
+1: ok    empty string: no vertices (the core refuses it)
+1: ok    empty list
+1: ok    three vertices parse; refusing them is the core's decision
+1: ok    a single number
+1: ok    a triple
+1: ok    an empty point
+1: ok    unterminated
+1: ok    extra ]
+1: ok    too deep
+1: ok    numbers at depth 1 or 0
+1: ok    not a number
+1: ok    scale by 0.5
+1: ok    scale is the IEEE product
+1: ok    ratio 0 gives zero, with the sign of the component
+1: ok    200000 random products with a ratio in [0, 1): no amplification
+1: ok    200000 random products: the sign does not flip
+1: ok    kind 0: nothing is published
+1: ok    kind 1: the command, bit for bit
+1: ok    kind 2: the three products
+1: ok    kinds 3 and 4: zero is published
+1: ok    kinds 5 to 255, which the core cannot return: zero is published
+1: 0 failure(s)
+1/8 Test  #1: smoke_conversions ................   Passed    0.10 sec
+test 2
+    Start  2: smoke_timeouts
+
+2: Test command: <repo>/build/roslean_collision_monitor/smoke_timeouts
+2: Working Directory: <repo>/build/roslean_collision_monitor
+2: Test timeout computed to be: 10000000
+2: ok    2.094 s is 2,093,999,999 ns in rclcpp and in the core
+2: ok    as the default of the source's timeout it is 2,093,999,998 ns in both
+2: ok    every k/1000 s up to 30 s: equal to Duration::from_seconds
+2: ok    every k/1000 s up to 30 s: the source's default equals upstream's
+2:       the default loses 1 ns for 398 of 30001 values
+2: ok    200000 random timeouts from 1e-12 s to 8e9 s: equal to Duration::from_seconds
+2: ok    200000 random timeouts: the source's default equals upstream's
+2: 0 failure(s)
+2/8 Test  #2: smoke_timeouts ...................   Passed    0.86 sec
+test 3
+    Start  3: band_bounds
+
+3: Test command: <repo>/build/roslean_collision_monitor/band_bounds "20000"
+3: Working Directory: <repo>/build/roslean_collision_monitor
+3: Test timeout computed to be: 10000000
+3: 162 circles and 178 polygons, 20000 points each
+3: 
+3: circle zones: 3240000 points within 6 mm of a boundary; the two tests disagree on 1054562 (32.55 %)
+3:   distance outside upstream's zone   points   inside for the core
+3:   -1.00 to -0.75 mm             105775   100.00 %   (inside for upstream)
+3:   -0.75 to -0.50 mm             120646   100.00 %   (inside for upstream)
+3:   -0.50 to -0.25 mm             146395   100.00 %   (inside for upstream)
+3:   -0.25 to +0.00 mm             215637   100.00 %   (inside for upstream)
+3:   +0.00 to +0.25 mm             361205   100.00 %
+3:   +0.25 to +0.50 mm             147152   100.00 %
+3:   +0.50 to +0.75 mm             120857   100.00 %
+3:   +0.75 to +1.00 mm             105987   100.00 %
+3:   +1.00 to +1.25 mm              95658    97.48 %
+3:   +1.25 to +1.50 mm              86918    91.07 %
+3:   +1.50 to +1.75 mm              80397    79.80 %
+3:   +1.75 to +2.00 mm              73859    63.93 %
+3:   +2.00 to +2.25 mm              69250    44.47 %
+3:   +2.25 to +2.50 mm              63854    27.98 %
+3:   +2.50 to +2.75 mm              59679    15.08 %
+3:   +2.75 to +3.00 mm              55638     6.29 %
+3:   +3.00 to +3.25 mm              52326     1.40 %
+3:   +3.25 to +3.50 mm              47650     0.15 %
+3:   +3.50 to +3.75 mm              44429     0.00 %
+3:   +3.75 to +4.00 mm              41338     0.00 %
+3:   +4.00 to +4.25 mm              38146     0.00 %
+3:   +4.25 to +4.50 mm              34048     0.00 %
+3:   +4.50 to +4.75 mm              30660     0.00 %
+3:   +4.75 to +5.00 mm              27065     0.00 %
+3:   farthest point outside upstream's zone that the core counts: 3.401 mm (bound 3.5 mm)
+3:   nearest point outside upstream's zone that the core does not count: 1.000 mm
+3: ok    S (circle): 0 points inside for upstream and outside for the core
+3: ok    G (circle): 0 points counted by the core beyond 3.5 mm
+3: 
+3: polygon zones: 3560000 points within 6 mm of a boundary; the two tests disagree on 1297468 (36.45 %)
+3:   distance outside upstream's zone   points   inside for the core
+3:   -1.00 to -0.75 mm             109374   100.00 %   (inside for upstream)
+3:   -0.75 to -0.50 mm             126091   100.00 %   (inside for upstream)
+3:   -0.50 to -0.25 mm             154514   100.00 %   (inside for upstream)
+3:   -0.25 to +0.00 mm             238123   100.00 %   (inside for upstream)
+3:   +0.00 to +0.25 mm             401151   100.00 %
+3:   +0.25 to +0.50 mm             166874   100.00 %
+3:   +0.50 to +0.75 mm             138570    99.96 %
+3:   +0.75 to +1.00 mm             123049    99.77 %
+3:   +1.00 to +1.25 mm             111012    99.01 %
+3:   +1.25 to +1.50 mm             101890    96.51 %
+3:   +1.50 to +1.75 mm              93621    91.81 %
+3:   +1.75 to +2.00 mm              87620    84.44 %
+3:   +2.00 to +2.25 mm              82914    73.94 %
+3:   +2.25 to +2.50 mm              75750    59.14 %
+3:   +2.50 to +2.75 mm              70356    44.22 %
+3:   +2.75 to +3.00 mm              67171    29.89 %
+3:   +3.00 to +3.25 mm              62566    13.71 %
+3:   +3.25 to +3.50 mm              57150     5.19 %
+3:   +3.50 to +3.75 mm              53628     1.46 %
+3:   +3.75 to +4.00 mm              49649     0.28 %
+3:   +4.00 to +4.25 mm              46841     0.06 %
+3:   +4.25 to +4.50 mm              42072     0.00 %
+3:   +4.50 to +4.75 mm              37941     0.00 %
+3:   +4.75 to +5.00 mm              34774     0.00 %
+3:   farthest point outside upstream's zone that the core counts: 4.276 mm (bound 4.4 mm)
+3:   nearest point outside upstream's zone that the core does not count: 0.416 mm
+3: ok    S (polygon): 0 points inside for upstream and outside for the core
+3: ok    G (polygon): 0 points counted by the core beyond 4.4 mm
+3/8 Test  #3: band_bounds ......................   Passed   33.84 sec
+test 4
+    Start  4: roslean_cmd_cost
+
+4: Test command: <repo>/build/roslean_collision_monitor/cmd_cost
+4: Working Directory: <repo>/build/roslean_collision_monitor
+4: Test timeout computed to be: 10000000
+4: a command with 1080 stored readings, per reading and zone (and per command):
+4:       back to back, median of 400
+4:         two circles           1260.4 ns  (2722.5 us)
+4:         two 4-vertex polygons 1450.2 ns  (3132.4 us)
+4:       one every 20 ms, median of 100
+4:         two circles           3375.7 ns  (7291.5 us)
+4:         two 4-vertex polygons 3675.7 ns  (7939.6 us)
+4: FAIL  polygon zones cost at most 25 ns per reading and zone, back to back
+4/8 Test  #4: roslean_cmd_cost .................   Passed    9.07 sec
+test 5
+    Start  5: t2_point_as_upstream
+
+5: Test command: <repo>/build/roslean_collision_monitor/t2_point_as_upstream
+5: Working Directory: <repo>/build/roslean_collision_monitor
+5: Test timeout computed to be: 10000000
+5: x = 0.43261963129043579 (bits 3edd8052); upstream computes 3edd8052; cosf gives 3edd8051
+5: ok    the point of the reading is upstream's, bit for bit
+5/8 Test  #5: t2_point_as_upstream .............   Passed    0.01 sec
+test 6
+    Start  6: smoke_node
+
+6: Test command: <repo>/.pixi/envs/default/bin/python3 "<repo>/ros/roslean_collision_monitor/test/smoke_node.py" "<repo>/build/roslean_collision_monitor/collision_monitor"
+6: Working Directory: <repo>/build/roslean_collision_monitor
+6: Environment variables: 
+6:  ROS_DOMAIN_ID=94
+6: Test timeout computed to be: 300
+6: --- scenario: Twist
+6: ok    no scan yet: zero (invalid source, R8)
+6: ok    nothing in any zone: the command passes unchanged
+6: ok    five points in the 1.0 m circle: scaled by 0.75
+6: ok    in both circles: the smaller ratio, 0.5 (R13)
+6: ok    two points are below min_points 3: pass (R11)
+6: ok    NaN, inf and below-range_min readings do not count (R4)
+6: ok    points in the stop box: zero, although slowdown zones come first (R12)
+6: ok    zero still published exactly at stop_pub_timeout (R15)
+6: ok    nothing 1 ns after stop_pub_timeout
+6: ok    a command with NaN in linear.z is ignored (R2)
+6: ok    a zero command continues the zero phase: nothing
+6: ok    the first non-zero velocity is published again
+6: ok    a zero command starts a new zero phase: published
+6: ok    an empty scan is free space (R4)
+6: ok    scan not too old exactly at source_timeout (R7)
+6: ok    scan too old 1 ns later: zero (R8)
+6: ok    a fresh scan of inf readings: pass
+6: ok    a scan in another frame is not used: zero, as without data (R8)
+6: ok    the next scan in the base frame is used again
+6: --- scenario: TwistStamped
+6: ok    no scan yet: zero (invalid source, R8)
+6: ok    nothing in any zone: the command passes unchanged
+6: ok    five points in the 1.0 m circle: scaled by 0.75
+6: ok    in both circles: the smaller ratio, 0.5 (R13)
+6: ok    two points are below min_points 3: pass (R11)
+6: ok    NaN, inf and below-range_min readings do not count (R4)
+6: ok    points in the stop box: zero, although slowdown zones come first (R12)
+6: ok    zero still published exactly at stop_pub_timeout (R15)
+6: ok    nothing 1 ns after stop_pub_timeout
+6: ok    a command with NaN in linear.z is ignored (R2)
+6: ok    a zero command continues the zero phase: nothing
+6: ok    the first non-zero velocity is published again
+6: ok    a zero command starts a new zero phase: published
+6: ok    an empty scan is free space (R4)
+6: ok    scan not too old exactly at source_timeout (R7)
+6: ok    scan too old 1 ns later: zero (R8)
+6: ok    a fresh scan of inf readings: pass
+6: ok    a scan in another frame is not used: zero, as without data (R8)
+6: ok    the next scan in the base frame is used again
+6: --- scenario: sensor pose, backwards
+6: ok    sensor pose set: 0.2 m "ahead" of a backwards sensor is behind the robot
+6: ok    and 0.2 m behind the backwards sensor is ahead of the robot: stop
+6: ok    sensor pose set: a scan in the sensor frame is used
+6: ok    start-up warning, once, that the pose switches the frame check off
+6: ok    which gives the pose in use
+6: ok    throttled warning when a scan arrives in another frame while the pose is set
+6: --- scenario: sensor pose of zero
+6: ok    zero pose: a scan in laser_link is taken as if in the base frame: stop
+6: ok    zero pose: what the sensor sees behind itself counts as behind the robot
+6: ok    zero pose: a scan in the base frame, the same
+6: ok    start-up warning with the zero pose
+6: ok    warning about the scan in another frame
+6: --- scenario: no sensor pose
+6: ok    no pose: a scan in laser_link with nothing near is not used: zero (R8)
+6: ok    no pose: no start-up warning about a pose
+6: ok    no pose: error that the scan is not used
+6: --- scenario: config/example.yaml, scan in another frame
+6: ok    example.yaml: obstacle ahead of the robot, seen by a backwards sensor in laser_link: zero
+6: ok    example.yaml: obstacle behind the robot, same sensor: zero as well (the scan is not used)
+6: ok    example.yaml: nothing near, scan in laser_link: zero
+6: ok    example.yaml: a scan in base_footprint with nothing near: pass
+6: ok    example.yaml: five points in the stop box: zero
+6: ok    example.yaml: five points behind the robot: the 0.3 slowdown
+6: ok    example.yaml sets no sensor pose
+6: ok    example.yaml: error that the scan in laser_link is not used
+6: ok    example.yaml: no warning about a configuration that protects nothing
+6: --- scenario: negative zeros
+6: ok    -0.0 in linear.x and angular.z passes as -0.0
+6: ok    a command of negative zeros is published as it is
+6: ok    -0.0 scaled by 0.5 is -0.0
+6: ok    a stop is +0.0 in every component
+6: --- scenario: negative zeros, TwistStamped
+6: ok    -0.0 in linear.x and angular.z passes as -0.0
+6: ok    a command of negative zeros is published as it is
+6: ok    -0.0 scaled by 0.5 is -0.0
+6: ok    a stop is +0.0 in every component
+6: --- scenario: a scan of 720 readings
+6: ok    720 readings, nothing near: pass
+6: ok    720 readings, five of them 0.2 m ahead: stop
+6: ok    720 readings, two ahead: below min_points 3, pass
+6: ok    720 readings, five of them 0.2 m behind: outside the stop box, slowdown 0.5
+6: ok    720 readings, five at 0.8 m to the right: slowdown 0.75
+6: ok    720 infinite readings: pass
+6: --- scenario: parameter changes at run time
+6: ok    stop zone disabled at start-up: points in it only slow the robot down
+6: ok    setting Stop.enabled to true is rejected: "read once"
+6: ok    and the parameter still reads false
+6: ok    the node behaves as it reports: still the slowdown
+6: ok    setting a parameter to the value it has is rejected too
+6: ok    setting source_timeout to 0 is rejected
+6: ok    setting a slowdown ratio is rejected
+6: ok    setting use_sim_time is rejected
+6: ok    set_parameters_atomically is rejected
+6: ok    a misspelt name cannot be set: it was not declared
+6: ok    nor can a parameter that exists upstream but was not given at start-up
+6: ok    after all of them: unchanged
+6: ok    and source_timeout is still 2 s: the scan is too old at 103 s
+6: --- scenario: log of action changes
+6: ok    no scan yet: zero
+6: ok    again
+6: ok    logged once: stop due to invalid source
+6: ok    pass
+6: ok    again
+6: ok    logged once: normal operation
+6: ok    slowdown 0.75
+6: ok    logged once: slowdown, with ratio and zone name
+6: ok    slowdown 0.5 by another zone
+6: ok    logged: the change from one slowdown zone to another
+6: ok    stop zone
+6: ok    again
+6: ok    logged once: stop, with the zone name
+6: ok    pass again
+6: ok    logged a second time after the change back
+6: --- configurations the node must refuse
+6: ok    refuses: base_shift_correction not set (D11) (exit code 1)
+6: ok    refuses: base_shift_correction true (exit code 1)
+6: ok    refuses: two sources (exit code 1)
+6: ok    refuses: no observation_sources (exit code 1)
+6: ok    refuses: point cloud source (exit code 1)
+6: ok    refuses: no polygons (exit code 1)
+6: ok    refuses: action approach (exit code 1)
+6: ok    refuses: action limit (exit code 1)
+6: ok    refuses: action none (exit code 1)
+6: ok    refuses: no action_type (exit code 1)
+6: ok    refuses: velocity polygon (exit code 1)
+6: ok    refuses: no type (exit code 1)
+6: ok    refuses: circle without radius (exit code 1)
+6: ok    refuses: radius of 2000 m (D12) (exit code 1)
+6: ok    refuses: infinite radius (exit code 1)
+6: ok    refuses: polygon without points (exit code 1)
+6: ok    refuses: polygon with three vertices (R10) (exit code 1)
+6: ok    refuses: polygon with a malformed point (exit code 1)
+6: ok    refuses: polygon vertex at 1000 m (D12) (exit code 1)
+6: ok    refuses: negative slowdown ratio (D5) (exit code 1)
+6: ok    refuses: max_points (D10) (exit code 1)
+6: ok    refuses: min_points beyond 32 bits (D10) (exit code 1)
+6: ok    refuses: NaN radius (exit code 1)
+6: ok    refuses: polygon with an infinite coordinate (exit code 1)
+6: ok    refuses: huge source_timeout (D9) (exit code 1)
+6: ok    refuses: zone bound to another source (exit code 1)
+6: ok    refuses: state topic (D13) (exit code 1)
+6: ok    refuses: real-time priority (exit code 1)
+6: ok    refuses: negative source_timeout (D9) (exit code 1)
+6: ok    refuses: negative timeout of the source (exit code 1)
+6: ok    refuses: NaN stop_pub_timeout (D9) (exit code 1)
+6: ok    refuses: integer source_timeout (R17) (exit code 1)
+6: ok    refuses: string min_points (R17) (exit code 1)
+6: ok    refuses: sensor pose with two numbers (exit code 1)
+6: ok    refuses radius 999.9995 and gives the bound 999.999 m
+6: ok    refuses radius 999.999 and gives the bound 999.999 m
+6: ok    refuses radius -999.999 and gives the bound 999.999 m
+6: ok    a parameter file with 11 refused parameters: one fatal message names them all
+6: --- configurations the node must accept, and what it must warn about
+6: ok    starts and stops cleanly: the minimal configuration, no "protects nothing" warning
+6: ok    starts and stops cleanly: ignored parameters, zero timeouts, odd but legal values, warns 3 time(s)
+6: ok    starts and stops cleanly: source_timeout 0.0, warns 1 time(s)
+6: ok    starts and stops cleanly: the source's own timeout 0.0, warns 1 time(s)
+6: ok    starts and stops cleanly: a non-zero own timeout over a zero node timeout, no "protects nothing" warning
+6: ok    starts and stops cleanly: a disabled source, warns 1 time(s)
+6: ok    starts and stops cleanly: min_points 0, warns 1 time(s)
+6: ok    starts and stops cleanly: min_points 1, no "protects nothing" warning
+6: ok    starts and stops cleanly: slowdown ratio 1.5, warns 1 time(s)
+6: ok    starts and stops cleanly: slowdown ratio 1.0, warns 1 time(s)
+6: ok    starts and stops cleanly: slowdown ratio NaN, warns 1 time(s)
+6: ok    starts and stops cleanly: slowdown ratio 0.99, no "protects nothing" warning
+6: ok    starts and stops cleanly: a ratio of 1.5 on a stop zone, where it is not used, no "protects nothing" warning
+6: ok    starts and stops cleanly: radius 0.0, warns 1 time(s)
+6: ok    starts and stops cleanly: four collinear vertices, warns 1 time(s)
+6: ok    starts and stops cleanly: four vertices of a segment walked twice, warns 1 time(s)
+6: ok    starts and stops cleanly: a proper square, no "protects nothing" warning
+6: ok    starts and stops cleanly: radius 999.9989, no "protects nothing" warning
+6: ok    starts and stops cleanly: radius -999.9989, no "protects nothing" warning
+6: ok    starts and stops cleanly: config/example.yaml, no "protects nothing" warning
+6: 0 failure(s)
+6/8 Test  #6: smoke_node .......................   Passed  109.44 sec
+test 13
+    Start 13: roslean_fault_clock_negative
+
+13: Test command: <repo>/.pixi/envs/default/bin/python3 "<repo>/ros/roslean_collision_monitor/test/fault_injection.py" "<repo>/build/roslean_collision_monitor/collision_monitor" "--only" "clock-negative"
+13: Working Directory: <repo>/build/roslean_collision_monitor
+13: Environment variables: 
+13:  ROS_DOMAIN_ID=121
+13: Test timeout computed to be: 600
+13: node: <repo>/build/roslean_collision_monitor/collision_monitor
+13: --- clock-negative
+13: ok    passes
+13:         node: (0.5, 0.25, 1.0)
+13: FAIL  after a /clock message of -5 s the node must still be there (any answer); upstream aborts
+13:         node: dead   [expected any]
+13: FAIL  the node has exited with code -6
+13: 2 failure(s) in 3 checks, 1 cases; failed: ['clock-negative']
+7/8 Test #13: roslean_fault_clock_negative .....   Passed    9.46 sec
+test 14
+    Start 14: upstream_probes
+
+14: Test command: <repo>/.pixi/envs/default/bin/python3 "<repo>/ros/roslean_collision_monitor/test/scenario.py" "nav2_collision_monitor/collision_monitor" "--profile" "profile_upstream" "--own"
+14: Working Directory: <repo>/build/roslean_collision_monitor
+14: Environment variables: 
+14:  ROS_DOMAIN_ID=92
+14: Test timeout computed to be: 1200
+14: node under test: <repo>/.pixi/envs/default/lib/nav2_collision_monitor/collision_monitor
+14: --- probe-timeout-converted-twice  (polygons:=[StopCircle] source_timeout:=2.094)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 2.094 from the node: a scan 2,093,999,998 ns old is used
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,093,999,999 ns old is TOO OLD: the timeout lost 1 ns in a second conversion
+14: --- probe-timeout-of-source  (polygons:=[StopCircle] scan.source_timeout:=2.094)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan.source_timeout 2.094: a scan 2,093,999,999 ns old is used
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,094,000,000 ns old is too old
+14: --- probe-stop-pub-decimal  (polygons:=[StopCircle] stop_pub_timeout:=2.094 source_timeout:=0.0)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop_pub_timeout 2.094: zero still published 2,093,999,999 ns later
+14: ok    nothing   ... and not 1 ns after that
+14: --- probe-stop-pub-negative  (polygons:=[StopCircle] stop_pub_timeout:=-1.0)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop_pub_timeout -1: the first zero is published
+14: ok    nothing   the second is not, at the same clock time
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   again one zero
+14: ok    nothing   and no more
+14: --- probe-timeout-below-1ns  (polygons:=[StopCircle] source_timeout:=1.0e-10)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1e-10 s and no scan ever received: PASSES, as with 0
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   a scan 50 s old is used
+14: --- probe-source-disabled  (polygons:=[StopCircle] scan.enabled:=false)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, no scan ever received: passes
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, obstacle in the stop zone: PASSES
+14: --- probe-zone-disabled  (polygons:=[StopCircle,SlowCircle] StopCircle.enabled:=false)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   stop zone disabled, obstacle in both zones: slowed only
+14: --- probe-max-points  (polygons:=[StopCircle] StopCircle.max_points:=1)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   max_points 1 (min_points 3 in the file): 1 point passes
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   2 points stop: the threshold is max_points + 1
+14: --- probe-min-points-wraps  (polygons:=[StopCircle] StopCircle.min_points:=4294967297)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   min_points 4294967297: one point stops
+14: --- probe-radius-negative  (polygons:=[Circle1] Circle1.radius:=-0.5)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   radius -0.5: a point at 0.25 m is inside
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a point at 0.75 m is outside
+14: --- probe-ratio-inf  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.inf)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio +inf: the command passes
+14: --- probe-ratio-nan  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.nan)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio NaN: the command passes
+14: --- probe-ratio-negative-zero  (polygons:=[SlowZero] SlowZero.slowdown_ratio:=-0.0)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0) + state('SlowZero', 2)   slowdown_ratio -0.0: negative zeros come out
+14: --- probe-equal-ratios  (polygons:=[SlowPoly,SlowCircle])
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   two zones with ratio 0.5: the first in `polygons` is reported
+14: --- probe-equal-ratios-reversed  (polygons:=[SlowCircle,SlowPoly])
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   the other order: the other zone is reported
+14: --- probe-wrong-type  (polygons:=[Circle1] Circle1.radius:=1)
+14: ok    configuration is refused (node is refused)
+14: --- probe-defaults  (polygons:=[Defaults])
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   min_points not set: 3 points pass
+14: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('Defaults', 2)   4 points: slowed by the default ratio 0.5
+14: --- probe-min-points-zero-no-scan  (polygons:=[StopMin0] source_timeout:=0.0)
+14: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+14: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMin0', 1)   source_timeout 0, no scan ever, min_points 0: the zone triggers
+14: 0 failure(s) in 48 checks, 18 scenario runs
+14: expected differences from upstream, by number in the SPEC: none
+8/8 Test #14: upstream_probes ..................   Passed   36.65 sec
+
+100% tests passed out of 8
+
+Total Test time (real) = 199.43 sec
+Finished <<< roslean_collision_monitor [3min 19s]
+
+Summary: 4 packages finished [7min 9s]
+Summary: 11 tests, 0 errors, 0 failures, 0 skipped
+exit 0 after 430 s

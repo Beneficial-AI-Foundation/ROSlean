@@ -1,0 +1,107 @@
+[
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 975978,
+   "p50_ns": 984708,
+   "p90_ns": 1189958,
+   "p99_ns": 1449459,
+   "p999_ns": 1669625,
+   "max_ns": 1669625
+  },
+  "out_upstream": {
+   "n": 851,
+   "mean_ns": 463134,
+   "p50_ns": 410333,
+   "p90_ns": 690167,
+   "p99_ns": 936584,
+   "p999_ns": 1438667,
+   "max_ns": 1438667
+  },
+  "readings": 360,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 851
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 2266597,
+   "p50_ns": 2417584,
+   "p90_ns": 2635958,
+   "p99_ns": 2889000,
+   "p999_ns": 3158583,
+   "max_ns": 3158583
+  },
+  "out_upstream": {
+   "n": 851,
+   "mean_ns": 407110,
+   "p50_ns": 371083,
+   "p90_ns": 559333,
+   "p99_ns": 840459,
+   "p999_ns": 1029959,
+   "max_ns": 1029959
+  },
+  "readings": 1080,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 851
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 850,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 852,
+   "mean_ns": 7242423,
+   "p50_ns": 7540042,
+   "p90_ns": 7811542,
+   "p99_ns": 9049416,
+   "p999_ns": 12447750,
+   "max_ns": 12447750
+  },
+  "out_upstream": {
+   "n": 850,
+   "mean_ns": 319646,
+   "p50_ns": 312125,
+   "p90_ns": 362292,
+   "p99_ns": 422917,
+   "p999_ns": 1110125,
+   "max_ns": 1110125
+  },
+  "readings": 10000,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 850,
+   "mismatches": 0,
+   "received_out_lean": 852,
+   "received_out_upstream": 850
+  }
+ }
+]

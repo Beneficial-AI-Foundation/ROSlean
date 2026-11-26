@@ -1,0 +1,1882 @@
+Starting >>> roslean_collision_monitor
+UpdateCTestConfiguration  from :/src/build/roslean_collision_monitor/CTestConfiguration.ini
+Parse Config file:/src/build/roslean_collision_monitor/CTestConfiguration.ini
+   Site: buildkitsandbox
+   Build name: (empty)
+ Add coverage exclude regular expressions.
+Create new tag: 20261124-1130 - Experimental
+UpdateCTestConfiguration  from :/src/build/roslean_collision_monitor/CTestConfiguration.ini
+Parse Config file:/src/build/roslean_collision_monitor/CTestConfiguration.ini
+Test project /src/build/roslean_collision_monitor
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+      Start  1: smoke_conversions
+
+1: Test command: /src/build/roslean_collision_monitor/smoke_conversions
+1: Working Directory: /src/build/roslean_collision_monitor
+1: Test timeout computed to be: 10000000
+1: ok    bits_of(double)
+1: ok    bits_of(float)
+1: ok    double_of_bits
+1: ok    a NaN pattern survives the round trip
+1: ok    a scan of zero length gives no bytes
+1: ok    range 1 at angle 0: 20 bytes, little-endian
+1: ok    range 1 at angle pi: x = -1.0
+1: ok    angle 0: (1, 0) m
+1: ok    angle pi/2: (0, 1000) mm; the tiny negative x truncates to 0
+1: ok    angle -pi/2: (0, -1000) mm
+1: ok    the product is single precision, widened
+1: ok    0.2f is 0.2000000030 m: 200 mm
+1: ok    0.7f is 0.6999999881 m: truncated to 699 mm
+1: ok    the same toward -x: -699 mm, toward the origin
+1: ok    and toward -y
+1: ok    exactly 250 mm stays 250, either sign
+1: ok    the float just below 250 mm truncates to 249, either sign
+1: ok    the float just above 250 mm stays 250, either sign
+1: ok    999.99f is 999.98999 m: 999989 mm
+1: ok    a reading of 1000 m saturates
+1: ok    saturation toward -x
+1: ok    five readings, five records
+1: ok    NaN reading: bits kept, point saturated
+1: ok    +inf reading
+1: ok    -inf reading
+1: ok    negative reading
+1: ok    zero reading
+1:       0 of 400000 coordinates differ from the reference
+1: ok    200 scans of 1000 readings: bit for bit the points of an optimised build of upstream's loop
+1: ok    which is distinguishable from a double-precision computation of the angle
+1: ok    100000 random readings: the point never moves away from the origin
+1: ok    100000 random readings: it moves by less than 1 mm per axis
+1: ok    pose (1, 2, 0)
+1: ok    yaw pi/2
+1: ok    yaw -pi/2
+1: ok    yaw pi: a sensor mounted backwards sees ahead what is behind
+1: ok    -0.5 + 0.2000000030 = -0.2999999970 m: truncated toward zero to -299 mm
+1: ok    0.5 + 0.2000000030: 700 mm
+1: ok    pose pushes beyond the limit
+1: ok    NaN with a pose
+1: ok    infinite reading with a pose: both coordinates saturated
+1:       0 of 2000 coordinates differ from the unfused reference
+1: ok    1000 readings with a pose: no multiplication is fused with an addition
+1: ok    the scan of the next two checks has a coordinate of -0.0
+1: ok    a pose of [0, 0, 0] gives the points of a scan in the base frame, bit for bit
+1: ok    and so does a pose of [-0, -0, -0]
+1: ok    while the smallest yaw or shift is applied
+1: ok    upstream's example box
+1: ok    values are floats, in order
+1: ok    no spaces
+1: ok    exponents, tabs and stray separators
+1: ok    empty string: no vertices (the core refuses it)
+1: ok    empty list
+1: ok    three vertices parse; refusing them is the core's decision
+1: ok    a single number
+1: ok    a triple
+1: ok    an empty point
+1: ok    unterminated
+1: ok    extra ]
+1: ok    too deep
+1: ok    numbers at depth 1 or 0
+1: ok    not a number
+1: ok    scale by 0.5
+1: ok    scale is the IEEE product
+1: ok    ratio 0 gives zero, with the sign of the component
+1: ok    200000 random products with a ratio in [0, 1): no amplification
+1: ok    200000 random products: the sign does not flip
+1: ok    kind 0: nothing is published
+1: ok    kind 1: the command, bit for bit
+1: ok    kind 2: the three products
+1: ok    kinds 3 and 4: zero is published
+1: ok    kinds 5 to 255, which the core cannot return: zero is published
+1: 0 failure(s)
+ 1/14 Test  #1: smoke_conversions ................   Passed    0.08 sec
+test 2
+      Start  2: smoke_timeouts
+
+2: Test command: /src/build/roslean_collision_monitor/smoke_timeouts
+2: Working Directory: /src/build/roslean_collision_monitor
+2: Test timeout computed to be: 10000000
+2: ok    2.094 s is 2,093,999,999 ns in rclcpp and in the core
+2: ok    as the default of the source's timeout it is 2,093,999,998 ns in both
+2: ok    every k/1000 s up to 30 s: equal to Duration::from_seconds
+2: ok    every k/1000 s up to 30 s: the source's default equals upstream's
+2:       the default loses 1 ns for 398 of 30001 values
+2: ok    200000 random timeouts from 1e-12 s to 8e9 s: equal to Duration::from_seconds
+2: ok    200000 random timeouts: the source's default equals upstream's
+2: 0 failure(s)
+ 2/14 Test  #2: smoke_timeouts ...................   Passed    0.61 sec
+test 3
+      Start  3: band_bounds
+
+3: Test command: /src/build/roslean_collision_monitor/band_bounds "20000"
+3: Working Directory: /src/build/roslean_collision_monitor
+3: Test timeout computed to be: 10000000
+[Processing: roslean_collision_monitor]
+3: 162 circles and 178 polygons, 20000 points each
+3: 
+3: circle zones: 3240000 points within 6 mm of a boundary; the two tests disagree on 1054017 (32.53 %)
+3:   distance outside upstream's zone   points   inside for the core
+3:   -1.00 to -0.75 mm             105775   100.00 %   (inside for upstream)
+3:   -0.75 to -0.50 mm             120646   100.00 %   (inside for upstream)
+3:   -0.50 to -0.25 mm             146395   100.00 %   (inside for upstream)
+3:   -0.25 to +0.00 mm             212021   100.00 %   (inside for upstream)
+3:   +0.00 to +0.25 mm             364821   100.00 %
+3:   +0.25 to +0.50 mm             147152   100.00 %
+3:   +0.50 to +0.75 mm             120857   100.00 %
+3:   +0.75 to +1.00 mm             105987   100.00 %
+3:   +1.00 to +1.25 mm              95658    97.48 %
+3:   +1.25 to +1.50 mm              86918    91.07 %
+3:   +1.50 to +1.75 mm              80397    79.80 %
+3:   +1.75 to +2.00 mm              73859    63.93 %
+3:   +2.00 to +2.25 mm              69250    44.47 %
+3:   +2.25 to +2.50 mm              63854    27.98 %
+3:   +2.50 to +2.75 mm              59679    15.08 %
+3:   +2.75 to +3.00 mm              55638     6.29 %
+3:   +3.00 to +3.25 mm              52326     1.40 %
+3:   +3.25 to +3.50 mm              47650     0.15 %
+3:   +3.50 to +3.75 mm              44429     0.00 %
+3:   +3.75 to +4.00 mm              41338     0.00 %
+3:   +4.00 to +4.25 mm              38146     0.00 %
+3:   +4.25 to +4.50 mm              34048     0.00 %
+3:   +4.50 to +4.75 mm              30660     0.00 %
+3:   +4.75 to +5.00 mm              27065     0.00 %
+3:   farthest point outside upstream's zone that the core counts: 3.401 mm (bound 3.5 mm)
+3:   nearest point outside upstream's zone that the core does not count: 1.000 mm
+3: ok    S (circle): 0 points inside for upstream and outside for the core
+3: ok    G (circle): 0 points counted by the core beyond 3.5 mm
+3: 
+3: polygon zones: 3560000 points within 6 mm of a boundary; the two tests disagree on 1297468 (36.45 %)
+3:   distance outside upstream's zone   points   inside for the core
+3:   -1.00 to -0.75 mm             109374   100.00 %   (inside for upstream)
+3:   -0.75 to -0.50 mm             126091   100.00 %   (inside for upstream)
+3:   -0.50 to -0.25 mm             154514   100.00 %   (inside for upstream)
+3:   -0.25 to +0.00 mm             238123   100.00 %   (inside for upstream)
+3:   +0.00 to +0.25 mm             401151   100.00 %
+3:   +0.25 to +0.50 mm             166874   100.00 %
+3:   +0.50 to +0.75 mm             138570    99.96 %
+3:   +0.75 to +1.00 mm             123049    99.77 %
+3:   +1.00 to +1.25 mm             111012    99.01 %
+3:   +1.25 to +1.50 mm             101890    96.51 %
+3:   +1.50 to +1.75 mm              93621    91.81 %
+3:   +1.75 to +2.00 mm              87620    84.44 %
+3:   +2.00 to +2.25 mm              82914    73.94 %
+3:   +2.25 to +2.50 mm              75750    59.14 %
+3:   +2.50 to +2.75 mm              70356    44.22 %
+3:   +2.75 to +3.00 mm              67171    29.89 %
+3:   +3.00 to +3.25 mm              62566    13.71 %
+3:   +3.25 to +3.50 mm              57150     5.19 %
+3:   +3.50 to +3.75 mm              53628     1.46 %
+3:   +3.75 to +4.00 mm              49649     0.28 %
+3:   +4.00 to +4.25 mm              46841     0.06 %
+3:   +4.25 to +4.50 mm              42072     0.00 %
+3:   +4.50 to +4.75 mm              37941     0.00 %
+3:   +4.75 to +5.00 mm              34774     0.00 %
+3:   farthest point outside upstream's zone that the core counts: 4.276 mm (bound 4.4 mm)
+3:   nearest point outside upstream's zone that the core does not count: 0.416 mm
+3: ok    S (polygon): 0 points inside for upstream and outside for the core
+3: ok    G (polygon): 0 points counted by the core beyond 4.4 mm
+ 3/14 Test  #3: band_bounds ......................   Passed   29.98 sec
+test 4
+      Start  4: roslean_cmd_cost
+
+4: Test command: /src/build/roslean_collision_monitor/cmd_cost
+4: Working Directory: /src/build/roslean_collision_monitor
+4: Test timeout computed to be: 10000000
+4: a command with 1080 stored readings, per reading and zone (and per command):
+4:       back to back, median of 400
+4:         two circles            987.2 ns  (2132.3 us)
+4:         two 4-vertex polygons 1225.0 ns  (2646.0 us)
+4:       one every 20 ms, median of 100
+4:         two circles            937.0 ns  (2023.9 us)
+4:         two 4-vertex polygons 1174.6 ns  (2537.1 us)
+4: FAIL  polygon zones cost at most 25 ns per reading and zone, back to back
+ 4/14 Test  #4: roslean_cmd_cost .................   Passed    7.24 sec
+test 5
+      Start  5: smoke_node
+
+5: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/smoke_node.py" "/src/build/roslean_collision_monitor/collision_monitor"
+5: Working Directory: /src/build/roslean_collision_monitor
+5: Environment variables: 
+5:  ROS_DOMAIN_ID=94
+5: Test timeout computed to be: 300
+5: --- scenario: Twist
+5: ok    no scan yet: zero (invalid source, R8)
+5: ok    nothing in any zone: the command passes unchanged
+5: ok    five points in the 1.0 m circle: scaled by 0.75
+5: ok    in both circles: the smaller ratio, 0.5 (R13)
+5: ok    two points are below min_points 3: pass (R11)
+5: ok    NaN, inf and below-range_min readings do not count (R4)
+5: ok    points in the stop box: zero, although slowdown zones come first (R12)
+5: ok    zero still published exactly at stop_pub_timeout (R15)
+5: ok    nothing 1 ns after stop_pub_timeout
+5: ok    a command with NaN in linear.z is ignored (R2)
+5: ok    a zero command continues the zero phase: nothing
+5: ok    the first non-zero velocity is published again
+5: ok    a zero command starts a new zero phase: published
+5: ok    an empty scan is free space (R4)
+5: ok    scan not too old exactly at source_timeout (R7)
+5: ok    scan too old 1 ns later: zero (R8)
+5: ok    a fresh scan of inf readings: pass
+5: ok    a scan in another frame is not used: zero, as without data (R8)
+5: ok    the next scan in the base frame is used again
+5: --- scenario: TwistStamped
+5: ok    no scan yet: zero (invalid source, R8)
+5: ok    nothing in any zone: the command passes unchanged
+5: ok    five points in the 1.0 m circle: scaled by 0.75
+5: ok    in both circles: the smaller ratio, 0.5 (R13)
+5: ok    two points are below min_points 3: pass (R11)
+5: ok    NaN, inf and below-range_min readings do not count (R4)
+5: ok    points in the stop box: zero, although slowdown zones come first (R12)
+5: ok    zero still published exactly at stop_pub_timeout (R15)
+5: ok    nothing 1 ns after stop_pub_timeout
+5: ok    a command with NaN in linear.z is ignored (R2)
+5: ok    a zero command continues the zero phase: nothing
+5: ok    the first non-zero velocity is published again
+5: ok    a zero command starts a new zero phase: published
+5: ok    an empty scan is free space (R4)
+5: ok    scan not too old exactly at source_timeout (R7)
+5: ok    scan too old 1 ns later: zero (R8)
+5: ok    a fresh scan of inf readings: pass
+5: ok    a scan in another frame is not used: zero, as without data (R8)
+5: ok    the next scan in the base frame is used again
+5: --- scenario: sensor pose, backwards
+5: ok    sensor pose set: 0.2 m "ahead" of a backwards sensor is behind the robot
+5: ok    and 0.2 m behind the backwards sensor is ahead of the robot: stop
+5: ok    sensor pose set: a scan in the sensor frame is used
+5: ok    start-up warning, once, that the pose switches the frame check off
+5: ok    which gives the pose in use
+5: ok    throttled warning when a scan arrives in another frame while the pose is set
+5: --- scenario: sensor pose of zero
+5: ok    zero pose: a scan in laser_link is taken as if in the base frame: stop
+5: ok    zero pose: what the sensor sees behind itself counts as behind the robot
+5: ok    zero pose: a scan in the base frame, the same
+5: ok    start-up warning with the zero pose
+5: ok    warning about the scan in another frame
+[Processing: roslean_collision_monitor]
+5: --- scenario: no sensor pose
+5: ok    no pose: a scan in laser_link with nothing near is not used: zero (R8)
+5: ok    no pose: no start-up warning about a pose
+5: ok    no pose: error that the scan is not used
+5: --- scenario: config/example.yaml, scan in another frame
+5: ok    example.yaml: obstacle ahead of the robot, seen by a backwards sensor in laser_link: zero
+5: ok    example.yaml: obstacle behind the robot, same sensor: zero as well (the scan is not used)
+5: ok    example.yaml: nothing near, scan in laser_link: zero
+5: ok    example.yaml: a scan in base_footprint with nothing near: pass
+5: ok    example.yaml: five points in the stop box: zero
+5: ok    example.yaml: five points behind the robot: the 0.3 slowdown
+5: ok    example.yaml sets no sensor pose
+5: ok    example.yaml: error that the scan in laser_link is not used
+5: ok    example.yaml: no warning about a configuration that protects nothing
+5: --- scenario: negative zeros
+5: ok    -0.0 in linear.x and angular.z passes as -0.0
+5: ok    a command of negative zeros is published as it is
+5: ok    -0.0 scaled by 0.5 is -0.0
+5: ok    a stop is +0.0 in every component
+5: --- scenario: negative zeros, TwistStamped
+5: ok    -0.0 in linear.x and angular.z passes as -0.0
+5: ok    a command of negative zeros is published as it is
+5: ok    -0.0 scaled by 0.5 is -0.0
+5: ok    a stop is +0.0 in every component
+5: --- scenario: a scan of 720 readings
+5: ok    720 readings, nothing near: pass
+5: ok    720 readings, five of them 0.2 m ahead: stop
+5: ok    720 readings, two ahead: below min_points 3, pass
+5: ok    720 readings, five of them 0.2 m behind: outside the stop box, slowdown 0.5
+5: ok    720 readings, five at 0.8 m to the right: slowdown 0.75
+5: ok    720 infinite readings: pass
+5: --- scenario: parameter changes at run time
+5: ok    stop zone disabled at start-up: points in it only slow the robot down
+5: ok    setting Stop.enabled to true is rejected: "read once"
+5: ok    and the parameter still reads false
+5: ok    the node behaves as it reports: still the slowdown
+5: ok    setting a parameter to the value it has is rejected too
+5: ok    setting source_timeout to 0 is rejected
+5: ok    setting a slowdown ratio is rejected
+5: ok    setting use_sim_time is rejected
+5: ok    set_parameters_atomically is rejected
+5: ok    a misspelt name cannot be set: it was not declared
+5: ok    nor can a parameter that exists upstream but was not given at start-up
+5: ok    after all of them: unchanged
+5: ok    and source_timeout is still 2 s: the scan is too old at 103 s
+5: --- scenario: log of action changes
+5: ok    no scan yet: zero
+5: ok    again
+5: ok    logged once: stop due to invalid source
+5: ok    pass
+5: ok    again
+5: ok    logged once: normal operation
+5: ok    slowdown 0.75
+5: ok    logged once: slowdown, with ratio and zone name
+5: ok    slowdown 0.5 by another zone
+5: ok    logged: the change from one slowdown zone to another
+5: ok    stop zone
+5: ok    again
+5: ok    logged once: stop, with the zone name
+5: ok    pass again
+5: ok    logged a second time after the change back
+5: --- configurations the node must refuse
+5: ok    refuses: base_shift_correction not set (D11) (exit code 1)
+5: ok    refuses: base_shift_correction true (exit code 1)
+5: ok    refuses: two sources (exit code 1)
+5: ok    refuses: no observation_sources (exit code 1)
+5: ok    refuses: point cloud source (exit code 1)
+5: ok    refuses: no polygons (exit code 1)
+5: ok    refuses: action approach (exit code 1)
+5: ok    refuses: action limit (exit code 1)
+5: ok    refuses: action none (exit code 1)
+5: ok    refuses: no action_type (exit code 1)
+5: ok    refuses: velocity polygon (exit code 1)
+5: ok    refuses: no type (exit code 1)
+5: ok    refuses: circle without radius (exit code 1)
+5: ok    refuses: radius of 2000 m (D12) (exit code 1)
+5: ok    refuses: infinite radius (exit code 1)
+5: ok    refuses: polygon without points (exit code 1)
+5: ok    refuses: polygon with three vertices (R10) (exit code 1)
+5: ok    refuses: polygon with a malformed point (exit code 1)
+5: ok    refuses: polygon vertex at 1000 m (D12) (exit code 1)
+5: ok    refuses: negative slowdown ratio (D5) (exit code 1)
+5: ok    refuses: max_points (D10) (exit code 1)
+5: ok    refuses: min_points beyond 32 bits (D10) (exit code 1)
+5: ok    refuses: NaN radius (exit code 1)
+5: ok    refuses: polygon with an infinite coordinate (exit code 1)
+5: ok    refuses: huge source_timeout (D9) (exit code 1)
+5: ok    refuses: zone bound to another source (exit code 1)
+5: ok    refuses: state topic (D13) (exit code 1)
+5: ok    refuses: real-time priority (exit code 1)
+5: ok    refuses: negative source_timeout (D9) (exit code 1)
+5: ok    refuses: negative timeout of the source (exit code 1)
+5: ok    refuses: NaN stop_pub_timeout (D9) (exit code 1)
+5: ok    refuses: integer source_timeout (R17) (exit code 1)
+5: ok    refuses: string min_points (R17) (exit code 1)
+5: ok    refuses: sensor pose with two numbers (exit code 1)
+5: ok    refuses radius 999.9995 and gives the bound 999.999 m
+5: ok    refuses radius 999.999 and gives the bound 999.999 m
+5: ok    refuses radius -999.999 and gives the bound 999.999 m
+5: ok    a parameter file with 11 refused parameters: one fatal message names them all
+5: --- configurations the node must accept, and what it must warn about
+5: ok    starts and stops cleanly: the minimal configuration, no "protects nothing" warning
+5: ok    starts and stops cleanly: ignored parameters, zero timeouts, odd but legal values, warns 3 time(s)
+[Processing: roslean_collision_monitor]
+5: ok    starts and stops cleanly: source_timeout 0.0, warns 1 time(s)
+5: ok    starts and stops cleanly: the source's own timeout 0.0, warns 1 time(s)
+5: ok    starts and stops cleanly: a non-zero own timeout over a zero node timeout, no "protects nothing" warning
+5: ok    starts and stops cleanly: a disabled source, warns 1 time(s)
+5: ok    starts and stops cleanly: min_points 0, warns 1 time(s)
+5: ok    starts and stops cleanly: min_points 1, no "protects nothing" warning
+5: ok    starts and stops cleanly: slowdown ratio 1.5, warns 1 time(s)
+5: ok    starts and stops cleanly: slowdown ratio 1.0, warns 1 time(s)
+5: ok    starts and stops cleanly: slowdown ratio NaN, warns 1 time(s)
+[Processing: roslean_collision_monitor]
+5: ok    starts and stops cleanly: slowdown ratio 0.99, no "protects nothing" warning
+5: ok    starts and stops cleanly: a ratio of 1.5 on a stop zone, where it is not used, no "protects nothing" warning
+5: ok    starts and stops cleanly: radius 0.0, warns 1 time(s)
+5: ok    starts and stops cleanly: four collinear vertices, warns 1 time(s)
+5: ok    starts and stops cleanly: four vertices of a segment walked twice, warns 1 time(s)
+5: ok    starts and stops cleanly: a proper square, no "protects nothing" warning
+5: ok    starts and stops cleanly: radius 999.9989, no "protects nothing" warning
+5: ok    starts and stops cleanly: radius -999.9989, no "protects nothing" warning
+5: ok    starts and stops cleanly: config/example.yaml, no "protects nothing" warning
+5: 0 failure(s)
+ 5/14 Test  #5: smoke_node .......................   Passed  107.88 sec
+test 6
+      Start  6: reference_scenario
+
+6: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/scenario.py" "/src/ros/roslean_collision_monitor/test/reference_node.py" "--no-tf" "--skip" "negative-stamp"
+6: Working Directory: /src/build/roslean_collision_monitor
+6: Environment variables: 
+6:  ROS_DOMAIN_ID=95
+6: Test timeout computed to be: 1800
+6: node under test: /src/ros/roslean_collision_monitor/test/reference_node.py
+6: --- pass-through  (polygons:=[SlowPoly,StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle: x, y and yaw rate pass; linear.z and angular.x/y come out as 0
+6: ok    (0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   second command passes
+6: ok    (1e-300, 0.0, 0.0, 0.0, 0.0, 0.0)   a tiny velocity passes unchanged
+6: ok    (1e+300, -1e+300, 0.0, 0.0, 0.0, 1e+300)   a huge velocity passes unchanged
+[Processing: roslean_collision_monitor]
+6: --- stop-circle  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   3 points in the stop circle: zero velocity
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped; the state is reported only on change
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes again
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   obstacle back: stopped
+6: --- stop-polygon  (polygons:=[StopPoly])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopPoly', 1)   3 points in the stop square: zero velocity
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes again
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopPoly', 1)   points in the corner of the square: stopped
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   the same range straight ahead is outside the square
+6: --- slowdown  (polygons:=[SlowPoly])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   3 points in the slowdown square: velocity halved
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   slowed; linear.z and angular.x/y come out as 0
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: full speed
+6: --- slowdown-ratio  (polygons:=[SlowWide])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   ratio 0.3: each component is the double product v * 0.3
+6: ok    (0.03, 0.21, 0.0, 0.0, 0.0, -0.27)   same, values that are not binary fractions
+6: --- both  (polygons:=[SlowPoly,StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   points in the slowdown zone only: halved
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   points in both zones: stop wins
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no obstacle
+6: --- both-stop-first  (polygons:=[StopCircle,SlowPoly])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   points in the slowdown zone only: halved
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   points in both zones: stop wins
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no obstacle
+6: --- two-slowdowns  (polygons:=[SlowPoly,SlowWide])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   two slowdown zones triggered: the lower ratio (0.3) wins
+6: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+[Processing: roslean_collision_monitor]
+6: --- two-slowdowns-reversed  (polygons:=[SlowWide,SlowPoly])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   two slowdown zones triggered: the lower ratio (0.3) wins
+6: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+6: --- min-points  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   2 points inside, min_points 3: passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   3 points inside, min_points 3: stopped
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   4 points, only 2 of them inside: passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   4 points inside: stopped
+6: --- boundary-circle  (polygons:=[Circle1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   circle r=0.5, point at exactly 0.5: outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step below 0.5: inside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step above 0.5: outside
+6: --- boundary-circle-0.7  (polygons:=[Circle07])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle07', 1)   circle r=0.7, range 0.7: INSIDE, because float32(0.7) < 0.7
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step above float32(0.7): outside
+6: --- boundary-circle-0.3  (polygons:=[Circle03])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   circle r=0.3, range 0.3: outside, because float32(0.3) > 0.3
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle03', 1)   one float32 step below float32(0.3): inside
+6: --- boundary-polygon  (polygons:=[Poly1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   point (0.5, 0) on the right edge: outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   one float32 step inside the right edge: inside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (-0.5, -4e-8) on the left edge: inside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond the left edge: outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   point (-2e-8, 0.5) on the top edge: inside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond the top edge: outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   point (-2e-8, -0.5) on the bottom edge: outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   one float32 step inside the bottom edge: inside
+6: --- boundary-polygon-0.3  (polygons:=[Poly03])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly03', 1)   square +-0.3, point at range 0.3 on the left edge: inside (edge is float32)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond: outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range 0.3 on the right edge: outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly03', 1)   one float32 step inside the right edge: inside
+[Processing: roslean_collision_monitor]
+6: --- boundary-polygon-0.7  (polygons:=[Poly07])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   square +-0.7, range 0.7 on the right edge: outside (a 0.7 circle says inside)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly07', 1)   range 0.7 on the left edge: inside
+6: --- boundary-vertices: skipped (needs a transform)
+6: --- timeout  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1 ns older than source_timeout: stop
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   fresh scan: passes again
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan that arrives 1 ns too old: stop at once
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped 10 s in the future: used
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   ... and not 1 ns later
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   after a backwards clock jump the old scan is used again
+6: --- timeout-unix-clock  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1 ns older than source_timeout: stop
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   fresh scan: passes again
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan that arrives 1 ns too old: stop at once
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped 10 s in the future: used
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   ... and not 1 ns later
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   after a backwards clock jump the old scan is used again
+6: --- timeout-decimal  (polygons:=[StopCircle] source_timeout:=1.001)
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1.001, scan 1000999999 ns old: used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1001000000 ns old: stop (1.001 s was truncated to 1000999999 ns)
+6: --- timeout-zero  (polygons:=[SlowCircle] source_timeout:=0.0)
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 0 and no scan ever received: PASSES
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   a scan 50 s old on arrival is used
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   ... and still 1000 s later
+6: --- timeout-negative  (polygons:=[StopCircle] source_timeout:=-1.0)
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   source_timeout -1: a scan stamped now is too old
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped exactly 1 s ahead is used
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan stamped 1 ns less than 1 s ahead is not
+[Processing: roslean_collision_monitor]
+6: --- no-scan  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   no scan ever received: stop
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   first scan arrives: passes
+6: --- before-clock  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   before any /clock message, no scan: stop
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   scan stamped 0 at clock 0: passes
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan stamped in the future: passes
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   first clock message: 1 s; scan stamped 0.5 s + 1 ns still young enough
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   2 ns later it is too old
+6: --- invalid-ranges  (polygons:=[Circle1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range NaN: ignored (the scan itself is valid, so no stop)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range +inf: ignored
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range -inf: ignored
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range one float32 step below range_min: ignored
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range exactly range_min: counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range one float32 step above range_max: ignored
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range exactly range_max: counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range 0 below range_min: ignored
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range 0 with range_min 0: a point at the origin, counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   negative range: ignored
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   negative range with a negative range_min: counted, point behind the sensor
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range +inf with range_max +inf: accepted, but the point is in no circle
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_min NaN: every ray ignored
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_max NaN: every ray ignored
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one valid ray among invalid ones: counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range_min above range_max: every ray ignored
+6: --- invalid-ranges-polygon  (polygons:=[Poly1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   second ray at 45 degrees (after a NaN) lands in the corner: inside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   the same range in the first ray, straight ahead: outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at angle 0, point (inf, NaN): outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 45 degrees, point (inf, inf): outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 3 rad, point (-inf, inf): outside
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at -3 rad, point (-inf, -inf): outside
+6: --- length-mismatch  (polygons:=[Circle1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   5 ranges where the angles allow 3: the 5th is counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   1 range where the angles allow 11: passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   1 range (inside) where the angles allow 11: counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no ranges at all: a valid scan without points, passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   negative angle_increment: counted
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   angle_increment NaN: the 2nd point is (NaN, NaN), in no zone
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   angle_increment NaN: the 1st ray is still at angle_min, counted
+6: --- length-mismatch-polygon  (polygons:=[Poly1])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   the 5th of 5 ranges is placed at angle_min + 4 * angle_increment
+[Processing: roslean_collision_monitor]
+6: --- angle-accumulation  (polygons:=[PolyUpper])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('PolyUpper', 1)   last of 361 rays: the angle is the float32 running sum, point at y = +3e-6
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a single ray at angle_min + 360 * increment: point at y = -3e-6, outside
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('PolyUpper', 1)   a single ray at the running sum 3.1415865: inside
+6: --- commands-cease  (polygons:=[StopCircle,SlowCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+6: ok    nothing        no command for 0.25 s: nothing published
+6: ok    nothing        scan now too old, no command: nothing published
+6: ok    nothing        5 s without a command: nothing published
+6: ok    nothing        obstacle appears in the stop zone, no command: nothing published
+6: ok    nothing        10 min without a command: nothing published
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   next command, obstacle still there: stop
+6: --- stop-publication  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   0.5 s into the stop: zero still published
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   exactly stop_pub_timeout into the stop: zero still published
+6: ok    nothing   1 ns later: NOTHING published
+6: ok    nothing   still nothing
+6: ok    nothing + state('invalid source', 1)   scan times out during the silence: state changes, still nothing published
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   a new stop is published again
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   ... for stop_pub_timeout from its start
+6: ok    nothing   ... and not 1 ns longer
+6: --- zero-input  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   first command ever is zero: forwarded
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command 1 s later: forwarded
+6: ok    nothing   zero command 1 ns after stop_pub_timeout: NOT forwarded
+6: ok    nothing   only linear.z and angular.x/y non-zero: counts as zero, not forwarded
+6: ok    nothing   negative zeros count as zero
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 1e-300)   any non-zero yaw rate is forwarded
+6: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, -0.0)   negative zero is forwarded as negative zero
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero forwarded for 1 s after the output became zero
+6: ok    nothing   ... counted from the first zero output (the negative zero)
+6: --- signs-slowdown  (polygons:=[SlowCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (-0.25, -0.125, 0.0, 0.0, 0.0, -0.5) + state('SlowCircle', 2)   all negative: halved, signs kept
+6: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   x only
+6: ok    (-0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   -x only
+6: ok    (0.0, 0.25, 0.0, 0.0, 0.0, 0.0)   y only
+6: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y only
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.5)   yaw only
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -0.5)   -yaw only
+6: ok    (-0.25, -0.0, 0.0, 0.0, 0.0, 0.0)   a negative-zero component stays negative zero
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('', 0)   zero command in a triggered slowdown zone: zero out, state back to normal
+6: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative zero passes as negative zero
+6: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowCircle', 2)   moving again: slowed
+6: ok    (1e-200, 0.0, 0.0, 0.0, 0.0, 0.0) + state('', 0)   velocity whose square underflows: NOT slowed, state back to normal
+6: ok    (5e-151, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowCircle', 2)   velocity 1e-150: slowed
+[Processing: roslean_collision_monitor]
+6: --- signs-stop  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   negative command: +0 on all axes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative-zero command: +0 on all axes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command
+6: --- signs-pass  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (-0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   -x passes
+6: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y passes
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -1.0)   -yaw passes
+6: ok    (-0.5, -0.25, 0.0, 0.0, 0.0, -1.0)   all negative passes
+6: ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0)   negative zeros pass as negative zeros
+6: --- non-finite-command  (polygons:=[StopCircle])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+6: ok    nothing   linear.x NaN: nothing published (not a stop)
+6: ok    nothing   linear.y +inf: nothing published
+6: ok    nothing   angular.z -inf: nothing published
+6: ok    nothing   linear.z NaN (a component never forwarded): nothing published
+6: ok    nothing   angular.x +inf: nothing published
+6: ok    nothing   angular.y NaN: nothing published
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   the next finite command passes
+6: ok    nothing   NaN with an obstacle in the stop zone: nothing published either
+6: --- stamped  (polygons:=[SlowPoly,StopCircle] enable_stamped_cmd_vel:=true)
+6: ok    command topics are geometry_msgs/msg/TwistStamped (in: ['geometry_msgs/msg/TwistStamped'], out: geometry_msgs/msg/TwistStamped)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   TwistStamped in, TwistStamped out, header copied
+6: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   slowed, header copied
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stopped, header copied
+6: --- ratio-negative  (polygons:=[SlowNegative])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (-0.25, -0.125, 0.0, 0.0, 0.0, -0.5) + state('SlowNegative', 2)   slowdown_ratio -0.5: the command is REVERSED at half speed
+6: --- ratio-minus-one  (polygons:=[SlowMinusOne])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio -1: not smaller in magnitude, command passes
+6: --- ratio-one  (polygons:=[SlowOne])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 1: command passes, no state change
+6: --- ratio-two  (polygons:=[SlowTwo])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 2: command passes (never sped up)
+[Processing: roslean_collision_monitor]
+6: --- ratio-zero  (polygons:=[SlowZero])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowZero', 2)   slowdown_ratio 0: zero, reported as slowdown
+6: --- min-points-zero  (polygons:=[StopMin0])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMin0', 1)   min_points 0: stops with no point in the zone
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   min_points 0: stops on an empty scan
+6: --- min-points-negative  (polygons:=[StopMinNeg])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMinNeg', 1)   min_points -1: stops with no point in the zone
+6: --- action-none  (polygons:=[NoAction])
+6: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+6: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   action_type none: a point in the zone changes nothing
+6: --- triangle  (polygons:=[Triangle])
+6: ok    configuration is refused (node is refused)
+6: --- offset: skipped (needs a transform)
+6: --- offset-shift-correction: skipped (needs a transform)
+6: --- shift-correction-same-frame: skipped (needs a transform)
+6: --- rotated: skipped (needs a transform)
+6: --- no-transform: skipped (needs a transform)
+6: --- timeout-zero-no-transform: skipped (needs a transform)
+6: --- no-odom: skipped (needs a transform)
+6: --- transform-wait: skipped (needs a transform)
+6: 0 failure(s) in 238 checks, 45 scenario runs, 9 skipped
+ 6/14 Test  #6: reference_scenario ...............   Passed  197.55 sec
+test 7
+      Start  7: upstream_scenario
+
+7: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/scenario.py" "nav2_collision_monitor/collision_monitor"
+7: Working Directory: /src/build/roslean_collision_monitor
+7: Environment variables: 
+7:  ROS_DOMAIN_ID=89
+7: Test timeout computed to be: 3600
+7: node under test: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+7: --- pass-through  (polygons:=[SlowPoly,StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle: x, y and yaw rate pass; linear.z and angular.x/y come out as 0
+7: ok    (0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   second command passes
+7: ok    (1e-300, 0.0, 0.0, 0.0, 0.0, 0.0)   a tiny velocity passes unchanged
+7: ok    (1e+300, -1e+300, 0.0, 0.0, 0.0, 1e+300)   a huge velocity passes unchanged
+7: --- stop-circle  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   3 points in the stop circle: zero velocity
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped; the state is reported only on change
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes again
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   obstacle back: stopped
+7: --- stop-polygon  (polygons:=[StopPoly])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopPoly', 1)   3 points in the stop square: zero velocity
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes again
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopPoly', 1)   points in the corner of the square: stopped
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   the same range straight ahead is outside the square
+7: --- slowdown  (polygons:=[SlowPoly])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   3 points in the slowdown square: velocity halved
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   slowed; linear.z and angular.x/y come out as 0
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: full speed
+7: --- slowdown-ratio  (polygons:=[SlowWide])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   ratio 0.3: each component is the double product v * 0.3
+7: ok    (0.03, 0.21, 0.0, 0.0, 0.0, -0.27)   same, values that are not binary fractions
+7: --- both  (polygons:=[SlowPoly,StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   points in the slowdown zone only: halved
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   points in both zones: stop wins
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no obstacle
+[Processing: roslean_collision_monitor]
+7: --- both-stop-first  (polygons:=[StopCircle,SlowPoly])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   points in the slowdown zone only: halved
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   points in both zones: stop wins
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no obstacle
+7: --- two-slowdowns  (polygons:=[SlowPoly,SlowWide])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   two slowdown zones triggered: the lower ratio (0.3) wins
+7: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+7: --- two-slowdowns-reversed  (polygons:=[SlowWide,SlowPoly])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3) + state('SlowWide', 2)   two slowdown zones triggered: the lower ratio (0.3) wins
+7: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+7: --- min-points  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   2 points inside, min_points 3: passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   3 points inside, min_points 3: stopped
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   4 points, only 2 of them inside: passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   4 points inside: stopped
+7: --- boundary-circle  (polygons:=[Circle1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   circle r=0.5, point at exactly 0.5: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step below 0.5: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step above 0.5: outside
+7: --- boundary-circle-0.7  (polygons:=[Circle07])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle07', 1)   circle r=0.7, range 0.7: INSIDE, because float32(0.7) < 0.7
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step above float32(0.7): outside
+7: --- boundary-circle-0.3  (polygons:=[Circle03])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   circle r=0.3, range 0.3: outside, because float32(0.3) > 0.3
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle03', 1)   one float32 step below float32(0.3): inside
+7: --- boundary-polygon  (polygons:=[Poly1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   point (0.5, 0) on the right edge: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   one float32 step inside the right edge: inside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (-0.5, -4e-8) on the left edge: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond the left edge: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   point (-2e-8, 0.5) on the top edge: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond the top edge: outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   point (-2e-8, -0.5) on the bottom edge: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   one float32 step inside the bottom edge: inside
+7: --- boundary-polygon-0.3  (polygons:=[Poly03])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly03', 1)   square +-0.3, point at range 0.3 on the left edge: inside (edge is float32)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step beyond: outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range 0.3 on the right edge: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly03', 1)   one float32 step inside the right edge: inside
+7: --- boundary-polygon-0.7  (polygons:=[Poly07])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   square +-0.7, range 0.7 on the right edge: outside (a 0.7 circle says inside)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly07', 1)   range 0.7 on the left edge: inside
+7: --- boundary-vertices  (polygons:=[Poly1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   corner (0.5, 0.5): outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   corner (0.5, -0.5): outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   corner (-0.5, -0.5): outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   corner (-0.5, 0.5): inside
+[Processing: roslean_collision_monitor]
+7: --- timeout  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1 ns older than source_timeout: stop
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   fresh scan: passes again
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan that arrives 1 ns too old: stop at once
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped 10 s in the future: used
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   ... and not 1 ns later
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   after a backwards clock jump the old scan is used again
+7: --- timeout-unix-clock  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1 ns older than source_timeout: stop
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   fresh scan: passes again
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan that arrives 1 ns too old: stop at once
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped 10 s in the future: used
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   ... and not 1 ns later
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   after a backwards clock jump the old scan is used again
+7: --- timeout-decimal  (polygons:=[StopCircle] source_timeout:=1.001)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1.001, scan 1000999999 ns old: used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   scan 1001000000 ns old: stop (1.001 s was truncated to 1000999999 ns)
+7: --- timeout-zero  (polygons:=[SlowCircle] source_timeout:=0.0)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 0 and no scan ever received: PASSES
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   a scan 50 s old on arrival is used
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   ... and still 1000 s later
+7: --- timeout-negative  (polygons:=[StopCircle] source_timeout:=-1.0)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   source_timeout -1: a scan stamped now is too old
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan stamped exactly 1 s ahead is used
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan stamped 1 ns less than 1 s ahead is not
+7: --- no-scan  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   no scan ever received: stop
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   first scan arrives: passes
+7: --- before-clock  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   before any /clock message, no scan: stop
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   scan stamped 0 at clock 0: passes
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan stamped in the future: passes
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   first clock message: 1 s; scan stamped 0.5 s + 1 ns still young enough
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   2 ns later it is too old
+7: --- negative-stamp  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+7: ok    nothing        a scan stamped -1 ns arrives: nothing happens yet
+7: ok    nothing, exit code -6   the next command: the node ABORTS (uncaught "cannot store a negative time point")
+[Processing: roslean_collision_monitor]
+7: --- invalid-ranges  (polygons:=[Circle1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range NaN: ignored (the scan itself is valid, so no stop)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range +inf: ignored
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range -inf: ignored
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range one float32 step below range_min: ignored
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range exactly range_min: counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range one float32 step above range_max: ignored
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range exactly range_max: counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range 0 below range_min: ignored
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   range 0 with range_min 0: a point at the origin, counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   negative range: ignored
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   negative range with a negative range_min: counted, point behind the sensor
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range +inf with range_max +inf: accepted, but the point is in no circle
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_min NaN: every ray ignored
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_max NaN: every ray ignored
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one valid ray among invalid ones: counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range_min above range_max: every ray ignored
+7: --- invalid-ranges-polygon  (polygons:=[Poly1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   second ray at 45 degrees (after a NaN) lands in the corner: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   the same range in the first ray, straight ahead: outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at angle 0, point (inf, NaN): outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 45 degrees, point (inf, inf): outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 3 rad, point (-inf, inf): outside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at -3 rad, point (-inf, -inf): outside
+7: --- length-mismatch  (polygons:=[Circle1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   5 ranges where the angles allow 3: the 5th is counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   1 range where the angles allow 11: passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   1 range (inside) where the angles allow 11: counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   no ranges at all: a valid scan without points, passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   negative angle_increment: counted
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   angle_increment NaN: the 2nd point is (NaN, NaN), in no zone
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   angle_increment NaN: the 1st ray is still at angle_min, counted
+7: --- length-mismatch-polygon  (polygons:=[Poly1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Poly1', 1)   the 5th of 5 ranges is placed at angle_min + 4 * angle_increment
+7: --- angle-accumulation  (polygons:=[PolyUpper])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('PolyUpper', 1)   last of 361 rays: the angle is the float32 running sum, point at y = +3e-6
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a single ray at angle_min + 360 * increment: point at y = -3e-6, outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('PolyUpper', 1)   a single ray at the running sum 3.1415865: inside
+7: --- commands-cease  (polygons:=[StopCircle,SlowCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+7: ok    nothing        no command for 0.25 s: nothing published
+7: ok    nothing        scan now too old, no command: nothing published
+7: ok    nothing        5 s without a command: nothing published
+7: ok    nothing        obstacle appears in the stop zone, no command: nothing published
+7: ok    nothing        10 min without a command: nothing published
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   next command, obstacle still there: stop
+7: --- stop-publication  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   0.5 s into the stop: zero still published
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   exactly stop_pub_timeout into the stop: zero still published
+7: ok    nothing   1 ns later: NOTHING published
+7: ok    nothing   still nothing
+7: ok    nothing + state('invalid source', 1)   scan times out during the silence: state changes, still nothing published
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   a new stop is published again
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   ... for stop_pub_timeout from its start
+7: ok    nothing   ... and not 1 ns longer
+7: --- zero-input  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   first command ever is zero: forwarded
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command 1 s later: forwarded
+7: ok    nothing   zero command 1 ns after stop_pub_timeout: NOT forwarded
+7: ok    nothing   only linear.z and angular.x/y non-zero: counts as zero, not forwarded
+7: ok    nothing   negative zeros count as zero
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 1e-300)   any non-zero yaw rate is forwarded
+7: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, -0.0)   negative zero is forwarded as negative zero
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero forwarded for 1 s after the output became zero
+7: ok    nothing   ... counted from the first zero output (the negative zero)
+[Processing: roslean_collision_monitor]
+7: --- signs-slowdown  (polygons:=[SlowCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (-0.25, -0.125, 0.0, 0.0, 0.0, -0.5) + state('SlowCircle', 2)   all negative: halved, signs kept
+7: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   x only
+7: ok    (-0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   -x only
+7: ok    (0.0, 0.25, 0.0, 0.0, 0.0, 0.0)   y only
+7: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y only
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.5)   yaw only
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -0.5)   -yaw only
+7: ok    (-0.25, -0.0, 0.0, 0.0, 0.0, 0.0)   a negative-zero component stays negative zero
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('', 0)   zero command in a triggered slowdown zone: zero out, state back to normal
+7: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative zero passes as negative zero
+7: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowCircle', 2)   moving again: slowed
+7: ok    (1e-200, 0.0, 0.0, 0.0, 0.0, 0.0) + state('', 0)   velocity whose square underflows: NOT slowed, state back to normal
+7: ok    (5e-151, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowCircle', 2)   velocity 1e-150: slowed
+7: --- signs-stop  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   negative command: +0 on all axes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative-zero command: +0 on all axes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command
+7: --- signs-pass  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (-0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   -x passes
+7: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y passes
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -1.0)   -yaw passes
+7: ok    (-0.5, -0.25, 0.0, 0.0, 0.0, -1.0)   all negative passes
+7: ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0)   negative zeros pass as negative zeros
+7: --- non-finite-command  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+7: ok    nothing   linear.x NaN: nothing published (not a stop)
+7: ok    nothing   linear.y +inf: nothing published
+7: ok    nothing   angular.z -inf: nothing published
+7: ok    nothing   linear.z NaN (a component never forwarded): nothing published
+7: ok    nothing   angular.x +inf: nothing published
+7: ok    nothing   angular.y NaN: nothing published
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   the next finite command passes
+7: ok    nothing   NaN with an obstacle in the stop zone: nothing published either
+7: --- stamped  (polygons:=[SlowPoly,StopCircle] enable_stamped_cmd_vel:=true)
+7: ok    command topics are geometry_msgs/msg/TwistStamped (in: ['geometry_msgs/msg/TwistStamped'], out: geometry_msgs/msg/TwistStamped)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   TwistStamped in, TwistStamped out, header copied
+7: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   slowed, header copied
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stopped, header copied
+7: --- ratio-negative  (polygons:=[SlowNegative])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (-0.25, -0.125, 0.0, 0.0, 0.0, -0.5) + state('SlowNegative', 2)   slowdown_ratio -0.5: the command is REVERSED at half speed
+7: --- ratio-minus-one  (polygons:=[SlowMinusOne])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio -1: not smaller in magnitude, command passes
+7: --- ratio-one  (polygons:=[SlowOne])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 1: command passes, no state change
+7: --- ratio-two  (polygons:=[SlowTwo])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 2: command passes (never sped up)
+7: --- ratio-zero  (polygons:=[SlowZero])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('SlowZero', 2)   slowdown_ratio 0: zero, reported as slowdown
+7: --- min-points-zero  (polygons:=[StopMin0])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMin0', 1)   min_points 0: stops with no point in the zone
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   min_points 0: stops on an empty scan
+7: --- min-points-negative  (polygons:=[StopMinNeg])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMinNeg', 1)   min_points -1: stops with no point in the zone
+7: --- action-none  (polygons:=[NoAction])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   action_type none: a point in the zone changes nothing
+7: --- triangle  (polygons:=[Triangle])
+7: ok    configuration is refused (node is refused)
+[Processing: roslean_collision_monitor]
+7: --- offset  (polygons:=[Circle1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan frame 0.25 ahead, range 0.25: point (0.5, 0), on the circle: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step closer: inside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0.625 backwards: point (-0.375, 0): inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range 0.875 backwards: point (-0.625, 0): outside
+7: --- offset-shift-correction  (polygons:=[Circle1] base_shift_correction:=true)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan frame 0.25 ahead, range 0.25: point (0.5, 0), on the circle: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step closer: inside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0.625 backwards: point (-0.375, 0): inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range 0.875 backwards: point (-0.625, 0): outside
+7: --- shift-correction-same-frame  (polygons:=[Circle1] base_shift_correction:=true)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   circle r=0.5, point at exactly 0.5: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step below 0.5: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   one float32 step above 0.5: outside
+7: --- rotated  (polygons:=[Circle1])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scanner facing backwards, range 0.75: point (-0.5, 0), on the circle: outside
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   one float32 step closer: inside
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   range 0.875 at pi: point (1.125, 0): outside
+7: --- no-transform  (polygons:=[StopCircle])
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   no transform from the scan frame to the base: stop
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a scan in the base frame needs no transform: passes
+7: --- timeout-zero-no-transform  (polygons:=[StopCircle] source_timeout:=0.0)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 0, obstacle scan in a frame without transform: PASSES
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   the same scan in the base frame: stop
+7: --- no-odom  (polygons:=[StopCircle] base_shift_correction:=true)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   base_shift_correction on, scan in the base frame, no odom transform: stop
+7: --- transform-wait  (polygons:=[StopCircle] transform_tolerance:=0.25)
+7: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+7: ok    nothing   missing transform, tolerance 0.25: no answer while the clock stands still
+7: ok    nothing        clock + 0.125: still no answer
+7: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   clock + 0.25: the stop comes out
+7: 0 failure(s) in 277 checks, 55 scenario runs
+ 7/14 Test  #7: upstream_scenario ................   Passed  152.84 sec
+test 8
+      Start  8: upstream_random_diff
+
+8: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/random_diff.py" "nav2_collision_monitor/collision_monitor" "nav2_collision_monitor/collision_monitor" "0" "20"
+8: Working Directory: /src/build/roslean_collision_monitor
+8: Environment variables: 
+8:  ROS_DOMAIN_ID=90
+8: Test timeout computed to be: 2400
+8: a: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+8: b: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+8: ok    seed=0 zones=2 tf=1 stamped=0 commands=76 published=71 altered=15 a!=b:0 a!=model:0 b!=model:0 10.0s
+[Processing: roslean_collision_monitor]
+8: ok    seed=1 zones=1 tf=0 stamped=1 commands=87 published=84 altered=52 a!=b:0 a!=model:0 b!=model:0 11.9s
+8: ok    seed=2 zones=1 tf=0 stamped=0 commands=97 published=76 altered=12 a!=b:0 a!=model:0 b!=model:0 12.9s
+[Processing: roslean_collision_monitor]
+8: ok    seed=3 zones=1 tf=1 stamped=0 commands=98 published=93 altered=13 a!=b:0 a!=model:0 b!=model:0 13.7s
+8: ok    seed=4 zones=1 tf=1 stamped=1 commands=106 published=47 altered=20 a!=b:0 a!=model:0 b!=model:0 14.5s
+8: ok    seed=5 zones=3 tf=1 stamped=1 commands=70 published=59 altered=33 a!=b:0 a!=model:0 b!=model:0 10.3s
+[Processing: roslean_collision_monitor]
+8: ok    seed=6 zones=3 tf=0 stamped=0 commands=100 published=31 altered=26 a!=b:0 a!=model:0 b!=model:0 13.5s
+8: ok    seed=7 zones=2 tf=1 stamped=0 commands=79 published=25 altered=13 a!=b:0 a!=model:0 b!=model:0 10.8s
+[Processing: roslean_collision_monitor]
+8: ok    seed=8 zones=1 tf=1 stamped=0 commands=90 published=81 altered=31 a!=b:0 a!=model:0 b!=model:0 10.0s
+8: ok    seed=9 zones=2 tf=0 stamped=0 commands=111 published=100 altered=13 a!=b:0 a!=model:0 b!=model:0 14.1s
+8: ok    seed=10 zones=3 tf=1 stamped=0 commands=72 published=58 altered=24 a!=b:0 a!=model:0 b!=model:0 10.4s
+[Processing: roslean_collision_monitor]
+8: ok    seed=11 zones=2 tf=1 stamped=0 commands=74 published=57 altered=26 a!=b:0 a!=model:0 b!=model:0 11.0s
+8: ok    seed=12 zones=2 tf=1 stamped=1 commands=76 published=62 altered=27 a!=b:0 a!=model:0 b!=model:0 10.0s
+[Processing: roslean_collision_monitor]
+8: ok    seed=13 zones=2 tf=0 stamped=1 commands=105 published=7 altered=7 a!=b:0 a!=model:0 b!=model:0 13.9s
+8: ok    seed=14 zones=1 tf=1 stamped=0 commands=81 published=61 altered=19 a!=b:0 a!=model:0 b!=model:0 11.1s
+8: ok    seed=15 zones=1 tf=1 stamped=0 commands=86 published=68 altered=42 a!=b:0 a!=model:0 b!=model:0 10.7s
+[Processing: roslean_collision_monitor]
+8: ok    seed=16 zones=2 tf=1 stamped=0 commands=103 published=90 altered=38 a!=b:0 a!=model:0 b!=model:0 13.4s
+8: ok    seed=17 zones=3 tf=0 stamped=1 commands=72 published=66 altered=10 a!=b:0 a!=model:0 b!=model:0 10.3s
+8: ok    seed=18 zones=1 tf=0 stamped=1 commands=82 published=77 altered=63 a!=b:0 a!=model:0 b!=model:0 11.1s
+[Processing: roslean_collision_monitor]
+8: ok    seed=19 zones=3 tf=1 stamped=0 commands=78 published=67 altered=58 a!=b:0 a!=model:0 b!=model:0 10.0s
+8: 0 divergent case(s) in 20 random cases, 1743 commands; 0 case(s) passed only on the slow retry
+ 8/14 Test  #8: upstream_random_diff .............   Passed  233.69 sec
+test 9
+      Start  9: reference_random_diff
+
+9: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/random_diff.py" "/src/ros/roslean_collision_monitor/test/reference_node.py" "nav2_collision_monitor/collision_monitor" "0" "5" "--no-tf"
+9: Working Directory: /src/build/roslean_collision_monitor
+9: Environment variables: 
+9:  ROS_DOMAIN_ID=96
+9: Test timeout computed to be: 1200
+9: a: /src/ros/roslean_collision_monitor/test/reference_node.py
+9: b: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+9: ok    seed=0 zones=2 tf=0 stamped=0 commands=103 published=79 altered=23 a!=b:0 a!=model:0 b!=model:0 14.5s
+[Processing: roslean_collision_monitor]
+9: ok    seed=1 zones=1 tf=0 stamped=0 commands=90 published=86 altered=56 a!=b:0 a!=model:0 b!=model:0 14.2s
+9: ok    seed=2 zones=1 tf=0 stamped=0 commands=104 published=90 altered=7 a!=b:0 a!=model:0 b!=model:0 14.9s
+[Processing: roslean_collision_monitor]
+9: ok    seed=3 zones=1 tf=0 stamped=1 commands=100 published=96 altered=0 a!=b:0 a!=model:0 b!=model:0 15.3s
+9: ok    seed=4 zones=1 tf=0 stamped=1 commands=104 published=54 altered=31 a!=b:0 a!=model:0 b!=model:0 16.0s
+9: 0 divergent case(s) in 5 random cases, 501 commands; 0 case(s) passed only on the slow retry
+ 9/14 Test  #9: reference_random_diff ............   Passed   75.01 sec
+test 10
+      Start 10: roslean_scenario
+
+10: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/scenario.py" "/src/build/roslean_collision_monitor/collision_monitor" "--profile" "profile_roslean"
+10: Working Directory: /src/build/roslean_collision_monitor
+10: Environment variables: 
+10:  ROS_DOMAIN_ID=91
+10: Test timeout computed to be: 3600
+10: node under test: /src/build/roslean_collision_monitor/collision_monitor
+10: --- pass-through  (polygons:=[SlowPoly,StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle: x, y and yaw rate pass; linear.z and angular.x/y come out as 0
+10: ok    (0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   second command passes
+10: ok    (1e-300, 0.0, 0.0, 0.0, 0.0, 0.0)   a tiny velocity passes unchanged
+10: ok    (1e+300, -1e+300, 0.0, 0.0, 0.0, 1e+300)   a huge velocity passes unchanged
+[Processing: roslean_collision_monitor]
+10: --- stop-circle  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   3 points in the stop circle: zero velocity
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped; the state is reported only on change
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   obstacle gone: passes again
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   obstacle back: stopped
+10: --- stop-polygon  (polygons:=[StopPoly])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   3 points in the stop square: zero velocity
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   obstacle gone: passes again
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   points in the corner of the square: stopped
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   the same range straight ahead is outside the square
+10: --- slowdown  (polygons:=[SlowPoly])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   3 points in the slowdown square: velocity halved
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   slowed; linear.z and angular.x/y come out as 0
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   obstacle gone: full speed
+10: --- slowdown-ratio  (polygons:=[SlowWide])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   ratio 0.3: each component is the double product v * 0.3
+10: ok    (0.03, 0.21, 0.0, 0.0, 0.0, -0.27)   same, values that are not binary fractions
+10: --- both  (polygons:=[SlowPoly,StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   points in the slowdown zone only: halved
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   points in both zones: stop wins
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+10: --- both-stop-first  (polygons:=[StopCircle,SlowPoly])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   points in the slowdown zone only: halved
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   points in both zones: stop wins
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   2 points in the stop zone (needs 3), all 5 in the slowdown zone: halved
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no obstacle
+10: --- two-slowdowns  (polygons:=[SlowPoly,SlowWide])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   two slowdown zones triggered: the lower ratio (0.3) wins
+10: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+[Processing: roslean_collision_monitor]
+10: --- two-slowdowns-reversed  (polygons:=[SlowWide,SlowPoly])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   two slowdown zones triggered: the lower ratio (0.3) wins
+10: ok    (0.15, 0.075, 0.0, 0.0, 0.0, 0.3)   points in the wide zone only: 0.3
+10: --- min-points  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   2 points inside, min_points 3: passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   3 points inside, min_points 3: stopped
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   4 points, only 2 of them inside: passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   4 points inside: stopped
+10: --- boundary-circle  (polygons:=[Circle1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (500 mm < 501 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   circle r=0.5, point at exactly 0.5: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step below 0.5: inside
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (500 mm < 501 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step above 0.5: outside
+10: --- boundary-circle-0.7  (polygons:=[Circle07])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   circle r=0.7, range 0.7: INSIDE, because float32(0.7) < 0.7
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (700 mm < 701 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step above float32(0.7): outside
+10: --- boundary-circle-0.3  (polygons:=[Circle03])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (300 mm < 301 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   circle r=0.3, range 0.3: outside, because float32(0.3) > 0.3
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step below float32(0.3): inside
+10: --- boundary-polygon  (polygons:=[Poly1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (0.5, 0) on the right edge: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step inside the right edge: inside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (-0.5, -4e-8) on the left edge: inside
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step beyond the left edge: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (-2e-8, 0.5) on the top edge: inside
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step beyond the top edge: outside
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   point (-2e-8, -0.5) on the bottom edge: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step inside the bottom edge: inside
+10: --- boundary-polygon-0.3  (polygons:=[Poly03])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   square +-0.3, point at range 0.3 on the left edge: inside (edge is float32)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step beyond: outside
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0.3 on the right edge: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step inside the right edge: inside
+[Processing: roslean_collision_monitor]
+10: --- boundary-polygon-0.7  (polygons:=[Poly07])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   square +-0.7, range 0.7 on the right edge: outside (a 0.7 circle says inside)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0.7 on the left edge: inside
+10: --- boundary-vertices: not run [D11: one fixed sensor pose per run; replaced by roslean-vertex-tr, -br, -bl and -tl]
+10: --- timeout  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   scan 1 ns older than source_timeout: stop
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   fresh scan: passes again
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a scan that arrives 1 ns too old: stop at once
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan stamped 10 s in the future: used
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   ... and not 1 ns later
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   after a backwards clock jump the old scan is used again
+10: --- timeout-unix-clock  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan 1 ns younger than source_timeout: used
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan exactly source_timeout old: still used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   scan 1 ns older than source_timeout: stop
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   fresh scan: passes again
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan that arrives exactly source_timeout old: used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a scan that arrives 1 ns too old: stop at once
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan stamped 10 s in the future: used
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   ... and is used until source_timeout after its stamp
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   ... and not 1 ns later
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   after a backwards clock jump the old scan is used again
+10: --- timeout-decimal  (polygons:=[StopCircle] source_timeout:=1.001)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1.001, scan 1000999999 ns old: used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   scan 1001000000 ns old: stop (1.001 s was truncated to 1000999999 ns)
+10: --- timeout-zero  (polygons:=[SlowCircle] source_timeout:=0.0)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 0 and no scan ever received: PASSES
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   a scan 50 s old on arrival is used
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   ... and still 1000 s later
+10: --- timeout-negative  (polygons:=[StopCircle] source_timeout:=-1.0)
+10: ok    [D9: a negative source_timeout is refused] configuration is refused (node is refused)
+10: ok    [D9: a negative source_timeout is refused] the node names the reason: "1 parameter refused: parameter 'source_timeout'"
+10: --- no-scan  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   no scan ever received: stop
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   still stopped
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   first scan arrives: passes
+[Processing: roslean_collision_monitor]
+10: --- before-clock  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   before any /clock message, no scan: stop
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan stamped 0 at clock 0: passes
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan stamped in the future: passes
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   first clock message: 1 s; scan stamped 0.5 s + 1 ns still young enough
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   2 ns later it is too old
+10: --- negative-stamp  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+10: ok    nothing        a scan stamped -1 ns arrives: nothing happens yet
+10: ok    [D8: no abort; the stamp counts as 0, so at clock 100 s the scan is too old: stop] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   the next command: the node ABORTS (uncaught "cannot store a negative time point")
+10: --- invalid-ranges  (polygons:=[Circle1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range NaN: ignored (the scan itself is valid, so no stop)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range +inf: ignored
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range -inf: ignored
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range one float32 step below range_min: ignored
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range exactly range_min: counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range one float32 step above range_max: ignored
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range exactly range_max: counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range 0 below range_min: ignored
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0 with range_min 0: a point at the origin, counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   negative range: ignored
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative range with a negative range_min: counted, point behind the sensor
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range +inf with range_max +inf: accepted, but the point is in no circle
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_min NaN: every ray ignored
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_max NaN: every ray ignored
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one valid ray among invalid ones: counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range_min above range_max: every ray ignored
+10: --- invalid-ranges-polygon  (polygons:=[Poly1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   second ray at 45 degrees (after a NaN) lands in the corner: inside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   the same range in the first ray, straight ahead: outside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at angle 0, point (inf, NaN): outside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 45 degrees, point (inf, inf): outside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at 3 rad, point (-inf, inf): outside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   accepted +inf at -3 rad, point (-inf, -inf): outside
+10: --- length-mismatch  (polygons:=[Circle1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   5 ranges where the angles allow 3: the 5th is counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   1 range where the angles allow 11: passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   1 range (inside) where the angles allow 11: counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   no ranges at all: a valid scan without points, passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative angle_increment: counted
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   angle_increment NaN: the 2nd point is (NaN, NaN), in no zone
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   angle_increment NaN: the 1st ray is still at angle_min, counted
+10: --- length-mismatch-polygon  (polygons:=[Poly1])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   the 5th of 5 ranges is placed at angle_min + 4 * angle_increment
+[Processing: roslean_collision_monitor]
+10: --- angle-accumulation  (polygons:=[PolyUpper])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   last of 361 rays: the angle is the float32 running sum, point at y = +3e-6
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside (3 micrometres below the edge)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a single ray at angle_min + 360 * increment: point at y = -3e-6, outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a single ray at the running sum 3.1415865: inside
+10: --- commands-cease  (polygons:=[StopCircle,SlowCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+10: ok    nothing        no command for 0.25 s: nothing published
+10: ok    nothing        scan now too old, no command: nothing published
+10: ok    nothing        5 s without a command: nothing published
+10: ok    nothing        obstacle appears in the stop zone, no command: nothing published
+10: ok    nothing        10 min without a command: nothing published
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   next command, obstacle still there: stop
+10: --- stop-publication  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   0.5 s into the stop: zero still published
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   exactly stop_pub_timeout into the stop: zero still published
+10: ok    nothing   1 ns later: NOTHING published
+10: ok    nothing   still nothing
+10: ok    nothing   scan times out during the silence: state changes, still nothing published
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   obstacle gone: passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a new stop is published again
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   ... for stop_pub_timeout from its start
+10: ok    nothing   ... and not 1 ns longer
+10: --- zero-input  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   first command ever is zero: forwarded
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command 1 s later: forwarded
+10: ok    nothing   zero command 1 ns after stop_pub_timeout: NOT forwarded
+10: ok    nothing   only linear.z and angular.x/y non-zero: counts as zero, not forwarded
+10: ok    nothing   negative zeros count as zero
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 1e-300)   any non-zero yaw rate is forwarded
+10: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, -0.0)   negative zero is forwarded as negative zero
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero forwarded for 1 s after the output became zero
+10: ok    nothing   ... counted from the first zero output (the negative zero)
+10: --- signs-slowdown  (polygons:=[SlowCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (-0.25, -0.125, 0.0, 0.0, 0.0, -0.5)   all negative: halved, signs kept
+10: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   x only
+10: ok    (-0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   -x only
+10: ok    (0.0, 0.25, 0.0, 0.0, 0.0, 0.0)   y only
+10: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y only
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.5)   yaw only
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -0.5)   -yaw only
+10: ok    (-0.25, -0.0, 0.0, 0.0, 0.0, 0.0)   a negative-zero component stays negative zero
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command in a triggered slowdown zone: zero out, state back to normal
+10: ok    (-0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative zero passes as negative zero
+10: ok    (0.25, 0.0, 0.0, 0.0, 0.0, 0.0)   moving again: slowed
+10: ok    [D6: the zone is chosen by its ratio, not by the squared norm of the product: slowed] (5e-201, 0.0, 0.0, 0.0, 0.0, 0.0)   velocity whose square underflows: NOT slowed, state back to normal
+10: ok    (5e-151, 0.0, 0.0, 0.0, 0.0, 0.0)   velocity 1e-150: slowed
+[Processing: roslean_collision_monitor]
+10: --- signs-stop  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative command: +0 on all axes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   negative-zero command: +0 on all axes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   zero command
+10: --- signs-pass  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (-0.5, 0.0, 0.0, 0.0, 0.0, 0.0)   -x passes
+10: ok    (0.0, -0.25, 0.0, 0.0, 0.0, 0.0)   -y passes
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, -1.0)   -yaw passes
+10: ok    (-0.5, -0.25, 0.0, 0.0, 0.0, -1.0)   all negative passes
+10: ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0)   negative zeros pass as negative zeros
+10: --- non-finite-command  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a command passes
+10: ok    nothing   linear.x NaN: nothing published (not a stop)
+10: ok    nothing   linear.y +inf: nothing published
+10: ok    nothing   angular.z -inf: nothing published
+10: ok    nothing   linear.z NaN (a component never forwarded): nothing published
+10: ok    nothing   angular.x +inf: nothing published
+10: ok    nothing   angular.y NaN: nothing published
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   the next finite command passes
+10: ok    nothing   NaN with an obstacle in the stop zone: nothing published either
+10: --- stamped  (polygons:=[SlowPoly,StopCircle] enable_stamped_cmd_vel:=true)
+10: ok    command topics are geometry_msgs/msg/TwistStamped (in: ['geometry_msgs/msg/TwistStamped'], out: geometry_msgs/msg/TwistStamped)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   TwistStamped in, TwistStamped out, header copied
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   slowed, header copied
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stopped, header copied
+10: --- ratio-negative  (polygons:=[SlowNegative])
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] configuration is refused (node is refused)
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] the node names the reason: "1 parameter refused: parameter 'SlowNegative.slowdown_ratio'"
+10: --- ratio-minus-one  (polygons:=[SlowMinusOne])
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] configuration is refused (node is refused)
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] the node names the reason: "1 parameter refused: parameter 'SlowMinusOne.slowdown_ratio'"
+10: --- ratio-one  (polygons:=[SlowOne])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 1: command passes, no state change
+10: --- ratio-two  (polygons:=[SlowTwo])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio 2: command passes (never sped up)
+10: --- ratio-zero  (polygons:=[SlowZero])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   slowdown_ratio 0: zero, reported as slowdown
+10: --- min-points-zero  (polygons:=[StopMin0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   min_points 0: stops with no point in the zone
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   min_points 0: stops on an empty scan
+[Processing: roslean_collision_monitor]
+10: --- min-points-negative  (polygons:=[StopMinNeg])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   min_points -1: stops with no point in the zone
+10: --- action-none  (polygons:=[NoAction])
+10: ok    [D1: action_type none is outside the subset] configuration is refused (node is refused)
+10: ok    [D1: action_type none is outside the subset] the node names the reason: "1 parameter refused: parameter 'NoAction.action_type'"
+10: --- triangle  (polygons:=[Triangle])
+10: ok    configuration is refused (node is refused)
+10: --- offset  (polygons:=[Circle1] scan.roslean_sensor_pose:=[0.25,0.0,0.0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (500 mm < 501 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   scan frame 0.25 ahead, range 0.25: point (0.5, 0), on the circle: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step closer: inside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   range 0.625 backwards: point (-0.375, 0): inside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range 0.875 backwards: point (-0.625, 0): outside
+10: --- offset-shift-correction  (polygons:=[Circle1] base_shift_correction:=true)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] configuration is refused (node is refused)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] the node names the reason: "1 parameter refused: parameter 'base_shift_correction'"
+10: --- shift-correction-same-frame  (polygons:=[Circle1] base_shift_correction:=true)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] configuration is refused (node is refused)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] the node names the reason: "1 parameter refused: parameter 'base_shift_correction'"
+10: --- rotated  (polygons:=[Circle1] scan.roslean_sensor_pose:=[0.25,0.0,3.141592653589793])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the circle is the radius rounded up to a millimetre plus 1 mm; the point is inside it (500 mm < 501 mm)] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   scanner facing backwards, range 0.75: point (-0.5, 0), on the circle: outside
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   one float32 step closer: inside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   range 0.875 at pi: point (1.125, 0): outside
+10: --- no-transform  (polygons:=[StopCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   no transform from the scan frame to the base: stop
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a scan in the base frame needs no transform: passes
+10: --- timeout-zero-no-transform  (polygons:=[StopCircle] source_timeout:=0.0)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 0, obstacle scan in a frame without transform: PASSES
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   the same scan in the base frame: stop
+10: --- no-odom  (polygons:=[StopCircle] base_shift_correction:=true)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] configuration is refused (node is refused)
+10: ok    [D11: base_shift_correction must be false: scan points are not corrected for motion] the node names the reason: "1 parameter refused: parameter 'base_shift_correction'"
+10: --- transform-wait  (polygons:=[StopCircle] transform_tolerance:=0.25)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D11: nothing is waited for: the stop comes at once] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   missing transform, tolerance 0.25: no answer while the clock stands still
+10: ok    nothing        clock + 0.125: still no answer
+10: ok    [D11: the stop was published already] nothing   clock + 0.25: the stop comes out
+10: --- roslean-vertex-tr  (polygons:=[Poly1] scan.roslean_sensor_pose:=[0.0,0.5,0.0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   corner (0.5, 0.5): outside (upstream)
+[Processing: roslean_collision_monitor]
+10: --- roslean-vertex-br  (polygons:=[Poly1] scan.roslean_sensor_pose:=[0.0,-0.5,0.0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   corner (0.5, -0.5): outside (upstream)
+10: --- roslean-vertex-bl  (polygons:=[Poly1] scan.roslean_sensor_pose:=[-1.0,-0.5,0.0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    [D4: the polygon has a band of sqrt(5) mm around its boundary; every boundary point is inside] (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   corner (-0.5, -0.5): outside (upstream)
+10: --- roslean-vertex-tl  (polygons:=[Poly1] scan.roslean_sensor_pose:=[-1.0,0.5,0.0])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   corner (-0.5, 0.5): inside (upstream)
+10: --- roslean-state-topic  (polygons:=[StopCircle] state_topic:=cm_state)
+10: ok    [D13: the state topic is not provided] configuration is refused (node is refused)
+10: ok    [D13: the state topic is not provided] the node names the reason: "1 parameter refused: parameter 'state_topic'"
+10: --- probe-timeout-converted-twice  (polygons:=[StopCircle] source_timeout:=2.094)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 2.094 from the node: a scan 2,093,999,998 ns old is used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a scan 2,093,999,999 ns old is TOO OLD: the timeout lost 1 ns in a second conversion
+10: --- probe-timeout-of-source  (polygons:=[StopCircle] scan.source_timeout:=2.094)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan.source_timeout 2.094: a scan 2,093,999,999 ns old is used
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a scan 2,094,000,000 ns old is too old
+10: --- probe-stop-pub-decimal  (polygons:=[StopCircle] stop_pub_timeout:=2.094 source_timeout:=0.0)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop_pub_timeout 2.094: zero still published 2,093,999,999 ns later
+10: ok    nothing   ... and not 1 ns after that
+10: --- probe-stop-pub-negative  (polygons:=[StopCircle] stop_pub_timeout:=-1.0)
+10: ok    [D9: a negative stop_pub_timeout is refused] configuration is refused (node is refused)
+10: ok    [D9: a negative stop_pub_timeout is refused] the node names the reason: "1 parameter refused: parameter 'stop_pub_timeout'"
+10: --- probe-timeout-below-1ns  (polygons:=[StopCircle] source_timeout:=1.0e-10)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1e-10 s and no scan ever received: PASSES, as with 0
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   a scan 50 s old is used
+10: --- probe-source-disabled  (polygons:=[StopCircle] scan.enabled:=false)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, no scan ever received: passes
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, obstacle in the stop zone: PASSES
+[Processing: roslean_collision_monitor]
+10: --- probe-zone-disabled  (polygons:=[StopCircle,SlowCircle] StopCircle.enabled:=false)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   stop zone disabled, obstacle in both zones: slowed only
+10: --- probe-max-points  (polygons:=[StopCircle] StopCircle.max_points:=1)
+10: ok    [D10: max_points is refused] configuration is refused (node is refused)
+10: ok    [D10: max_points is refused] the node names the reason: "1 parameter refused: parameter 'StopCircle.max_points'"
+10: --- probe-min-points-wraps  (polygons:=[StopCircle] StopCircle.min_points:=4294967297)
+10: ok    [D10: min_points outside the range of a 32-bit int is refused] configuration is refused (node is refused)
+10: ok    [D10: min_points outside the range of a 32-bit int is refused] the node names the reason: "1 parameter refused: parameter 'StopCircle.min_points'"
+10: --- probe-radius-negative  (polygons:=[Circle1] Circle1.radius:=-0.5)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   radius -0.5: a point at 0.25 m is inside
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   a point at 0.75 m is outside
+10: --- probe-ratio-inf  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.inf)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio +inf: the command passes
+10: --- probe-ratio-nan  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.nan)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio NaN: the command passes
+10: --- probe-ratio-negative-zero  (polygons:=[SlowZero] SlowZero.slowdown_ratio:=-0.0)
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] configuration is refused (node is refused)
+10: ok    [D5: a slowdown ratio with the sign bit set is refused] the node names the reason: "1 parameter refused: parameter 'SlowZero.slowdown_ratio'"
+10: --- probe-equal-ratios  (polygons:=[SlowPoly,SlowCircle])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   two zones with ratio 0.5: the first in `polygons` is reported
+10: --- probe-equal-ratios-reversed  (polygons:=[SlowCircle,SlowPoly])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   the other order: the other zone is reported
+10: --- probe-wrong-type  (polygons:=[Circle1] Circle1.radius:=1)
+10: ok    configuration is refused (node is refused)
+10: --- probe-defaults  (polygons:=[Defaults])
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   min_points not set: 3 points pass
+10: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5)   4 points: slowed by the default ratio 0.5
+10: --- probe-min-points-zero-no-scan  (polygons:=[StopMin0] source_timeout:=0.0)
+10: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+10: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   source_timeout 0, no scan ever, min_points 0: the zone triggers
+10: 0 failure(s) in 318 checks, 77 scenario runs, 1 skipped
+10: expected differences from upstream, by number in the SPEC: D1: 1, D10: 2, D11: 7, D13: 1, D4: 17, D5: 3, D6: 1, D8: 1, D9: 2
+10/14 Test #10: roslean_scenario .................   Passed  271.16 sec
+test 11
+      Start 11: roslean_fault_injection
+
+11: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/fault_injection.py" "/src/build/roslean_collision_monitor/collision_monitor" "nav2_collision_monitor/collision_monitor" "--skip" "clock-negative"
+11: Working Directory: /src/build/roslean_collision_monitor
+11: Environment variables: 
+11:  ROS_DOMAIN_ID=120
+11: Test timeout computed to be: 1800
+11: node: /src/build/roslean_collision_monitor/collision_monitor
+11: upstream: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+[Processing: roslean_collision_monitor]
+11: --- dropped-scans
+11: ok    a clear scan: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    no scan for exactly source_timeout: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    no scan for 1 ns more: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    still none, stop_pub_timeout after the stop began: zero still published
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    1 ns later: nothing is published any more (R15)
+11:         node: nothing   upstream: nothing
+11: ok    ten minutes without a scan: nothing
+11:         node: nothing   upstream: nothing
+11: ok    the scans come back: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the node is alive at the end
+11: --- never-a-scan
+11: ok    no scan has ever arrived: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    a NaN command meanwhile: nothing
+11:         node: nothing   upstream: nothing
+11: ok    stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- all-nan
+11: ok    obstacle in the stop zone: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    360 readings, all NaN: free space, PASSES (R4; SPEC open decision 1)
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    all +inf: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    all -inf: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    three valid readings in the stop zone among NaN and inf: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- limits-not-finite
+11: ok    range_max +inf and every reading +inf (valid by R4): points in no zone, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    limits -inf..+inf, three of eight readings in the stop zone: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    range_min NaN: no reading is valid, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    range_max NaN: no reading is valid, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    range_min above range_max: no reading is valid, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    both limits -inf: no reading is valid, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the node is alive at the end
+11: --- angles-not-finite
+11: ok    angle_min NaN: every point is (NaN, NaN), in no zone, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    angle_min +inf: the same
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    angle_increment +inf: only the first of five points is real (needs 3), passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    angle_increment NaN: the same
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    angles of 1e30 rad: finite cosines, five points at 0.25 m: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    readings of 3e38 m, valid: far points, passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    a subnormal, -0.0 and 0.0 with range_min 0: three points at the origin, stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- zero-length
+11: ok    obstacle in the stop zone: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    a scan without readings replaces it: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    without readings and with NaN in every field: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the node is alive at the end
+11: --- length-mismatch
+11: ok    1080 readings where the angle fields allow 360; the last three are near: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    3 readings where the angle fields allow 1080: used, stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    2 readings in the zones (3 are needed): passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    angle_max below angle_min: not read, stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+[Processing: roslean_collision_monitor]
+11: --- scan-10000
+11: ok    10,000 readings at 5 m: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    10,000 readings at 0.75 m: slowed
+11:         node: (0.25, 0.125, 0.5)   upstream: (0.25, 0.125, 0.5)
+11: ok    10,000 readings at 0.25 m: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- negative-stamp
+11: ok    a clear scan: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    a clear scan stamped -1 s: ROSlean takes the stamp as 0, too old at 100 s, stop (D8); upstream aborts
+11:         node: (0.0, 0.0, 0.0)   upstream: dead
+11: ok    the next good scan: passes; upstream is gone
+11:         node: (0.5, 0.25, 1.0)   upstream: dead
+11: ok    the node is alive at the end
+11: --- negative-stamp-nanosec
+11: ok    sec -1 with nanosec 2e9 (sum +1 s): too old at 100 s, stop; upstream aborts
+11:         node: (0.0, 0.0, 0.0)   upstream: dead
+11: ok    sec at the most negative value: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: dead
+11: ok    the node is alive at the end
+11: --- negative-stamp-early-clock
+11: ok    clock at 0.25 s, obstacle scan stamped -5 s: ROSlean uses it (stamp 0, age 0.25 s): stop; upstream aborts
+11:         node: (0.0, 0.0, 0.0)   upstream: dead
+11: ok    a CLEAR scan stamped -5 s: ROSlean uses it and PASSES (D8)
+11:         node: (0.5, 0.25, 1.0)   upstream: dead
+11: ok    clock past source_timeout: the scan is too old, stop
+11:         node: (0.0, 0.0, 0.0)   upstream: dead
+11: ok    the node is alive at the end
+11: --- far-future-stamp
+11: ok    a clear scan stamped in 2038: used
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    ... and still used 100,000 s later with no further scan (R7: never too old)
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    nanosec at its largest value, obstacle: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- stamps-out-of-order
+11: ok    an older clear scan arrives after a newer obstacle scan: the last one received counts, passes (R5)
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the other way round: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- non-finite-commands
+11: ok    obstacle in the stop zone: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    linear.x NaN: nothing (R2)
+11:         node: nothing   upstream: nothing
+11: ok    linear.y +inf: nothing
+11:         node: nothing   upstream: nothing
+11: ok    angular.z -inf: nothing
+11:         node: nothing   upstream: nothing
+11: ok    linear.z NaN: nothing
+11:         node: nothing   upstream: nothing
+11: ok    angular.x -inf: nothing
+11:         node: nothing   upstream: nothing
+11: ok    angular.y +inf: nothing
+11:         node: nothing   upstream: nothing
+11: ok    all six NaN: nothing
+11:         node: nothing   upstream: nothing
+11: ok    the next finite command: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the largest finite values: pass
+11:         node: (1.7e+308, -1.7e+308, 1.7e+308)   upstream: (1.7e+308, -1.7e+308, 1.7e+308)
+11: ok    the smallest subnormal: passes
+11:         node: (5e-324, 0.0, 0.0)   upstream: (5e-324, 0.0, 0.0)
+11: ok    the node is alive at the end
+[Processing: roslean_collision_monitor]
+11: --- extreme-commands-slowdown
+11: ok    obstacle in the slowdown zone: halved
+11:         node: (0.25, 0.125, 0.5)   upstream: (0.25, 0.125, 0.5)
+11: ok    the largest finite values: halved by ROSlean; upstream passes them unslowed, the squared norm being infinite (D6)
+11:         node: (8.5e+307, -8.5e+307, 8.5e+307)   upstream: (1.7e+308, -1.7e+308, 1.7e+308)
+11: ok    the smallest subnormal: its half rounds to 0.0 for ROSlean; upstream passes it unslowed (D6)
+11:         node: (0.0, 0.0, 0.0)   upstream: (5e-324, 0.0, 0.0)
+11: ok    NaN: nothing
+11:         node: nothing   upstream: nothing
+11: ok    the node is alive at the end
+11: --- command-burst
+11: ok    passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    1000 commands back to back: answers [10, 10], alive [True, True]
+11: ok    a command after the burst is answered
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    1000 commands back to back with an obstacle: answers [11, 10], alive [True, True]
+11: ok    a command after the burst: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- scan-burst
+11: ok    500 obstacle scans back to back: sent
+11: ok    stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    500 clear scans back to back: sent
+11: ok    passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the node is alive at the end
+11: --- foreign-frame
+11: ok    a clear scan in the base frame: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    a clear scan in a frame that is not the base frame, no transform, no pose: not used, stop (D11 / R8)
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    in the base frame again: passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    an empty frame name: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the base frame name with a trailing blank: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the base frame name with a leading slash: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    a frame name of 100,000 characters: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: --- clock-backwards
+11: ok    passes
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    the scan is 1 ns too old: stop
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the clock jumps back 50 s: the scan has a negative age and is used again (A2)
+11:         node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+11: ok    obstacle: stop; the stop period starts at T - 50 s
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    50 s later, same scan: zero has been due for longer than stop_pub_timeout: nothing
+11:         node: nothing   upstream: nothing
+11: ok    the clock jumps back before the stop began: zero is published again
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the clock jumps to 0: zero published
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the clock at 1 ns
+11:         node: (0.0, 0.0, 0.0)   upstream: (0.0, 0.0, 0.0)
+11: ok    the node is alive at the end
+11: 0 failure(s) in 109 checks, 19 cases
+11/14 Test #11: roslean_fault_injection ..........   Passed   91.83 sec
+test 12
+      Start 12: roslean_fault_clock_negative
+
+12: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/fault_injection.py" "/src/build/roslean_collision_monitor/collision_monitor" "--only" "clock-negative"
+12: Working Directory: /src/build/roslean_collision_monitor
+12: Environment variables: 
+12:  ROS_DOMAIN_ID=121
+12: Test timeout computed to be: 600
+12: node: /src/build/roslean_collision_monitor/collision_monitor
+[Processing: roslean_collision_monitor]
+12: --- clock-negative
+12: ok    passes
+12:         node: (0.5, 0.25, 1.0)
+12: FAIL  after a /clock message of -5 s the node must still be there (any answer); upstream aborts
+12:         node: dead   [expected any]
+12: FAIL  the node has exited with code -6
+12: 2 failure(s) in 3 checks, 1 cases; failed: ['clock-negative']
+12/14 Test #12: roslean_fault_clock_negative .....   Passed    9.44 sec
+test 13
+      Start 13: upstream_probes
+
+13: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/scenario.py" "nav2_collision_monitor/collision_monitor" "--profile" "profile_upstream" "--own"
+13: Working Directory: /src/build/roslean_collision_monitor
+13: Environment variables: 
+13:  ROS_DOMAIN_ID=92
+13: Test timeout computed to be: 1200
+13: node under test: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+13: --- probe-timeout-converted-twice  (polygons:=[StopCircle] source_timeout:=2.094)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 2.094 from the node: a scan 2,093,999,998 ns old is used
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,093,999,999 ns old is TOO OLD: the timeout lost 1 ns in a second conversion
+13: --- probe-timeout-of-source  (polygons:=[StopCircle] scan.source_timeout:=2.094)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan.source_timeout 2.094: a scan 2,093,999,999 ns old is used
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,094,000,000 ns old is too old
+13: --- probe-stop-pub-decimal  (polygons:=[StopCircle] stop_pub_timeout:=2.094 source_timeout:=0.0)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop_pub_timeout 2.094: zero still published 2,093,999,999 ns later
+13: ok    nothing   ... and not 1 ns after that
+13: --- probe-stop-pub-negative  (polygons:=[StopCircle] stop_pub_timeout:=-1.0)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop_pub_timeout -1: the first zero is published
+13: ok    nothing   the second is not, at the same clock time
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   again one zero
+13: ok    nothing   and no more
+13: --- probe-timeout-below-1ns  (polygons:=[StopCircle] source_timeout:=1.0e-10)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1e-10 s and no scan ever received: PASSES, as with 0
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   a scan 50 s old is used
+13: --- probe-source-disabled  (polygons:=[StopCircle] scan.enabled:=false)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, no scan ever received: passes
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, obstacle in the stop zone: PASSES
+13: --- probe-zone-disabled  (polygons:=[StopCircle,SlowCircle] StopCircle.enabled:=false)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   stop zone disabled, obstacle in both zones: slowed only
+13: --- probe-max-points  (polygons:=[StopCircle] StopCircle.max_points:=1)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   max_points 1 (min_points 3 in the file): 1 point passes
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   2 points stop: the threshold is max_points + 1
+13: --- probe-min-points-wraps  (polygons:=[StopCircle] StopCircle.min_points:=4294967297)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   min_points 4294967297: one point stops
+13: --- probe-radius-negative  (polygons:=[Circle1] Circle1.radius:=-0.5)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   radius -0.5: a point at 0.25 m is inside
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a point at 0.75 m is outside
+13: --- probe-ratio-inf  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.inf)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio +inf: the command passes
+[Processing: roslean_collision_monitor]
+13: --- probe-ratio-nan  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.nan)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio NaN: the command passes
+13: --- probe-ratio-negative-zero  (polygons:=[SlowZero] SlowZero.slowdown_ratio:=-0.0)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0) + state('SlowZero', 2)   slowdown_ratio -0.0: negative zeros come out
+13: --- probe-equal-ratios  (polygons:=[SlowPoly,SlowCircle])
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   two zones with ratio 0.5: the first in `polygons` is reported
+13: --- probe-equal-ratios-reversed  (polygons:=[SlowCircle,SlowPoly])
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   the other order: the other zone is reported
+13: --- probe-wrong-type  (polygons:=[Circle1] Circle1.radius:=1)
+13: ok    configuration is refused (node is refused)
+13: --- probe-defaults  (polygons:=[Defaults])
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   min_points not set: 3 points pass
+13: ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('Defaults', 2)   4 points: slowed by the default ratio 0.5
+13: --- probe-min-points-zero-no-scan  (polygons:=[StopMin0] source_timeout:=0.0)
+13: ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+13: ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMin0', 1)   source_timeout 0, no scan ever, min_points 0: the zone triggers
+13: 0 failure(s) in 48 checks, 18 scenario runs
+13: expected differences from upstream, by number in the SPEC: none
+13/14 Test #13: upstream_probes ..................   Passed   33.30 sec
+test 14
+      Start 14: roslean_random_diff
+
+14: Test command: /usr/bin/python3 "/src/ros/roslean_collision_monitor/test/random_diff.py" "/src/build/roslean_collision_monitor/collision_monitor" "nav2_collision_monitor/collision_monitor" "0" "6" "--roslean"
+14: Working Directory: /src/build/roslean_collision_monitor
+14: Environment variables: 
+14:  ROS_DOMAIN_ID=93
+14: Test timeout computed to be: 1800
+14: a: /src/build/roslean_collision_monitor/collision_monitor
+14: b: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+14: ok    seed=0 zones=2 tf=1 yaw=None stamped=0 commands=69 boundary-dependent=11 differ=10 published-differ=10 farthest=1.196mm 11.5s
+[Processing: roslean_collision_monitor]
+14: ok    seed=1 zones=1 tf=0 yaw=None stamped=1 commands=86 boundary-dependent=5 differ=4 published-differ=4 farthest=0.082mm 13.4s
+14: ok    seed=2 zones=1 tf=0 yaw=None stamped=0 commands=91 boundary-dependent=7 differ=6 published-differ=7 farthest=0.118mm 17.4s
+[Processing: roslean_collision_monitor]
+14: ok    seed=3 zones=1 tf=1 yaw=None stamped=0 commands=88 boundary-dependent=0 differ=0 published-differ=0 farthest=0.000mm 15.2s
+[Processing: roslean_collision_monitor]
+14: ok    seed=4 zones=1 tf=1 yaw=None stamped=1 commands=112 boundary-dependent=9 differ=4 published-differ=8 farthest=1.113mm 24.2s
+14: ok    seed=5 zones=3 tf=1 yaw=None stamped=1 commands=77 boundary-dependent=8 differ=7 published-differ=7 farthest=0.434mm 12.7s
+14: circle zones: 863 point tests, 83 of them within 3.5 mm outside the zone; 22 answers differ because of such a point, the deciding point 0.000 to 0.434 mm outside (median 0.000)
+14: polygon zones: 854 point tests, 94 of them within 4.4 mm outside the zone; 9 answers differ because of such a point, the deciding point 0.000 to 1.196 mm outside (median 0.390)
+14: 0 case(s) outside the bounds in 6 random cases, 523 commands, of which 40 depend on a point in a growth band; the two nodes demand different velocities for 31 and publish differently for 36; 0 case(s) passed only on the slow retry
+14/14 Test #14: roslean_random_diff ..............   Passed   94.65 sec
+
+100% tests passed, 0 tests failed out of 14
+
+Label Time Summary:
+long    = 1116.71 sec*proc (7 tests)
+
+Total Test time (real) = 1305.26 sec
+Finished <<< roslean_collision_monitor [21min 45s]
+
+Summary: 1 package finished [21min 45s]
+
+real	21m45.529s
+user	1m10.423s
+sys	0m7.998s
+Summary: 14 tests, 0 errors, 0 failures, 0 skipped

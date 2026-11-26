@@ -28,17 +28,38 @@ ros-jazzy-rviz2 = ">=14.1.23,<15"
 [tasks]
 
 build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G Ninja" }
-# The package named twist_mux that shadows upstream's (docs/DROP_IN_TWIST_MUX.md).
-# Kept in an install tree of its own: the tests compare with upstream's twist_mux
-# and must not find this one. Use it with: source install_overlay/setup.bash
-build-overlay = { cmd = "bash -c 'source install/setup.bash && colcon build --base-paths overlay --build-base build_overlay --install-base install_overlay --cmake-args -G Ninja'", depends-on = ["build"] }
+# The packages under overlay/, which shadow upstream packages of the same name
+# (docs/DROP_IN_TWIST_MUX.md, docs/DROP_IN_COLLISION_MONITOR.md). Kept in an install tree of their own: the tests
+# compare with upstream's packages and must not find these. Use with: source install_overlay/setup.bash
+# overlay/opt_in is skipped by colcon unless a package in it is named (its COLCON_IGNORE says why).
+build-overlay = { cmd = "bash -c 'source install/setup.bash && colcon build --base-paths overlay overlay/opt_in/nav2_collision_monitor --build-base build_overlay --install-base install_overlay --cmake-args -G Ninja'", depends-on = ["build"] }
 noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
+# The same without the tests labelled `long` in the CMakeLists (the random
+# differential tests and the scenario suites against upstream): about seven
+# minutes instead of forty. For iterating; run `pixi run test` before a merge.
+test-quick = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ --ctest-args -LE long && colcon test-result --verbose", depends-on = ["build"] }
 prove = "lake exe cache get && lake build ROSlean"
 # Run-time comparison with upstream twist_mux (docs/BENCHMARK.md). Fetches upstream's sources.
 bench-build = { cmd = "colcon build --symlink-install --base-paths ros bench --cmake-args -G Ninja" }
 bench = { cmd = "bash -c 'source install/setup.bash && python3 bench/roslean_bench/scripts/run_bench.py all --out bench/results'", depends-on = ["bench-build"] }
-demo = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_twist_mux demo_launch.py'", depends-on = ["build"] }
+# Collision monitor against upstream nav2_collision_monitor (docs/collision_monitor/COMPARISON.md).
+# cm-diff: 600 random cases, ROSlean beside upstream, in one process: 13 to 25 s per case, so about 3 h
+# (pass seeds to do fewer: pixi run cm-diff 0 50; bench/cm_linux/run.sh splits the seeds over six processes).
+cm-diff = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/random_diff.py roslean_collision_monitor/collision_monitor nav2_collision_monitor/collision_monitor ${@:-0 600} --roslean' cm-diff", depends-on = ["build"] }
+# cm-nav2: the scenarios of the Nav2 extension on upstream's node (lifecycle, state topic, transforms, base shift
+# correction, zones fed by a topic, the footprint edit), about 5 min. Another node: pixi run cm-nav2 PKG/EXE --profile MODULE
+cm-nav2 = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/scenario_nav2.py \"$@\"' --", depends-on = ["build"] }
+# cm-nav2-random: random cases of the extension against the Python model (default: upstream alone, seeds 0 to 20).
+cm-nav2-random = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/random_nav2.py \"$@\"' --", depends-on = ["build"] }
+# cm-faults: every fault-injection case, both nodes, the very large scans included. Upstream's process ends in the case clock-negative; the node goes on (SPEC D15).
+cm-faults = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/test/fault_injection.py roslean_collision_monitor/collision_monitor nav2_collision_monitor/collision_monitor --big'", depends-on = ["build"] }
+# bench-cm: per-call latency in process, latency through the nodes, and a 30-minute soak (about 40 minutes).
+bench-cm = { cmd = "bash -c 'source install/setup.bash && python3 bench/roslean_bench/scripts/run_cm_bench.py all --out bench/results'", depends-on = ["bench-build"] }
+# cm-linux-image: the Linux image in which the comparison was also run (Docker; ROS and Nav2 from apt).
+# Then: bench/cm_linux/run.sh OUT_DIR versions scenarios selftest random points faults qos bench soak ctest
+cm-linux-image = "docker build -f bench/cm_linux/Dockerfile -t roslean-cm-linux ."
+demo = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_demos demo_launch.py'", depends-on = ["build"] }
 # Run these in other terminals while the demo is up.
 # The lock commands wait for both subscribers (the mux and the narrator) and
 # send the message five times. With `--once` the command waits for one
@@ -48,8 +69,41 @@ demo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_keybo
 demo-estop = "bash -c 'source install/setup.bash && ros2 topic pub -w 2 --times 5 --rate 10 /e_stop std_msgs/msg/Bool \"data: true\"'"
 demo-release = "bash -c 'source install/setup.bash && ros2 topic pub -w 2 --times 5 --rate 10 /e_stop std_msgs/msg/Bool \"data: false\"'"
 # Gazebo demo: a TurtleBot3 in a furnished apartment (first run downloads the furniture).
-gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py'", depends-on = ["build"] }
-gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
+gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/mux/gazebo_launch.py'", depends-on = ["build"] }
+gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/mux/gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
 # With gazebo-nav2 running and tour:=false: pixi run gazebo-goal X Y  (map coordinates, metres)
 gazebo-goal = "bash -c 'source install/setup.bash && ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \"{pose: {header: {frame_id: map}, pose: {position: {x: $0, y: $1}, orientation: {w: 1.0}}}}\"'"
 gazebo-teleop = "bash -c 'source install/setup.bash && ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=key_vel -p stamped:=true -p speed:=0.2 -p turn:=1.0'"
+# Collision monitor demo (docs/TUTORIAL_COLLISION_MONITOR.md): the mux and the
+# monitor in series on the TurtleBot3. cm-gazebo-scenario drops a box in front
+# of the robot and takes it away again by itself.
+cm-gazebo = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_gazebo_launch.py'", depends-on = ["build"] }
+cm-gazebo-scenario = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_gazebo_launch.py scenario:=true'", depends-on = ["build"] }
+cm-gazebo-nav2 = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_gazebo_launch.py planner:=nav2'", depends-on = ["build"] }
+# Nav2's own bring-up starts the Lean monitor in the place of nav2_collision_monitor
+# (tutorial, step 7). cm-gazebo-bringup: Nav2 drives a tour. cm-gazebo-bringup-scenario: the patrol
+# script drives on Nav2's controller topic and a box is dropped in its path.
+# Upstream's node in the same variant: add monitor_package:=nav2_collision_monitor.
+# The check of this variant: pixi run cm-check --nav2
+cm-gazebo-bringup = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_nav2_launch.py \"$@\"' --", depends-on = ["build"] }
+cm-gazebo-bringup-scenario = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_nav2_launch.py driver:=patrol scenario:=true \"$@\"' --", depends-on = ["build"] }
+# Nav2 started by the package roslean_nav2_bringup, which has the Lean monitor wired in
+# (docs/DROP_IN_COLLISION_MONITOR.md, option C). nav2-bringup: the launch file alone, for a robot
+# or a simulator that is already running (pixi run nav2-bringup map:=MAP.yaml). nav2-bringup-sim:
+# the simulated apartment of cm-gazebo-bringup with Nav2 from that package, this robot's
+# parameters, a stop and a slowdown zone; zones:=slowdown leaves the stop zone out.
+# nav2-bringup-tour: the same without windows for 300 simulated seconds, with a summary;
+# its --zones stop is the stop and the slowdown zone; add --zones slowdown for the other (--seconds N).
+nav2-bringup = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_nav2_bringup bringup_launch.py \"$@\"' --", depends-on = ["build"] }
+nav2-bringup-sim = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_nav2_launch.py bringup:=roslean_nav2_bringup \"$@\"' --", depends-on = ["build"] }
+nav2-bringup-tour = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_demos/gazebo/monitor/nav2_observe.py tour --bringup roslean_nav2_bringup --zones stop \"$@\"' --", depends-on = ["build"] }
+# With cm-gazebo running: put a box 1.2 m in front of the robot; take it away.
+cm-box-drop = "bash -c 'source install/setup.bash && python3 ros/roslean_demos/gazebo/monitor/obstacle.py drop'"
+cm-box-remove = "bash -c 'source install/setup.bash && python3 ros/roslean_demos/gazebo/monitor/obstacle.py remove'"
+# Runs the scenario without windows and checks it against the simulator's
+# ground truth (about a minute). For upstream's node: pixi run cm-check --monitor nav2_collision_monitor
+cm-check = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_demos/gazebo/monitor/check_demo.py \"$@\"' --", depends-on = ["build"] }
+# The same on a machine without display and graphics card (a cloud session):
+# virtual display and software rendering. Needs xvfb-run on the machine.
+# Where Gazebo Fuel cannot be reached, add --no-furniture.
+cm-check-cloud = { cmd = "bash -c 'source install/setup.bash && LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s \"-screen 0 1280x1024x24\" python3 ros/roslean_demos/gazebo/monitor/check_demo.py \"$@\"' --", depends-on = ["build"] }

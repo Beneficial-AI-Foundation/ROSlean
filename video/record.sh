@@ -8,7 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 out=$(realpath -m "${1:?output directory}")
 mkdir -p "$out"
 source "$here/../install/setup.bash"
-python3 "$here/make_world.py" "$here/../ros/roslean_twist_mux/demo/gazebo/apartment.sdf" \
+python3 "$here/make_world.py" "$here/../ros/roslean_demos/gazebo/mux/apartment.sdf" \
   "$out/world.sdf" "${2:-3840}" "${3:-2160}" "${4:-0.05}"
 if [ -z "$DISPLAY" ]; then
   Xvfb :77 -screen 0 1280x720x24 +extension GLX >/dev/null 2>&1 &
