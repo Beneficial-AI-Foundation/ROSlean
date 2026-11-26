@@ -1,0 +1,73 @@
+node under test: /opt/ros/jazzy/lib/nav2_collision_monitor/collision_monitor
+--- probe-timeout-converted-twice  (polygons:=[StopCircle] source_timeout:=2.094)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 2.094 from the node: a scan 2,093,999,998 ns old is used
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,093,999,999 ns old is TOO OLD: the timeout lost 1 ns in a second conversion
+--- probe-timeout-of-source  (polygons:=[StopCircle] scan.source_timeout:=2.094)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   scan.source_timeout 2.094: a scan 2,093,999,999 ns old is used
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('invalid source', 1)   a scan 2,094,000,000 ns old is too old
+--- probe-stop-pub-decimal  (polygons:=[StopCircle] stop_pub_timeout:=2.094 source_timeout:=0.0)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)   stop_pub_timeout 2.094: zero still published 2,093,999,999 ns later
+ok    nothing   ... and not 1 ns after that
+--- probe-stop-pub-negative  (polygons:=[StopCircle] stop_pub_timeout:=-1.0)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   stop_pub_timeout -1: the first zero is published
+ok    nothing   the second is not, at the same clock time
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   obstacle gone: passes
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   again one zero
+ok    nothing   and no more
+--- probe-timeout-below-1ns  (polygons:=[StopCircle] source_timeout:=1.0e-10)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source_timeout 1e-10 s and no scan ever received: PASSES, as with 0
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   a scan 50 s old is used
+--- probe-source-disabled  (polygons:=[StopCircle] scan.enabled:=false)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, no scan ever received: passes
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   source disabled, obstacle in the stop zone: PASSES
+--- probe-zone-disabled  (polygons:=[StopCircle,SlowCircle] StopCircle.enabled:=false)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   stop zone disabled, obstacle in both zones: slowed only
+--- probe-max-points  (polygons:=[StopCircle] StopCircle.max_points:=1)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   max_points 1 (min_points 3 in the file): 1 point passes
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   2 points stop: the threshold is max_points + 1
+--- probe-min-points-wraps  (polygons:=[StopCircle] StopCircle.min_points:=4294967297)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopCircle', 1)   min_points 4294967297: one point stops
+--- probe-radius-negative  (polygons:=[Circle1] Circle1.radius:=-0.5)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('Circle1', 1)   radius -0.5: a point at 0.25 m is inside
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0) + state('', 0)   a point at 0.75 m is outside
+--- probe-ratio-inf  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.inf)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio +inf: the command passes
+--- probe-ratio-nan  (polygons:=[SlowOne] SlowOne.slowdown_ratio:=.nan)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   slowdown_ratio NaN: the command passes
+--- probe-ratio-negative-zero  (polygons:=[SlowZero] SlowZero.slowdown_ratio:=-0.0)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (-0.0, -0.0, 0.0, 0.0, 0.0, -0.0) + state('SlowZero', 2)   slowdown_ratio -0.0: negative zeros come out
+--- probe-equal-ratios  (polygons:=[SlowPoly,SlowCircle])
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowPoly', 2)   two zones with ratio 0.5: the first in `polygons` is reported
+--- probe-equal-ratios-reversed  (polygons:=[SlowCircle,SlowPoly])
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('SlowCircle', 2)   the other order: the other zone is reported
+--- probe-wrong-type  (polygons:=[Circle1] Circle1.radius:=1)
+ok    configuration is refused (node is refused)
+--- probe-defaults  (polygons:=[Defaults])
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.5, 0.25, 0.0, 0.0, 0.0, 1.0)   min_points not set: 3 points pass
+ok    (0.25, 0.125, 0.0, 0.0, 0.0, 0.5) + state('Defaults', 2)   4 points: slowed by the default ratio 0.5
+--- probe-min-points-zero-no-scan  (polygons:=[StopMin0] source_timeout:=0.0)
+ok    command topics are geometry_msgs/msg/Twist (in: ['geometry_msgs/msg/Twist'], out: geometry_msgs/msg/Twist)
+ok    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) + state('StopMin0', 1)   source_timeout 0, no scan ever, min_points 0: the zone triggers
+0 failure(s) in 48 checks, 18 scenario runs
+expected differences from upstream, by number in the SPEC: none
+
+real	0m33.581s
+user	0m2.828s
+sys	0m0.443s

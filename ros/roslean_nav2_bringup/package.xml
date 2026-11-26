@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>roslean_nav2_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files and a parameter file that start Nav2 with roslean_collision_monitor in the place of nav2_collision_monitor. Not stock Nav2's behaviour: there is no approach zone.</description>
+  <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
+  <license>Apache-2.0</license>
+  <url type="repository">https://github.com/Beneficial-AI-Foundation/ROSlean</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- The launch files are derived from nav2_bringup's when they are run. -->
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>roslean_collision_monitor</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <!-- The tests read nav2_bringup's installed files and
+       roslean_collision_monitor's check_params.py. -->
+  <test_depend>nav2_bringup</test_depend>
+  <test_depend>roslean_collision_monitor</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

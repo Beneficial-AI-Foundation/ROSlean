@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ROSlean details: implementation, theorems, correspondence, performance</title>
-<meta name="description" content="How the Lean twist_mux is built, what is proved about it, how it corresponds to the original C++ node, and how it performs.">
+<meta name="description" content="How the Lean twist_mux and the Lean collision monitor are built, what is proved about them, how they correspond to the original C++ nodes, and how they perform.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -17,8 +17,8 @@
     <a class="brand" href="./">ROS<span>lean</span></a>
     <nav aria-label="Site">
       <a href="./">Overview</a>
-      <a href="./#packages">Packages</a>
-      <a href="details.html" aria-current="page">twist_mux details</a>
+      <a href="twist_mux.html">Twist mux</a>
+      <a href="collision_monitor.html">Collision monitor</a>
       <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
     </nav>
   </div>
@@ -26,18 +26,27 @@
 
 <div class="wrap wide doc">
   <nav class="toc" aria-label="On this page">
-    <p class="eyebrow">On this page</p>
+    <p class="eyebrow">Twist mux</p>
     <ol>
       <li><a href="#implementation">Implementation</a></li>
-      <li><a href="#theorems">Theorems proven</a></li>
+      <li><a href="#theorems">Theorems</a></li>
       <li><a href="#correspondence">Correspondence to the original</a></li>
       <li><a href="#performance">Performance</a></li>
+    </ol>
+    <p class="eyebrow toc-next">Collision monitor</p>
+    <ol>
+      <li><a href="#cm-implementation">Implementation</a></li>
+      <li><a href="#cm-theorems">Theorems</a></li>
+      <li><a href="#cm-correspondence">Correspondence to the original</a></li>
+      <li><a href="#cm-demo">The demo</a></li>
+      <li><a href="#cm-performance">Performance</a></li>
+      <li><a href="gaps.html">What is missing</a></li>
     </ol>
   </nav>
 
   <main>
     <div class="hero">
-      <p class="eyebrow"><a href="./#packages">Packages</a> / twist_mux</p>
+      <p class="eyebrow"><a href="./#packages">Packages</a> / <a href="twist_mux.html">Twist mux</a> / in detail</p>
       <h1>How it is built, what is proved, and what it costs.</h1>
       <p class="lede"><code>twist_mux</code> picks one of several velocity command sources by priority, freshness and locks. This page describes the Lean version: its structure, its theorems, how it relates to the original C++ node, and how the two compare at run time.</p>
     </div>
@@ -81,12 +90,12 @@
 }</code></pre>
 
       <h3>Build and deployment</h3>
-      <p>The model lives in its own Lake package so that building the node never needs Mathlib. Lean is a build-time dependency only: the install tree carries the Lean runtime and can be copied to another machine with ROS 2 Jazzy. A Docker build on <code>ros:jazzy-ros-base</code> compiles everything, runs all tests including the comparison with the original, and produces an image with no Lean toolchain in it.</p>
+      <p>The model lives in its own Lake package so that building the node never needs Mathlib. Lean is a build-time dependency only: the install tree carries the Lean runtime and can be copied to another machine with ROS 2 Jazzy. The Docker build on <code>ros:jazzy-ros-base</code> runs the available ROS tests and installs both nodes. It skips four Nav2 scenarios that require <code>nav2_bringup</code>.</p>
       <p>The node takes the same parameter file, topics and QoS as the original, so switching is a change of package name in a launch file.</p>
     </section>
 
     <section id="theorems">
-      <h2>Theorems proven</h2>
+      <h2>Theorems</h2>
       <p>All theorems are in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/Mux"><code>ROSlean/Mux/</code></a>, with no <code>sorry</code> and only Lean's three standard axioms. "Forwarded" means <code>step</code> returned <code>true</code> for a message on input <em>i</em> at time <em>t</em>. A plain-language guide with links to every statement is in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/THEOREMS.md">THEOREMS.md</a>.</p>
 
       <h3>The decision, in one step</h3>
@@ -102,7 +111,7 @@
             <tr><td>E-stop</td><td><code>not_forward_of_top_lock</code></td><td>If a lock strictly above every input has last value <code>true</code>, nothing is forwarded.</td></tr>
             <tr><td class="nw">Dead lock publisher</td><td><code>not_forward_of_silent_lock</code></td><td>A lock whose publisher is silent past its timeout is active, and inputs below it are not forwarded.</td></tr>
             <tr><td>Liveness</td><td><code>forward_of_highest_live</code></td><td>The highest live input that no lock outranks <em>is</em> forwarded.</td></tr>
-            <tr><td>Expiry</td><td><code>forward_of_others_expired</code>, <code>inputLive_iff_le</code></td><td>An input that has timed out never suppresses another. An input is live up to and including <code>stamp + timeout</code>.</td></tr>
+            <tr><td>Expiry</td><td><code>forward_of_others_expired</code>, <code>inputLive_iff_le</code></td><td>An input that has timed out never suppresses another. A positive timeout expires after <code>stamp + timeout</code>. A zero timeout never expires.</td></tr>
           </tbody>
         </table>
       </div>
@@ -212,28 +221,29 @@
           </tbody>
         </table>
       </div>
-      <p class="note">Run in a Linux container against <code>ros-jazzy-twist-mux</code> from apt. The original's own test suite does not pin these rules: its priority test is commented out.</p>
+      <p class="note">Run in a Linux container against the apt build of <code>twist_mux</code> 4.5.0. The source specification uses 4.5.1. The original's own test suite does not pin these rules: its priority test is commented out.</p>
 
       <h3>Deliberate differences</h3>
       <div class="table">
         <table>
           <thead><tr><th>Original</th><th>ROSlean</th><th>Effect</th></tr></thead>
           <tbody>
-            <tr><td>Elapsed time computed in floating-point seconds</td><td>Integer nanoseconds throughout</td><td>The only known difference in decisions. It shows when a message arrives within about a microsecond of a timeout boundary, where the original's rounding can expire a handle slightly early or late. ROSlean applies the documented rule exactly.</td></tr>
-            <tr><td>Clock re-read for every expiry check in one callback</td><td>One clock reading per event</td><td>Makes the decision a function of state and event. Differs only for timeouts as short as the callback itself.</td></tr>
+            <tr><td>Elapsed time computed in floating-point seconds</td><td>Integer nanoseconds throughout</td><td>Upstream rounding can expire a handle slightly early or late near a timeout boundary (D2).</td></tr>
+            <tr><td>Clock re-read for every expiry check in one callback</td><td>One clock reading per event</td><td>Upstream can cross a timeout boundary between checks in the same callback (D4).</td></tr>
             <tr><td>NaN, infinite or huge timeouts accepted; undefined behaviour beyond 2<sup>63</sup> ns</td><td>Rejected at start-up</td><td>Avoids undefined behaviour.</td></tr>
+            <tr><td>Priorities narrowed to 32 bits before clamping</td><td>Clamped from the 64-bit parameter value</td><td>Very large priorities can select a different input (D6).</td></tr>
             <tr><td>A start-up error aborts the process</td><td>Logged as fatal, exit code 1</td><td>Clean failure.</td></tr>
             <tr><td>Diagnostics, <code>twist_marker</code>, <code>joystick_relay</code></td><td>Not provided; the helper nodes of the original are used where wanted</td><td>Out of scope.</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Reading the source also surfaced behaviour the documentation does not mention, all reproduced and now stated as theorems: an input with timeout 0 is live from start-up and suppresses lower inputs without ever sending a message; a priority-0 input is never forwarded; an input at priority 255 can never be blocked by a lock.</p>
+      <p>Reading the source also surfaced behaviour the documentation does not mention, all reproduced and stated as theorems: an input with timeout 0 is live from start-up and suppresses lower inputs without ever sending a message; a priority-0 input is never forwarded; an input at priority 255 can never be blocked by a lock.</p>
     </section>
 
     <section id="performance">
       <h2>Performance compared with the original</h2>
-      <p>For the configurations robots use (a handful of inputs, one or two locks, commands at 10 to 1000 Hz) the two nodes are indistinguishable in latency, loss and CPU time. The Lean node uses about 50 MB more memory. The current Lean core has one real weakness: its cost grows with the square of the number of inputs.</p>
-      <p class="note">Measured on 2026-11-23 on 4 virtual cores of a 2.3 GHz Xeon, ROS 2 Jazzy with Fast DDS. A shared virtual machine, not a robot computer: compare the columns with each other. Method and raw data are in the <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/claude/lean-vs-upstream-benchmark/docs/BENCHMARK.md">benchmark report</a> (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/pull/1">pull request 1</a>).</p>
+      <p>For the configurations robots use (a handful of inputs, one or two locks, commands at 10 to 1000 Hz) the two nodes are indistinguishable in latency, loss and CPU time. The Lean node uses about 50 MB more memory. The Lean core has one weakness: its cost grows with the square of the number of inputs.</p>
+      <p class="note">Measured on 2026-11-23 on 4 virtual cores of a 2.3 GHz Xeon, ROS 2 Jazzy with Fast DDS. A shared virtual machine, not a robot computer: compare the columns with each other. Method and raw data are in the <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/BENCHMARK.md">benchmark report</a>.</p>
 
       <h3>The whole node, over real topics</h3>
       <p>Latency from the load generator's <code>publish</code> to a subscriber on <code>cmd_vel_out</code>.</p>
@@ -284,13 +294,253 @@
           </tbody>
         </table>
       </div>
-      <p>The quadratic cost comes from the model's data structures, which were chosen for the proofs, and not from Lean. The same rule written over arrays in one pass runs in 62 ns at 3 inputs and 2.2 µs at 256, faster than the original as measured here. That version is not yet proved; carrying the theorems over to it is the next step.</p>
+      <p>The quadratic cost comes from the model's data structures, which were chosen for the proofs, and not from Lean. The same rule written over arrays in one pass runs in 62 ns at 3 inputs and 2.2 µs at 256, faster than the original as measured here. No theorem is proved about that version, and the node does not use it.</p>
+    </section>
+
+
+    <div class="hero" id="collision-monitor">
+      <p class="eyebrow"><a href="./#packages">Packages</a> / <a href="collision_monitor.html">Collision monitor</a> / in detail</p>
+      <h1>The collision monitor: what is built, proved, tested and trusted.</h1>
+      <p class="lede">The stop and slowdown core of Nav2's <code>nav2_collision_monitor</code>, as a lifecycle node that Nav2 can launch. It is not a drop-in replacement for Nav2's default configuration; <a href="gaps.html">what is missing</a> has a page of its own.</p>
+    </div>
+
+    <section id="cm-implementation">
+      <h2>Implementation</h2>
+      <p>Lean chooses the velocity action. C++ manages ROS and TF, computes the scan points, and applies the slowdown ratio.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Part</th><th>Where</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Executable model</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/core/ROSleanCore/CollisionMonitor.lean"><code>core/ROSleanCore/CollisionMonitor.lean</code></a> and three files beside it</td><td>1,200 lines of Lean with no dependencies and no <code>Float</code>. Defines <code>Config</code>, <code>State</code>, <code>Event</code>, <code>step</code>, the zone tests in integer millimetres, and the conversions from bit patterns. Compiled to C.</td></tr>
+            <tr><td class="nw">C interface</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/core/ROSleanCore/CollisionMonitorFFI.lean"><code>core/ROSleanCore/CollisionMonitorFFI.lean</code></a></td><td>Exported calls: build a monitor from parameters, deliver a lifecycle transition, a scan, a polygon message, a command; read the output.</td></tr>
+            <tr><td class="nw">Proofs</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/CollisionMonitor"><code>ROSlean/CollisionMonitor/</code></a></td><td>8,900 lines of Lean with Mathlib. Never linked into a node.</td></tr>
+            <tr><td class="nw">The node</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ros/roslean_collision_monitor/src/collision_monitor_node.cpp"><code>ros/roslean_collision_monitor</code></a></td><td>A 1,400-line C++ shim: lifecycle, bond, parameters, subscriptions, TF lookups, publishing. Available as an executable and as a component.</td></tr>
+            <tr><td class="nw">Floating point in C++</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ros/roslean_collision_monitor/include/roslean_collision_monitor/transforms.hpp"><code>transforms.hpp</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ros/roslean_collision_monitor/include/roslean_collision_monitor/conversions.hpp"><code>conversions.hpp</code></a></td><td>500 lines: the scan's points and their transform to the base frame in <code>double</code>, as the original computes them; the multiplication of a slowdown. Trusted, with their own tests.</td></tr>
+            <tr><td class="nw">Harness</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ros/roslean_collision_monitor/test"><code>ros/roslean_collision_monitor/test</code></a></td><td>Runs any collision monitor binary under a simulated clock: fixed scenarios, random cases, fault injection. The same harness runs the original.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>One function decides</h3>
+      <p>The behaviour is <code>step : Config → State → Event → State × Output</code>. The model handles lifecycle transitions, scans, polygon updates, and velocity commands. <code>evaluate</code> selects the action for a command.</p>
+<pre><code><span class="k">def</span> evaluate (cfg : Config) (st : State) (now : Nat) (scanPts : Option (List Coords))
+    (zoneVerts : List (Option (List Coords))) : Action :=
+  <span class="k">match</span> sourcePoints cfg st now scanPts <span class="k">with</span>
+  | none => .stopSource
+  | some pts => zonesAction (liveConfig cfg st zoneVerts) pts</code></pre>
+      <p><code>sourcePoints</code> is <code>none</code> when the source is enabled, its timeout is positive, and the scan is missing, stale, or lacks usable coordinates. <code>zonesAction</code> returns the first triggered stop zone, otherwise the triggered slowdown zone with the smallest ratio below 1. It passes the command if neither applies. The action does not depend on the command's velocity.</p>
+      <p>Numbers cross into Lean as bit patterns. Lean converts timeouts to integer nanoseconds and coordinates to integer millimetres in exact arithmetic, and refuses what it cannot represent. The core returns an action, and the shim applies it to the command:</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Action</th><th>The shim publishes</th></tr></thead>
+          <tbody>
+            <tr><td><code>pass</code></td><td>Copies <code>linear.x</code>, <code>linear.y</code>, and <code>angular.z</code>. Other components are zero.</td></tr>
+            <tr><td><code>stopZone k</code>, <code>stopSource</code></td><td>0.0 in all components.</td></tr>
+            <tr><td><code>slowdown k r</code></td><td>Multiplies the three planar components by <code>r</code>. Other components are zero.</td></tr>
+            <tr><td>velocity withheld</td><td>No velocity. A configured state topic can still report a change, and enabled visualized zones are still published.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="cm-theorems">
+      <h2>Theorems</h2>
+      <p>All theorems are in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/ROSlean/CollisionMonitor"><code>ROSlean/CollisionMonitor/</code></a>, with no <code>sorry</code>, no <code>native_decide</code> and only Lean's three standard axioms. Unless stated, nothing is assumed about the state, the clock or the configuration. The plain-language guide with every statement is <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/THEOREMS.md">THEOREMS.md</a>.</p>
+
+      <h3>The decision, in one step</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Action</th><th>Demanded if and only if</th><th>Theorem</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Stop, source</td><td>The source is enabled and its timeout is positive. The scan is missing, stale, or has no usable coordinates.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L76"><code>evaluate_eq_stopSource_iff</code></a></td></tr>
+            <tr><td class="nw">Stop, zone <em>k</em></td><td>The source is valid and <em>k</em> is the first stop zone triggered by its points.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L87"><code>evaluate_eq_stopZone_iff</code></a></td></tr>
+            <tr><td class="nw">Slowdown</td><td>The source is valid, no stop zone is triggered, and the zone is the first triggered slowdown zone with the smallest ratio, which is below 1.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L102"><code>evaluate_eq_slowdown_iff</code></a></td></tr>
+            <tr><td class="nw">Pass</td><td>The source is valid, no stop zone is triggered, and no slowdown zone with a ratio below 1 is triggered.</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L117"><code>evaluate_eq_pass_iff</code></a></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Lifecycle.lean#L53"><code>processed_iff</code></a>: the model processes only finite commands received while active. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L327"><code>velocity_eq_some_iff</code></a>: the demanded action is published unless it yields zero, the previous one did too, and <code>stop_pub_timeout</code> has passed since the zero first appeared.</p>
+
+      <div class="table">
+        <table>
+          <thead><tr><th>Property</th><th>Theorem</th><th>Statement</th></tr></thead>
+          <tbody>
+            <tr><td>Stop</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L537"><code>stop</code></a></td><td>Node active, command finite, source valid, a stop zone triggered: the action is the stop by the first such zone, published as zero, or withheld once zero has been published for <code>stop_pub_timeout</code>. Never a non-zero velocity.</td></tr>
+            <tr><td class="nw">Stale data</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L594"><code>stale</code></a></td><td>With the source enabled and a non-zero timeout, no scan or a scan older than the timeout gives the stop for an invalid source, whatever coordinates the command carries.</td></tr>
+            <tr><td class="nw">No transform</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L616"><code>no_transform</code></a></td><td>With the source enabled and a non-zero timeout, a command without usable coordinates for the scan gives the same stop.</td></tr>
+            <tr><td class="nw">No amplification</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L940"><code>no_amplification</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L956"><code>published_ratio_in_unit_interval</code></a></td><td>Whatever is published is pass, a stop, or a slowdown by the configured ratio of the zone named; the ratio has its sign bit clear and a value in [0, 1).</td></tr>
+            <tr><td class="nw">Slowdown bound</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L967"><code>slowdown_bound</code></a></td><td>The ratio applied is at most that of every triggered slowdown zone.</td></tr>
+            <tr><td class="nw">Pass-through</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L1013"><code>pass_through</code></a></td><td>With an active monitor, a valid source, and no triggered zone, a finite command with nonzero planar velocity keeps its planar components.</td></tr>
+            <tr><td>Monotonicity</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L1056"><code>zonesAction_stop_mono</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L1104"><code>evaluate_isStop_mono</code></a></td><td>Adding points never lifts a stop.</td></tr>
+            <tr><td class="nw">Bad data</td><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L857"><code>output_filter_validBeam</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L186"><code>step_cmd_of_not_finite</code></a></td><td>Readings that are NaN or outside the range limits never change a decision. A non-finite command is ignored and leaves the state unchanged.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Over whole runs, and the lifecycle</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Theorem</th><th>Statement</th></tr></thead>
+          <tbody>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L392"><code>run_stop</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L420"><code>run_stale</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L441"><code>run_no_transform</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L510"><code>run_pass_through</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L467"><code>run_no_amplification</code></a></td><td>The properties above after any sequence of events since start-up, stated on the events alone. <code>run_stop</code> is narrower than <code>stop</code>: it is about a stop zone with a fixed shape, an enabled source, a scan that is not too old and coordinates that fit it.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L274"><code>run_silent_before_activate</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L310"><code>run_silent_after_shutdown</code></a></td><td>The model produces no command output before activation or after shutdown.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L664"><code>run_after_activation</code></a></td><td>The first finite command after an activation gets a velocity, also when it is zero.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L899"><code>run_withheld_last_published_zero</code></a></td><td>When a velocity is withheld, the last velocity this node published was a zero.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Lifecycle.lean#L606"><code>evaluate_isStop_of_unusable</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Trace.lean#L639"><code>run_stop_after_unusable</code></a></td><td>An enabled topic stop zone triggers if a polygon message has at least three vertices, a usable transform, and an unusable transformed vertex. A usable shape or cleanup clears it.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Lifecycle.lean#L468"><code>output_of_no_shape</code></a></td><td>A zone fed by a topic that has no shape yet is never triggered. This is the original's behaviour; the theorem states it, it does not make it safe.</td></tr>
+            <tr><td><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/NoClock.lean#L68"><code>noClock_velocity</code></a></td><td>A finite command that arrives while the node is active and has no valid clock reading is answered with zero, whatever the configuration.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Rounding errs towards "inside"</h3>
+      <p>The core tests points against zones in integer millimetres. Points are truncated toward the origin, circle radii are rounded up plus 1 mm, and polygons get a band of √5 mm around their boundary. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Convert.lean#L319"><code>circle_safe</code></a>: for an accepted radius and finite coordinates, the model counts points strictly inside the circle. For polygons the quantitative half is proved (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Geometry.lean#L160"><code>nearSegment_iff</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Geometry.lean#L321"><code>nearBoundary_of_rounded</code></a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Margin.lean#L336"><code>contains_of_shim</code></a>); the topological half of the argument is prose. The zones grow by up to 3.5 mm (circle) or 4.4 mm (polygon); those two figures are tested, not proved.</p>
+
+      <h3>The code that runs</h3>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Fast.lean#L525"><code>cm_readBack_after_fast</code></a> connects the fast C interface to the model for accepted configurations with at most 2³² zones. Its call history excludes no-clock commands. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Fast.lean#L306"><code>stepCmdFast_eq</code></a> proves that the fast path and model agree on the same inputs. A refused configuration fails the ROS lifecycle transition. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/FFI.lean#L1675"><code>cm_not_ok_after</code></a> covers the core’s fallback if called anyway. It answers with a stop only in the active phase.</p>
+
+      <h3>Not proved</h3>
+      <div class="table">
+        <table>
+          <thead><tr><th>Trusted or tested</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr><td>A demanded stop is published</td><td>False, for the original and for this node: zero is published for <code>stop_pub_timeout</code>, then nothing. The theorems say "zero or nothing". <a href="gaps.html#stop-pub-timeout">The sequence, and what it means</a>.</td></tr>
+            <tr><td>The model matches the original</td><td>Tested by running both nodes on the same messages; see the next section.</td></tr>
+            <tr><td>The multiplication of a slowdown</td><td>Done by the shim in <code>double</code>. The ratio bounds the magnitude of each planar component. C++ relies on IEEE-754 for the product.</td></tr>
+            <tr><td>The points of a scan and their transform</td><td>Computed by the shim in floating point and looked up in TF. The theorems hold for whatever coordinates a command carries; that they are the right ones is tested.</td></tr>
+            <tr><td>The polygon margin, topological half; the IEEE-754 reading of bit patterns; timeouts</td><td>Each is partly proved and partly tested. <a href="gaps.html#proofs">What is not proved</a>.</td></tr>
+            <tr><td>The rest of the shim, threads, Lean's compiler and runtime, tf2, ROS</td><td>Trusted.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="cm-correspondence">
+      <h2>Correspondence to the original</h2>
+      <p>The rules were read from the C++ source of <a href="https://github.com/ros-navigation/navigation2/tree/jazzy/nav2_collision_monitor"><code>nav2_collision_monitor</code></a> (Jazzy, commit <code>c704655</code>) and recorded as numbered rules in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/SPEC.md">SPEC.md</a>. Independently, a black-box harness pinned down what the original's binary does (<a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/UPSTREAM_BEHAVIOUR.md">UPSTREAM_BEHAVIOUR.md</a>); the two documents were then compared statement by statement. The Lean node was run through the same harness, with every expected difference stated per check by its number.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Test</th><th>What it covers</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Fixed scenarios</td><td>Zone boundaries to one float step, timeouts to the nanosecond, <code>stop_pub_timeout</code>, invalid scans, refusals.</td><td>318 checks in 73 runs, 0 failures. 30 checks differ, each a stated difference.</td></tr>
+            <tr><td class="nw">Nav2 scenarios</td><td>Lifecycle, bond, state topic, transforms, base shift correction, zones fed by a topic, Nav2's parameter file.</td><td>289 checks in 44 runs, 0 failures; 2 scenarios not run. 10 checks differ, each a stated difference.</td></tr>
+            <tr><td class="nw">Random, zones</td><td>300 random configurations and event sequences, both nodes on the same messages, with points aimed at zone boundaries.</td><td>26,951 commands: none outside the stated bounds. 586 differed in demanded velocity, with ROSlean stricter in each. Publication differed for 761 commands.</td></tr>
+            <tr><td class="nw">Random, Nav2</td><td>300 cases with lifecycle transitions, transforms and topic zones.</td><td>16,797 commands: both nodes give the model's answer to every one.</td></tr>
+            <tr><td class="nw">Fault injection</td><td>Scans of NaN and infinity, negative stamps, huge scans, clock jumps, a negative <code>/clock</code>.</td><td>109 checks in 19 cases, 0 failures. The Lean node goes on after two kinds of input that end the original's process: a scan with a negative stamp, and a negative <code>/clock</code> (test <code>roslean_fault_clock_negative</code>).</td></tr>
+            <tr><td class="nw">Point by point</td><td>The core's zone tests against the original's on 34.0 million points.</td><td>The original never counts a point the core does not. Farthest point the core counts beyond the original's zone: 3.409 mm (circle), 4.167 mm (polygon).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">The first five rows: the node described here on macOS arm64 beside the original 1.3.12 (2026-11-24). The Nav2 scenarios and 20 of the random Nav2 cases were also run in a Linux arm64 container beside 1.3.14, with the same result. The last row: an earlier version of the core, on both. Counts and commands are in <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/collision_monitor/COMPARISON.md">COMPARISON.md</a>. The comparison used macOS and Linux containers on arm64. An older node was tested on x86-64.</p>
+
+      <h3>Deliberate differences</h3>
+      <p>Twenty-eight are numbered in the specification (D1 to D15, ND1 to ND13). The ones a user is most likely to meet:</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>#</th><th>Original</th><th>ROSlean</th><th>Direction</th></tr></thead>
+          <tbody>
+            <tr><td>D1</td><td><code>approach</code>, <code>limit</code>, velocity polygons, point clouds, several sources</td><td>Refused when configured</td><td>Scope. <a href="gaps.html">What is missing</a></td></tr>
+            <tr><td class="nw">D3, D4</td><td>Zone tests in floating point; some boundary points inside, some outside</td><td>Integer millimetres; zones grown by up to 3.5 mm (circle) or 4.4 mm (polygon); all boundary points inside</td><td>More restrictive</td></tr>
+            <tr><td>D5</td><td>A negative slowdown ratio reverses the command</td><td>Refused</td><td>More restrictive</td></tr>
+            <tr><td>D8</td><td>A scan with a negative time stamp ends the process</td><td>The stamp is taken as 0</td><td>The node goes on</td></tr>
+            <tr><td>D15</td><td>A <code>/clock</code> message with a negative time ends the process</td><td>The active standalone executable answers finite commands with zero until the clock is usable. This handling is specific to the executable.</td><td>More restrictive</td></tr>
+            <tr><td>ND1</td><td>The transform is computed with or without fused multiply-add, depending on the build</td><td>Never fused, on every platform</td><td>Last bits of a coordinate; covered by D4</td></tr>
+            <tr><td>ND4</td><td>Shut down from the active state, the node keeps forwarding commands</td><td>Silent</td><td>More restrictive</td></tr>
+            <tr><td>ND6</td><td>A polygon message with a NaN vertex is used as it is</td><td>The zone demands its action until a usable message arrives</td><td>More restrictive</td></tr>
+            <tr><td>ND8</td><td><code>~/toggle</code>; <code>enabled</code> changeable at run time</td><td>Not provided; changes are rejected</td><td>Scope</td></tr>
+            <tr><td>ND13</td><td>A zone in another frame follows its frame anywhere</td><td>If the recomputed vertices are out of range (about a kilometre away) the zone stays where it was</td><td>Less restrictive in principle</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Reading the source and probing the binary also surfaced behaviour of the original that its package documentation does not state, all reproduced: the monitor publishes nothing unless a command arrives; <code>source_timeout: 0</code> also switches off the stop for a missing scan or transform; an all-NaN scan reads as free space; changing only <code>action_type</code> of Nav2's footprint zone does not configure.</p>
+    </section>
+
+    <section id="cm-demo">
+      <h2>The demo</h2>
+      <p>A TurtleBot3 in Gazebo, with the Lean mux and the Lean collision monitor in series, a stop zone reaching 0.30 m ahead of the base's origin and a slowdown zone (ratio 0.4) reaching 0.70 m. A script drops a 0.4 m box 1.2 m ahead of the driving robot and removes it six seconds after the robot has come to rest. <code>pixi run cm-check</code> runs this without windows and measures against the simulator's ground truth.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Measured over nine runs, all passed</th><th class="n">Range</th></tr></thead>
+          <tbody>
+            <tr><td>True speed before the box</td><td class="n">0.168 to 0.178 m/s</td></tr>
+            <tr><td>True speed in the slowdown zone</td><td class="n">0.071 to 0.072 m/s</td></tr>
+            <tr><td>Gap to the box when the first zero was published</td><td class="n">0.256 to 0.273 m</td></tr>
+            <tr><td>Distance moved after the first zero</td><td class="n">0 to 14 mm</td></tr>
+            <tr><td>Gap at rest</td><td class="n">0.255 to 0.268 m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">macOS arm64, an earlier version of the node, which took the lidar's pose from a parameter. With the node described here, a lifecycle node that takes the pose from TF: three runs, three passed, first zero at 0.253 to 0.260 m, 0 to 2 mm moved after it, at rest 0.254 to 0.260 m. The original's node, measured in the set-up of the table, passed the same check in four runs of four, at rest 0.253 to 0.257 m from the box. With a lidar noise of 1 cm and this few runs that is not a measurement of the difference between the two.</p>
+      <p>What the demo does not show: the stopping distance is that of Gazebo's drive, which takes the commanded speed at once; the zones were sized by hand and nothing relates them to a braking distance; the lidar scans one plane; it is one head-on approach at one speed. After the monitor has gone silent the robot stays put because Gazebo's drive holds the last command, a zero, and because the demo has a base watchdog. The <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">tutorial</a> has the steps.</p>
+
+      <h3 id="cm-demo-nav2">Launched by Nav2</h3>
+      <p>In a second variant there is no mux and no base watchdog: Nav2's own bring-up (<code>use_composition:=False</code>, <code>navigation_launch.py</code> with the package name changed in one line) starts the Lean node as its collision monitor. Nav2's <code>FootprintApproach</code> zone is replaced by two fixed polygons, a stop zone reaching 0.305 m ahead of the base's origin and a slowdown zone (ratio 0.4) reaching 0.705 m. <code>pixi run cm-check --nav2</code> runs the box scenario on Nav2's topics, with the patrol script publishing on the controller's topic, and first checks that Nav2's lifecycle manager activated the node and that the process is the Lean executable.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>The check of the Nav2 variant</th><th class="n">Lean node, 10 runs</th><th class="n">Original node, 4 runs</th></tr></thead>
+          <tbody>
+            <tr><td>Runs that failed</td><td class="n">0</td><td class="n">0</td></tr>
+            <tr><td>True speed before the box</td><td class="n">0.170 to 0.176 m/s</td><td class="n">0.172 to 0.176 m/s</td></tr>
+            <tr><td>True speed in the slowdown zone</td><td class="n">0.071 to 0.072 m/s</td><td class="n">0.072 m/s</td></tr>
+            <tr><td>Gap to the box when the first zero was published</td><td class="n">0.270 to 0.283 m</td><td class="n">0.268 to 0.281 m</td></tr>
+            <tr><td>Distance moved after the first zero</td><td class="n">0 to 11 mm</td><td class="n">1 to 13 mm</td></tr>
+            <tr><td>Gap at rest</td><td class="n">0.269 to 0.275 m</td><td class="n">0.267 to 0.270 m</td></tr>
+            <tr><td>Runs in which the decision went back from stop to slowdown, once or twice</td><td class="n">7</td><td class="n">3</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">macOS arm64, the node described here, the original 1.3.12 from the unedited launch file with the same parameters, without windows (tutorial, 7.4). Not in the table: one further start, the first in a freshly installed environment, failed: the simulator took 40 s to load, Nav2's lifecycle manager stopped at <code>Configuring behavior_server</code>, the monitor was never activated, and the check gave up after 228 s. The failure did not recur in 27 further starts. The two nodes cannot be told apart by these numbers.</p>
+      <p>The same variant with Nav2 planning and driving a tour of five places, 300 simulated seconds a run:</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Monitor and zones</th><th class="n">Run</th><th class="n">Places reached</th><th class="n">Distance</th><th>At the end</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="3">Lean node, stop and slowdown zone</td><td class="n">1</td><td class="n">1</td><td class="n">10.1 m</td><td>standing</td></tr>
+            <tr><td class="n">2</td><td class="n">1</td><td class="n">10.8 m</td><td>standing</td></tr>
+            <tr><td class="n">3</td><td class="n">8</td><td class="n">38.6 m</td><td>driving</td></tr>
+            <tr><td rowspan="3">Original node, the same zones</td><td class="n">1</td><td class="n">8</td><td class="n">38.9 m</td><td>driving</td></tr>
+            <tr><td class="n">2</td><td class="n">2</td><td class="n">13.5 m</td><td>standing</td></tr>
+            <tr><td class="n">3</td><td class="n">5</td><td class="n">28.9 m</td><td>driving</td></tr>
+            <tr><td>Original node, <code>FootprintApproach</code> (stock Nav2)</td><td class="n">1</td><td class="n">11</td><td class="n">47.4 m</td><td>driving</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>With the stop zone the tour ended with the robot standing for good in three runs of six, with both nodes.</strong> Each time near the second place of the tour. Nav2 reports <code>Failed to make progress</code> and runs its spin and back-up recoveries; the monitor answers those with zero as well, because in a stop zone every command becomes zero; the goal is aborted and sent again. The stops follow the rule and are not a defect of either node. Stock Nav2 with <code>approach</code>, which lets a command that leads away from the obstacle pass, reached 11 places in its one run and never stood. Three runs each do not compare the two nodes, and one run of stock Nav2 is no statistic; what the runs show is that a stop zone is not a substitute for <code>approach</code> under a planner.</p>
+    </section>
+
+    <section id="cm-performance">
+      <h2>Performance compared with the original</h2>
+      <p>In the benchmark below, the Lean node used about 6 to 9 times as much CPU time per command as upstream. Both stayed within the project’s budget.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th class="n">Stored readings</th><th class="n">Two circles: Lean / original, µs</th><th class="n">Two polygons: Lean / original, µs</th><th class="n">Budget, µs</th></tr></thead>
+          <tbody>
+            <tr><td class="n">360</td><td class="n">10.3 / 1.7</td><td class="n">16.5 / 2.8</td><td class="n">50</td></tr>
+            <tr><td class="n">1080</td><td class="n">30.0 / 4.1</td><td class="n">48.9 / 7.2</td><td class="n">150</td></tr>
+            <tr><td class="n">10,000</td><td class="n">281 / 31</td><td class="n">438 / 60</td><td class="n">1500</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Median per command, both nodes' callback bodies in one process on the same messages, nothing in a zone, the identity as the transform; one Apple M5 Pro, macOS arm64, 2026-11-24. Not a robot computer: compare the columns with each other. In a Linux arm64 container on the same machine an earlier version of the command path measured 4.2 to 6.4 times the original's. Nothing was timed on x86-64.</p>
+      <div class="table">
+        <table>
+          <thead><tr><th>Aspect</th><th>Finding</th></tr></thead>
+          <tbody>
+            <tr><td class="nw">Per command</td><td>48.9 µs against 7.2 µs at 1080 readings and two polygon zones. The budget, 150 µs, is 0.75 % of the 20 ms between two commands at 50 Hz. The test <code>roslean_cmd_cost</code> asserts the budget for the Lean core.</td></tr>
+            <tr><td class="nw">Per scan</td><td>About 10 ns per reading, where the original stores a pointer.</td></tr>
+            <tr><td class="nw">Over topics</td><td>50 commands and 25 scans a second for 20 s at each scan size: both nodes answered every command; median latency 5.8, 6.7 and 7.5 ms for the Lean node and 6.3, 6.6 and 6.4 ms for the original at 360, 1080 and 10,000 readings, most of it the measuring program's and the middleware's.</td></tr>
+            <tr><td class="nw">Command path</td><td>The command path that C calls works on machine words and is proved equal to the model's (<code>stepCmdFast_eq</code>). The transform is applied in C++, not in Lean.</td></tr>
+            <tr><td class="nw">Memory</td><td>Over 32 minutes of load an earlier version of the node rose by 48 kB after the first ten seconds, to 26 MB resident on macOS. No long run of the node described here.</td></tr>
+            <tr><td class="nw">Not measured</td><td>A transform from the TF buffer in the loop, base shift correction, topic zones, x86-64, a robot computer.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section id="more">
       <h2>Further reading</h2>
-      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL.md">Tutorial</a>: from an empty machine to the turtlesim experiment. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_GAZEBO.md">Gazebo tutorial</a>: the same on a TurtleBot3 with Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/PLAN.md">Development plan</a> and lessons learned. <a href="docs/">API documentation</a> generated from the Lean sources.</p>
-      <p><a href="./#twist_mux">Back to the overview</a></p>
+      <p><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL.md">Tutorial</a>: from an empty machine to the turtlesim experiment. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_GAZEBO.md">Gazebo tutorial</a>: the same on a TurtleBot3 with Nav2. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">Collision monitor tutorial</a>: the monitor behind the mux in Gazebo, and launched by Nav2.</p>
+      <p><a href="twist_mux.html">Back to the overview</a> · <a href="gaps.html">Collision monitor: what is missing</a></p>
     </section>
   </main>
 </div>

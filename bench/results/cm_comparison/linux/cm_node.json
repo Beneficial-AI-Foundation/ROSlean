@@ -1,0 +1,107 @@
+[
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 851,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 851,
+   "mean_ns": 3066492,
+   "p50_ns": 3168875,
+   "p90_ns": 3558209,
+   "p99_ns": 3784292,
+   "p999_ns": 4466917,
+   "max_ns": 4466917
+  },
+  "out_upstream": {
+   "n": 851,
+   "mean_ns": 410662,
+   "p50_ns": 384125,
+   "p90_ns": 535458,
+   "p99_ns": 745875,
+   "p999_ns": 1750167,
+   "max_ns": 1750167
+  },
+  "readings": 360,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 851,
+   "mismatches": 0,
+   "received_out_lean": 851,
+   "received_out_upstream": 851
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 850,
+  "mismatches": 0,
+  "out_lean": {
+   "n": 850,
+   "mean_ns": 5665457,
+   "p50_ns": 5803958,
+   "p90_ns": 6285167,
+   "p99_ns": 6989583,
+   "p999_ns": 7717958,
+   "max_ns": 7717958
+  },
+  "out_upstream": {
+   "n": 850,
+   "mean_ns": 271911,
+   "p50_ns": 260083,
+   "p90_ns": 335959,
+   "p99_ns": 448000,
+   "p999_ns": 656417,
+   "max_ns": 656417
+  },
+  "readings": 1080,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 850,
+   "mismatches": 0,
+   "received_out_lean": 850,
+   "received_out_upstream": 850
+  }
+ },
+ {
+  "duration_s": 20.0,
+  "commands": 1000,
+  "scans_total": 500,
+  "compared": 677,
+  "mismatches": 1,
+  "out_lean": {
+   "n": 678,
+   "mean_ns": 34034801,
+   "p50_ns": 34070834,
+   "p90_ns": 42169042,
+   "p99_ns": 46317250,
+   "p999_ns": 48287375,
+   "max_ns": 48287375
+  },
+  "out_upstream": {
+   "n": 850,
+   "mean_ns": 244743,
+   "p50_ns": 235042,
+   "p90_ns": 280750,
+   "p99_ns": 367958,
+   "p999_ns": 842833,
+   "max_ns": 842833
+  },
+  "readings": 10000,
+  "totals": {
+   "done": true,
+   "sent_commands": 1000,
+   "sent_scans": 500,
+   "compared": 677,
+   "mismatches": 1,
+   "received_out_lean": 678,
+   "received_out_upstream": 850
+  }
+ }
+]

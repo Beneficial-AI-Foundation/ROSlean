@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collision monitor in Lean: ROSlean</title>
+<meta name="description" content="The ROSlean collision monitor: where it sits, what runs in Lean and what in C++, what is proved, what is tested beside Nav2's monitor, and what it does not do.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css?v=9">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap wide">
+    <a class="brand" href="./">ROS<span>lean</span></a>
+    <nav aria-label="Site">
+      <a href="./">Overview</a>
+      <a href="twist_mux.html">Twist mux</a>
+      <a href="collision_monitor.html" aria-current="page">Collision monitor</a>
+      <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow"><a href="./#packages">Packages</a> / Collision monitor</p>
+    <h1>Collision monitor</h1>
+    <p class="lede">The collision monitor uses one laser scan source and circle or polygon zones. It can pass a velocity command, scale it down, demand zero, or withhold it. Nav2’s lifecycle manager can start and activate it with an edited configuration.</p>
+  </div>
+
+  <div class="wrap">
+    <section id="about">
+      <p class="note">Nav2’s default <code>approach</code> zone must be replaced with a supported zone. In simulation, stop zones blocked Nav2 recovery commands and left the robot stopped in three of six tours. <a href="gaps.html#nav2">Nav2 setup and limits</a>.</p>
+
+      <h3 id="cm-where">Where it sits</h3>
+      <figure class="flow">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 500" role="img" aria-labelledby="where-cm-t where-cm-d">
+          <title id="where-cm-t">The path of a velocity command</title>
+          <desc id="where-cm-d">A planner, a joystick and an emergency stop feed twist_mux, which decides who drives. Its one output goes to the collision monitor, which also reads lidar scans and transforms and decides how fast. The result goes to the base controller and the motors.</desc>
+          <defs>
+            <marker id="where-cm-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker>
+          </defs>
+
+          <!-- sources -->
+          <g class="flow-other">
+            <rect x="20" y="16" width="200" height="58" rx="4"/>
+            <text x="120" y="41" class="flow-name">Planner</text>
+            <text x="120" y="61" class="flow-sub">follows its path</text>
+            <rect x="270" y="16" width="200" height="58" rx="4"/>
+            <text x="370" y="41" class="flow-name">Joystick, keyboard</text>
+            <text x="370" y="61" class="flow-sub">a person takes over</text>
+            <rect x="520" y="16" width="200" height="58" rx="4"/>
+            <text x="620" y="41" class="flow-name">Emergency stop</text>
+            <text x="620" y="61" class="flow-sub">blocks lower priorities</text>
+          </g>
+          <path class="flow-line" d="M120,74 L120,112 L290,112 L290,148" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line" d="M370,74 L370,148" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line flow-dash" d="M620,74 L620,112 L450,112 L450,148" marker-end="url(#where-cm-head)"/>
+          <text x="128" y="104" class="flow-label">command</text>
+          <text x="378" y="104" class="flow-label">command</text>
+          <text x="612" y="104" class="flow-label flow-end">lock</text>
+
+          <!-- twist_mux -->
+          <g class="flow-other flow-dim">
+            <rect x="170" y="150" width="400" height="84" rx="4"/>
+            <text x="190" y="182" class="flow-name flow-start">twist_mux</text>
+            <text x="550" y="181" class="flow-tag flow-end">LEAN · PROVED</text>
+            <text x="190" y="212" class="flow-decides flow-start">decides <tspan class="flow-strong">who drives</tspan></text>
+          </g>
+          <path class="flow-line" d="M370,234 L370,288" marker-end="url(#where-cm-head)"/>
+          <text x="382" y="266" class="flow-label">one command</text>
+
+          <!-- side inputs -->
+          <g class="flow-other">
+            <rect x="20" y="292" width="120" height="36" rx="4"/>
+            <text x="80" y="315" class="flow-name small">Lidar</text>
+            <rect x="20" y="340" width="120" height="36" rx="4"/>
+            <text x="80" y="363" class="flow-name small">tf2</text>
+          </g>
+          <path class="flow-line" d="M140,310 L168,310" marker-end="url(#where-cm-head)"/>
+          <path class="flow-line" d="M140,358 L168,358" marker-end="url(#where-cm-head)"/>
+          <text x="20" y="394" class="flow-label">scans, transforms</text>
+
+          <!-- collision monitor -->
+          <g class="flow-lean">
+            <rect x="170" y="290" width="400" height="84" rx="4"/>
+            <text x="190" y="322" class="flow-name flow-start">collision monitor</text>
+            <text x="550" y="321" class="flow-tag flow-end">LEAN · PROVED IN PART</text>
+            <text x="190" y="352" class="flow-decides flow-start">decides <tspan class="flow-strong">what to publish</tspan></text>
+          </g>
+          <path class="flow-line" d="M370,374 L370,428" marker-end="url(#where-cm-head)"/>
+          <text x="382" y="406" class="flow-label">the command the robot gets</text>
+
+          <!-- base -->
+          <g class="flow-other">
+            <rect x="220" y="430" width="300" height="52" rx="4"/>
+            <text x="370" y="462" class="flow-name">Base controller, motors</text>
+          </g>
+        </svg>
+        </div>
+        <figcaption>The mux-based Gazebo demo also puts a watchdog before the base. The Nav2 variant feeds the monitor from the velocity smoother and uses no mux.</figcaption>
+      </figure>
+
+      <h3 id="cm-split">What is in Lean, what in C++</h3>
+      <figure class="flow split">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 264" role="img" aria-labelledby="split-cm-t split-cm-d">
+          <title id="split-cm-t">Collision monitor: what the C++ shim does and what Lean does</title>
+          <desc id="split-cm-d">The C++ shim handles the lifecycle, parameters and topics, looks up transforms, computes the points of a scan in floating point, multiplies the command by the slowdown ratio and publishes. It passes values as bit patterns to Lean. Lean converts to millimetres and nanoseconds, refuses unusable parameters, checks the age of the scan, counts points in each zone and decides to pass, slow, stop or stay silent.</desc>
+          <defs><marker id="split-cm-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+          <g class="flow-other">
+            <rect x="12" y="12" width="290" height="240" rx="4"/>
+            <text x="30" y="42" class="flow-name flow-start">C++ shim</text>
+            <text x="284" y="41" class="flow-tag split-trusted flow-end">TRUSTED</text>
+            <text x="30" y="60" class="flow-sub flow-start">about 1,400 lines</text>
+          </g>
+          <circle class="split-dot" cx="34" cy="83" r="2.5"/><text x="46" y="88" class="split-item flow-start">lifecycle, parameters, topics</text><circle class="split-dot" cx="34" cy="113" r="2.5"/><text x="46" y="118" class="split-item flow-start">looks up transforms (tf2)</text><circle class="split-dot" cx="34" cy="143" r="2.5"/><text x="46" y="148" class="split-item flow-start">scan to points, in floating point</text><circle class="split-dot" cx="34" cy="173" r="2.5"/><text x="46" y="178" class="split-item flow-start">command × slowdown ratio</text><circle class="split-dot" cx="34" cy="203" r="2.5"/><text x="46" y="208" class="split-item flow-start">publishes velocity and state</text>
+          <g class="flow-lean">
+            <rect x="438" y="12" width="290" height="240" rx="4"/>
+            <text x="456" y="42" class="flow-name flow-start">Lean</text>
+            <text x="710" y="41" class="flow-tag flow-end">PROVED</text>
+            <text x="456" y="60" class="flow-sub flow-start">one function, <tspan class="split-code">step</tspan></text>
+          </g>
+          <circle class="split-dot" cx="460" cy="83" r="2.5"/><text x="472" y="88" class="split-item flow-start">converts to whole mm and ns</text><circle class="split-dot" cx="460" cy="113" r="2.5"/><text x="472" y="118" class="split-item flow-start">refuses unusable parameters</text><circle class="split-dot" cx="460" cy="143" r="2.5"/><text x="472" y="148" class="split-item flow-start">checks the age of the scan</text><circle class="split-dot" cx="460" cy="173" r="2.5"/><text x="472" y="178" class="split-item flow-start">counts the points in each zone</text><circle class="split-dot" cx="460" cy="203" r="2.5"/><text x="472" y="208" class="split-item flow-start">decides: pass, slow, stop, silent</text>
+          <path class="flow-line" d="M304,94 L436,94" marker-end="url(#split-cm-head)"/>
+          <text x="370" y="85" class="flow-label split-mid">values as bit patterns</text>
+          <path class="flow-line" d="M436,193 L304,193" marker-end="url(#split-cm-head)"/>
+          <text x="370" y="184" class="flow-label split-mid">the action</text>
+        </svg>
+        </div>
+        <figcaption>Lean selects the action using integer arithmetic. C++ computes scan coordinates and applies the slowdown ratio. Tests check the transforms. <a href="gaps.html#proofs">What the theorems rest on</a></figcaption>
+      </figure>
+
+      <h3 id="cm-theorem">Two of the theorems</h3>
+      <p>The model demands a stop if the scan source is invalid or a stop zone triggers. A missing scan, stale scan, or missing transform makes the source invalid only if it is enabled and its timeout is positive.</p>
+<pre><code><span class="k">theorem</span> evaluate_isStop_iff (cfg : Config) (st : State) (now : Nat)
+    (scanPts : Option (List Coords)) (zoneVerts : List (Option (List Coords))) :
+    (evaluate cfg st now scanPts zoneVerts).isStop = true ↔
+      sourcePoints cfg st now scanPts = none ∨
+      ∃ pts, sourcePoints cfg st now scanPts = some pts ∧
+        ∃ z ∈ (liveConfig cfg st zoneVerts).zones, z.action = .stop ∧ z.triggered pts = true</code></pre>
+      <p>If the model returns a velocity action, it is pass, stop, or slowdown with a configured ratio in [0, 1). Pass preserves the three planar components.</p>
+<pre><code><span class="k">theorem</span> no_amplification (cfg : Config) (st : State) (e : Event) (a : Action)
+    (h : (step cfg st e).2.velocity = some a) :
+    a = .pass ∨ (∃ k, a = .stopZone k) ∨ a = .stopSource ∨
+      ∃ k r, a = .slowdown k r ∧ r &lt; F64.one ∧
+        ∃ z, cfg.zones[k]? = some z ∧ z.action = .slowdown r</code></pre>
+      <p class="caption"><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/CollisionMonitor/Properties.lean#L707"><code>ROSlean/CollisionMonitor/Properties.lean</code></a>, lines 707 and 940. Checked by Lean with no <code>sorry</code> and only Lean's three standard axioms.</p>
+      <p>While the demanded velocity stays zero, the monitor withholds velocity after <code>stop_pub_timeout</code>. The trace theorem proves that the last velocity it published was zero. The C++ integration applies slowdown in floating point. Stopping distance also depends on the sensors, transforms, zones, and base.</p>
+
+      <h3>Tested beside the original</h3>
+      <p>The fixed suites ran 318 core checks and 289 Nav2 checks. In 300 randomized zone cases, all 586 differences in demanded velocity were within the stated bounds and ROSlean was stricter in each. Both nodes matched the reference model in 300 randomized Nav2 cases. With 1,080 readings and two polygons, the median command time was 48.9 µs for ROSlean and 7.2 µs upstream. <a href="details.html#cm-correspondence">Test details</a>.</p>
+      <p class="note">Run on macOS arm64 and, in part, in a Linux arm64 container on the same machine. Not run on x86-64, on Linux on its own hardware, or on a robot.</p>
+
+      <h3 id="cm-demo">The demo</h3>
+      <p>In Gazebo, a script drops a box in front of a moving TurtleBot3. The monitor scales the command to 40% in the slowdown zone and demands zero in the stop zone. The robot resumes when the box is removed.</p>
+      <figure class="video">
+        <video id="cm-video" controls playsinline preload="metadata" width="1920" height="1080"
+               poster="media/collision_monitor_generated.jpg" src="media/collision_monitor_generated.mp4"
+               aria-describedby="cm-video-caption">
+          Your browser cannot play this video. Download it:
+          <a href="media/collision_monitor_generated.mp4">3D replay</a>,
+          <a href="media/collision_monitor_gazebo.mp4">Gazebo footage</a>.
+        </video>
+        <figcaption>
+          <span id="cm-video-caption" aria-live="polite">A 3D replay drawn from the messages of a recorded Gazebo run. The robot's path, the box, the lidar points and every decision of the monitor are the recorded ones.</span>
+          <button id="cm-video-switch" type="button">Watch the original Gazebo footage</button>
+        </figcaption>
+      </figure>
+      <p>In the Nav2 variant, the lifecycle manager starts the Lean monitor with stop and slowdown zones. The box check passed ten times with ROSlean and four times upstream. One earlier attempt failed during Nav2 startup.</p>
+      <p class="note">The stop zone also blocks reverse, turn, and recovery commands. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">Gazebo and Nav2 tutorial</a>. <a href="playground/">Try it in the browser</a>.</p>
+      <div class="links">
+        <a class="cta" href="details.html#collision-monitor">Collision monitor in detail</a>
+        <a href="gaps.html">What is missing</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap wide">
+    <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
+    <span><a href="twist_mux.html">Twist mux</a> · <a href="collision_monitor.html">Collision monitor</a></span>
+  </div>
+</footer>
+<script>
+// Collision monitor video: the 3D replay by default; the button swaps in the Gazebo
+// footage of the same run (same length and timeline) and keeps the playback position.
+(function () {
+  var video = document.getElementById('cm-video');
+  var button = document.getElementById('cm-video-switch');
+  var caption = document.getElementById('cm-video-caption');
+  var takes = {
+    generated: { file: 'media/collision_monitor_generated', caption: caption.textContent, other: 'Watch the original Gazebo footage' },
+    gazebo: { file: 'media/collision_monitor_gazebo',
+      caption: 'The original footage of the same run: a TurtleBot3 in Gazebo, filmed by a camera in the simulated world. The zones and lidar points are drawn on top.',
+      other: 'Back to the 3D replay' }
+  };
+  var current = 'generated';
+  button.addEventListener('click', function () {
+    current = current === 'generated' ? 'gazebo' : 'generated';
+    var take = takes[current];
+    var at = video.currentTime, playing = !video.paused && !video.ended;
+    video.poster = take.file + '.jpg';
+    video.src = take.file + '.mp4';
+    if (at > 0) {
+      video.addEventListener('loadedmetadata', function () {
+        video.currentTime = at;
+        if (playing) video.play();
+      }, { once: true });
+    }
+    caption.textContent = take.caption;
+    button.textContent = take.other;
+  });
+})();
+</script>
+</body>
+</html>

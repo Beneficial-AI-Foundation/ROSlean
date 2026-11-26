@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Twist mux in Lean: ROSlean</title>
+<meta name="description" content="The ROSlean twist_mux: where it sits on the command path, what runs in Lean and what in C++, and the theorem that is proved about it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="style.css?v=9">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap wide">
+    <a class="brand" href="./">ROS<span>lean</span></a>
+    <nav aria-label="Site">
+      <a href="./">Overview</a>
+      <a href="twist_mux.html" aria-current="page">Twist mux</a>
+      <a href="collision_monitor.html">Collision monitor</a>
+      <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <p class="eyebrow"><a href="./#packages">Packages</a> / Twist mux</p>
+    <h1>Twist mux</h1>
+    <p class="lede"><a href="https://index.ros.org/p/twist_mux/"><code>twist_mux</code></a> selects a velocity source by priority and timeout. Locks block lower-priority sources. The Lean node uses the upstream YAML format and command topics. It runs as <code>ros2 run roslean_twist_mux twist_mux</code>. See the <a href="details.html#correspondence">compatibility differences</a>.</p>
+  </div>
+
+  <div class="wrap">
+    <section id="about">
+
+      <h3 id="mux-where">Where it sits</h3>
+      <figure class="flow">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 500" role="img" aria-labelledby="where-mux-t where-mux-d">
+          <title id="where-mux-t">The path of a velocity command</title>
+          <desc id="where-mux-d">A planner, a joystick and an emergency stop feed twist_mux, which decides who drives. Its one output goes to the collision monitor, which also reads lidar scans and transforms and decides how fast. The result goes to the base controller and the motors.</desc>
+          <defs>
+            <marker id="where-mux-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker>
+          </defs>
+
+          <!-- sources -->
+          <g class="flow-other">
+            <rect x="20" y="16" width="200" height="58" rx="4"/>
+            <text x="120" y="41" class="flow-name">Planner</text>
+            <text x="120" y="61" class="flow-sub">follows its path</text>
+            <rect x="270" y="16" width="200" height="58" rx="4"/>
+            <text x="370" y="41" class="flow-name">Joystick, keyboard</text>
+            <text x="370" y="61" class="flow-sub">a person takes over</text>
+            <rect x="520" y="16" width="200" height="58" rx="4"/>
+            <text x="620" y="41" class="flow-name">Emergency stop</text>
+            <text x="620" y="61" class="flow-sub">blocks lower priorities</text>
+          </g>
+          <path class="flow-line" d="M120,74 L120,112 L290,112 L290,148" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line" d="M370,74 L370,148" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line flow-dash" d="M620,74 L620,112 L450,112 L450,148" marker-end="url(#where-mux-head)"/>
+          <text x="128" y="104" class="flow-label">command</text>
+          <text x="378" y="104" class="flow-label">command</text>
+          <text x="612" y="104" class="flow-label flow-end">lock</text>
+
+          <!-- twist_mux -->
+          <g class="flow-lean">
+            <rect x="170" y="150" width="400" height="84" rx="4"/>
+            <text x="190" y="182" class="flow-name flow-start">twist_mux</text>
+            <text x="550" y="181" class="flow-tag flow-end">LEAN · PROVED</text>
+            <text x="190" y="212" class="flow-decides flow-start">decides <tspan class="flow-strong">who drives</tspan></text>
+          </g>
+          <path class="flow-line" d="M370,234 L370,288" marker-end="url(#where-mux-head)"/>
+          <text x="382" y="266" class="flow-label">one command</text>
+
+          <!-- side inputs -->
+          <g class="flow-other">
+            <rect x="20" y="292" width="120" height="36" rx="4"/>
+            <text x="80" y="315" class="flow-name small">Lidar</text>
+            <rect x="20" y="340" width="120" height="36" rx="4"/>
+            <text x="80" y="363" class="flow-name small">tf2</text>
+          </g>
+          <path class="flow-line" d="M140,310 L168,310" marker-end="url(#where-mux-head)"/>
+          <path class="flow-line" d="M140,358 L168,358" marker-end="url(#where-mux-head)"/>
+          <text x="20" y="394" class="flow-label">scans, transforms</text>
+
+          <!-- collision monitor -->
+          <g class="flow-other flow-dim">
+            <rect x="170" y="290" width="400" height="84" rx="4"/>
+            <text x="190" y="322" class="flow-name flow-start">collision monitor</text>
+            <text x="550" y="321" class="flow-tag flow-end">LEAN · PROVED IN PART</text>
+            <text x="190" y="352" class="flow-decides flow-start">decides <tspan class="flow-strong">how fast</tspan>: as commanded, slowed, or stopped</text>
+          </g>
+          <path class="flow-line" d="M370,374 L370,428" marker-end="url(#where-mux-head)"/>
+          <text x="382" y="406" class="flow-label">the command the robot gets</text>
+
+          <!-- base -->
+          <g class="flow-other">
+            <rect x="220" y="430" width="300" height="52" rx="4"/>
+            <text x="370" y="462" class="flow-name">Base controller, motors</text>
+          </g>
+        </svg>
+        </div>
+        <figcaption>Green: <code>twist_mux</code>. It sits between everything that wants to move the robot and the rest of the command path, and decides whose command goes on. It does not plan a path, change a command or drive a motor. The collision monitor below it is the other package of this project; the order shown is that of this project's Gazebo demo.</figcaption>
+      </figure>
+
+      <h3 id="mux-split">What is in Lean, what in C++</h3>
+      <figure class="flow split">
+        <div class="flow-scroll">
+        <svg viewBox="0 0 740 234" role="img" aria-labelledby="split-mux-t split-mux-d">
+          <title id="split-mux-t">twist_mux: what the C++ shim does and what Lean does</title>
+          <desc id="split-mux-d">The C++ shim reads parameters, subscribes, reads the clock and publishes. It passes an input index and a time to Lean. Lean tracks the sources, applies priorities, timeouts and locks, and answers forward or drop.</desc>
+          <defs><marker id="split-mux-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+          <g class="flow-other">
+            <rect x="12" y="12" width="290" height="210" rx="4"/>
+            <text x="30" y="42" class="flow-name flow-start">C++ shim</text>
+            <text x="284" y="41" class="flow-tag split-trusted flow-end">TRUSTED</text>
+            <text x="30" y="60" class="flow-sub flow-start">about 200 lines</text>
+          </g>
+          <circle class="split-dot" cx="34" cy="83" r="2.5"/><text x="46" y="88" class="split-item flow-start">reads the parameter file</text><circle class="split-dot" cx="34" cy="113" r="2.5"/><text x="46" y="118" class="split-item flow-start">subscribes to inputs and locks</text><circle class="split-dot" cx="34" cy="143" r="2.5"/><text x="46" y="148" class="split-item flow-start">reads the clock</text><circle class="split-dot" cx="34" cy="173" r="2.5"/><text x="46" y="178" class="split-item flow-start">publishes the chosen message</text>
+          <g class="flow-lean">
+            <rect x="438" y="12" width="290" height="210" rx="4"/>
+            <text x="456" y="42" class="flow-name flow-start">Lean</text>
+            <text x="710" y="41" class="flow-tag flow-end">PROVED</text>
+            <text x="456" y="60" class="flow-sub flow-start">one function, <tspan class="split-code">step</tspan></text>
+          </g>
+          <circle class="split-dot" cx="460" cy="83" r="2.5"/><text x="472" y="88" class="split-item flow-start">tracks when each source spoke</text><circle class="split-dot" cx="460" cy="113" r="2.5"/><text x="472" y="118" class="split-item flow-start">applies priorities and timeouts</text><circle class="split-dot" cx="460" cy="143" r="2.5"/><text x="472" y="148" class="split-item flow-start">applies locks</text><circle class="split-dot" cx="460" cy="173" r="2.5"/><text x="472" y="178" class="split-item flow-start">decides: forward or drop</text>
+          <path class="flow-line" d="M304,94 L436,94" marker-end="url(#split-mux-head)"/>
+          <text x="370" y="85" class="flow-label split-mid">input index, time</text>
+          <path class="flow-line" d="M436,163 L304,163" marker-end="url(#split-mux-head)"/>
+          <text x="370" y="154" class="flow-label split-mid">forward or drop</text>
+        </svg>
+        </div>
+        <figcaption>The message itself never enters Lean: the shim passes which input spoke and the clock reading in nanoseconds, and forwards the message unchanged when the answer is "forward". The shim makes no decision. It is trusted, not proved, as are Lean's compiler and runtime and ROS. <a href="details.html#theorems">Details</a></figcaption>
+      </figure>
+
+      <p class="note">A recorded run of the node on a simulated robot is on the <a href="./#video">overview page</a>. <a href="playground/">Try it in the browser</a>.</p>
+
+      <h3 id="theorem">When a command is forwarded</h3>
+      <p>One theorem says exactly when a velocity command is passed on to the robot. A message arriving on input <em>i</em> is forwarded <strong>if and only if</strong>:</p>
+      <ol class="conds">
+        <li><em>i</em> is a configured input with priority above 0;</li>
+        <li>no active lock has higher priority than <em>i</em>;</li>
+        <li>every other live input has lower priority than <em>i</em>, or the same priority and a later position in the input list.</li>
+      </ol>
+<pre><code><span class="k">theorem</span> forward_iff (cfg : Config) (st : State) (i t : Nat) :
+    (step cfg st (.input i t)).2 = true ↔
+    ∃ hi, cfg.inputs[i]? = some hi ∧ 0 &lt; hi.priority ∧
+      (∀ j hj, cfg.locks[j]? = some hj → lockActive cfg st t j = true →
+        hj.priority ≤ hi.priority) ∧
+      (∀ k hk, cfg.inputs[k]? = some hk → k ≠ i → inputLive cfg st t k = true →
+        hk.priority &lt; hi.priority ∨ (hk.priority = hi.priority ∧ i &lt; k))</code></pre>
+      <p class="caption"><a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/ROSlean/Mux/Properties.lean#L122"><code>ROSlean/Mux/Properties.lean</code></a>. Checked by Lean with no <code>sorry</code> and only Lean's three standard axioms.</p>
+      <p><code>run_forward_iff_history</code> extends this rule to any event history. <code>muxForward_after</code> connects the rule to the C interface. An active lock blocks every input below its priority.</p>
+      <p class="note">That the Lean model behaves like the original C++ <code>twist_mux</code> is tested against the original, not proved. The details page says what is proved, what is tested and what is trusted.</p>
+      <div class="links">
+        <a class="cta" href="details.html">Twist mux in detail</a>
+        <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">Source on GitHub</a>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap wide">
+    <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
+    <span><a href="twist_mux.html">Twist mux</a> · <a href="collision_monitor.html">Collision monitor</a></span>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,10 @@
+node: <repo>/install/roslean_collision_monitor/lib/roslean_collision_monitor/collision_monitor
+upstream: <repo>/.pixi/envs/default/lib/nav2_collision_monitor/collision_monitor
+--- clock-negative
+ok    passes
+        node: (0.5, 0.25, 1.0)   upstream: (0.5, 0.25, 1.0)
+FAIL  after a /clock message of -5 s the node must still be there (any answer); upstream aborts
+        node: dead   upstream: dead   [expected any / dead]
+FAIL  the node has exited with code -6
+2 failure(s) in 3 checks, 1 cases; failed: ['clock-negative']
+exit 1 after 10 s

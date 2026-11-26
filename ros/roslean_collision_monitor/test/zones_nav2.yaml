@@ -1,0 +1,71 @@
+# Parameters shared by the scenarios of scenario_nav2.py (lifecycle, state
+# topic, polygon topics, transforms, base shift correction, zones fed by a
+# topic). As zones.yaml: a scenario picks zones with `-p polygons:=[...]` and
+# overrides single values the same way. Every zone triggers on one point.
+/**:
+  ros__parameters:
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_in
+    # A lookup that fails holds the command for this long, in node time.
+    transform_tolerance: 0.5
+    source_timeout: 5.0
+    # Long, so that a stop stays visible; scenarios about the silence set 1.0.
+    stop_pub_timeout: 100.0
+    base_shift_correction: false
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+
+    StopCircle:
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: 1
+    SlowCircle:
+      type: "circle"
+      radius: 1.0
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      min_points: 1
+    # From the base to 0.5 m ahead of it, 0.5 m wide.
+    FrontBox:
+      type: "polygon"
+      points: "[[0.5, 0.25], [0.5, -0.25], [0.0, -0.25], [0.0, 0.25]]"
+      action_type: "stop"
+      min_points: 1
+      polygon_pub_topic: "front_box"
+    # To the right of the base.
+    RightBox:
+      type: "polygon"
+      points: "[[0.25, -0.125], [0.25, -0.5], [-0.25, -0.5], [-0.25, -0.125]]"
+      action_type: "stop"
+      min_points: 1
+    # A zone whose shape arrives on a topic. action_type is overridden.
+    Dyn:
+      type: "polygon"
+      action_type: "stop"
+      polygon_sub_topic: "zone_shape"
+      slowdown_ratio: 0.5
+      min_points: 1
+    DynLatched:
+      type: "polygon"
+      action_type: "stop"
+      polygon_sub_topic: "zone_shape"
+      polygon_subscribe_transient_local: true
+      min_points: 1
+    # Fixed points next to both topic parameters: neither topic is read.
+    Foot:
+      type: "polygon"
+      action_type: "stop"
+      points: "[[0.5, 0.25], [0.5, -0.25], [0.0, -0.25], [0.0, 0.25]]"
+      footprint_topic: "/local_costmap/published_footprint"
+      polygon_sub_topic: "zone_shape"
+      min_points: 1
+    # N15: a zone that carries the name of the "invalid source" state.
+    "invalid source":
+      type: "circle"
+      radius: 0.5
+      action_type: "stop"
+      min_points: 1

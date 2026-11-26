@@ -1,0 +1,55 @@
+# params/collision_monitor_params.yaml of nav2_collision_monitor 1.3.12, for
+# the Lean-backed node.
+#
+# What is active is upstream's, value for value: one stop polygon
+# (`PolygonStop`) and one laser scan. Upstream's file also defines zones and a
+# source that its lists do not name, as examples. Those this node provides are
+# kept here (`PolygonSlow`); the others are left out, because adding them to
+# the lists would make the node refuse the file when it is configured:
+#
+#   PolygonLimit          action_type "limit"
+#   FootprintApproach     action_type "approach"
+#   VelocityPolygonStop   type "velocity_polygon"
+#   pointcloud            a second source, of type "pointcloud"
+#
+# What the node accepts: one source of type "scan"; zones of type "polygon"
+# (with `points`, or fed by `polygon_sub_topic`) and "circle" (with `radius`);
+# the actions "stop" and "slowdown". See docs/DROP_IN_COLLISION_MONITOR.md
+# and docs/collision_monitor/SPEC.md, "Excluded features".
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.5
+    source_timeout: 5.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # Polygons represent zones around the robot for the "stop" and "slowdown"
+    # action types. To use the slowdown zone as well:
+    #   polygons: ["PolygonStop", "PolygonSlow"]
+    polygons: ["PolygonStop"]
+    PolygonStop:
+      type: "polygon"
+      points: "[[0.3, 0.3], [0.3, -0.3], [0.0, -0.3], [0.0, 0.3]]"
+      action_type: "stop"
+      min_points: 4
+      visualize: True
+      polygon_pub_topic: "polygon_stop"
+      enabled: True
+    PolygonSlow:
+      type: "polygon"
+      points: "[[0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4]]"
+      action_type: "slowdown"
+      min_points: 4
+      slowdown_ratio: 0.3
+      visualize: True
+      polygon_pub_topic: "polygon_slowdown"
+      enabled: True
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      enabled: True

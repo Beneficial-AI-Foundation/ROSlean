@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>roslean_demos</name>
+  <version>0.1.0</version>
+  <description>The demos of roslean_twist_mux and roslean_collision_monitor: the mux in turtlesim, the mux and the collision monitor on a TurtleBot3 in Gazebo, with and without Nav2. No node; launch files, scripts, a world and a map. Every simulator dependency of the repository is here.</description>
+  <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
+  <license>Apache-2.0</license>
+  <url type="repository">https://github.com/Beneficial-AI-Foundation/ROSlean</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- What is demonstrated -->
+  <exec_depend>roslean_twist_mux</exec_depend>
+  <exec_depend>roslean_collision_monitor</exec_depend>
+  <exec_depend>roslean_nav2_bringup</exec_depend>
+  <!-- Upstream's nodes, for the side-by-side variants (mux_package:=twist_mux,
+       monitor_package:=nav2_collision_monitor) -->
+  <exec_depend>twist_mux</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
+
+  <!-- Launch files and scripts -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+
+  <!-- turtlesim/ -->
+  <exec_depend>turtlesim</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
+
+  <!-- gazebo/ -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>turtlebot3_gazebo</exec_depend>
+  <exec_depend>turtlebot3_description</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

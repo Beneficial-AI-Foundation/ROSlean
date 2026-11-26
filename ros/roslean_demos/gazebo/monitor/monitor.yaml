@@ -1,0 +1,54 @@
+# Collision monitor configuration for the Gazebo demo: a stop zone close to
+# the TurtleBot3 burger and a slowdown zone ahead of it.
+#
+# The same file is given to the Lean node and, with monitor_package:=
+# nav2_collision_monitor, to upstream's node. Everything in it is upstream's
+# format.
+#
+# The node is called `cm_gate` in the demo, not `collision_monitor`, because
+# with planner:=nav2 the Nav2 bring-up starts a `collision_monitor` of its own
+# (upstream's, inside the planner) and two nodes must not share a name.
+cm_gate:
+  ros__parameters:
+    # Input: the output of twist_mux. Output: what the base watchdog passes on
+    # to the robot.
+    cmd_vel_in_topic: "cmd_vel_mux"
+    cmd_vel_out_topic: "cmd_vel_monitored"
+    enable_stamped_cmd_vel: true
+    # The simulated lidar publishes 5 scans a second, stamped with simulated
+    # time. A scan older than this stops the robot.
+    source_timeout: 1.0
+    # Zero is published for this long after it first appears, then nothing;
+    # from then on the base watchdog holds the robot (SPEC R15, A3).
+    stop_pub_timeout: 1.0
+    # No correction for the robot's motion since the scan (upstream's default
+    # is true; both nodes provide it since task T06, the demo does not use it).
+    base_shift_correction: false
+    base_frame_id: "base_footprint"
+    # Zones, in the base frame (x ahead, y to the left, metres). The burger's
+    # body reaches from x = -0.10 to x = +0.04 and is 0.18 m wide over the
+    # wheels.
+    polygons: ["Stop", "Slow"]
+    Stop:
+      type: "polygon"
+      points: "[[0.30, 0.14], [0.30, -0.14], [-0.14, -0.14], [-0.14, 0.14]]"
+      action_type: "stop"
+      min_points: 4
+      enabled: true
+    Slow:
+      type: "polygon"
+      points: "[[0.70, 0.22], [0.70, -0.22], [-0.14, -0.22], [-0.14, 0.22]]"
+      action_type: "slowdown"
+      slowdown_ratio: 0.4
+      min_points: 4
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      enabled: true
+      # The scan is in the frame `base_scan`. Both nodes look the transform
+      # from it to `base_footprint` up in TF; robot_state_publisher provides
+      # it from the robot's URDF (base_link -> base_scan at x = -0.032 m).
+      # (Until task T06 the Lean node took the lidar's pose from a parameter
+      # of its own, `roslean_sensor_pose`; that parameter is gone.)

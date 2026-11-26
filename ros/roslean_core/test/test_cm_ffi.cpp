@@ -1,0 +1,1819 @@
+// Exercises the C++ wrapper of the collision monitor against the Lean core,
+// without ROS. A mismatch between collision_monitor.hpp, ffi.h and the Lean
+// exports (argument order, widths, signedness, byte layout of a scan,
+// ownership) shows up as a wrong decision or a crash here. Expectations follow
+// docs/collision_monitor/SPEC.md and ROSlean/CollisionMonitor/Examples.lean.
+//
+// The second half compares the conversions that Lean performs in integer
+// arithmetic (millimetres, nanoseconds) with reference computations in
+// hardware floating point.
+
+#include <sys/resource.h>
+
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <random>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include "roslean_core/collision_monitor.hpp"
+#include "roslean_core/scan_points_monitor.hpp"
+
+namespace
+{
+
+// The tests of the first part hand each scan over with the base-frame
+// coordinates of its readings; ScanPointsMonitor passes them on with every
+// command, as the node's shim does after a transform lookup, and activates
+// the monitor at once. The calls of the Nav2 extension are tested on the
+// wrapper itself (RawCM), further down.
+using CM = roslean::ScanPointsMonitor;
+using RawCM = roslean::CollisionMonitor;
+using Kind = CM::OutputKind;
+using Err = CM::ZoneError;
+using CErr = CM::ConfigError;
+using roslean::bits_of;
+
+int failures = 0;
+
+// Peak resident set size of this process, in kB.
+long peak_rss_kb()
+{
+  rusage u;
+  getrusage(RUSAGE_SELF, &u);
+#ifdef __APPLE__
+  return static_cast<long>(u.ru_maxrss / 1024);  // bytes on macOS
+#else
+  return static_cast<long>(u.ru_maxrss);  // kilobytes on Linux
+#endif
+}
+
+void check(bool cond, const std::string & what)
+{
+  std::printf("%s  %s\n", cond ? "ok  " : "FAIL", what.c_str());
+  if (!cond) {
+    ++failures;
+  }
+}
+
+uint64_t d(double v) {return bits_of(v);}
+uint32_t f(float v) {return bits_of(v);}
+
+const double kInf = std::numeric_limits<double>::infinity();
+const double kNaN = std::numeric_limits<double>::quiet_NaN();
+const float kInfF = std::numeric_limits<float>::infinity();
+const float kNaNF = std::numeric_limits<float>::quiet_NaN();
+
+const uint64_t kMs = 1000000;
+const uint64_t kS = 1000000000;
+
+// One reading: the range and the point it denotes, in metres.
+struct Rec
+{
+  float range;
+  double x;
+  double y;
+};
+
+void put(std::vector<uint8_t> & out, uint64_t v, int bytes)
+{
+  for (int k = 0; k < bytes; ++k) {
+    out.push_back(static_cast<uint8_t>(v >> (8 * k)));
+  }
+}
+
+std::vector<uint8_t> encode(const std::vector<Rec> & recs)
+{
+  std::vector<uint8_t> out;
+  for (const auto & r : recs) {
+    put(out, f(r.range), 4);
+    put(out, d(r.x), 8);
+    put(out, d(r.y), 8);
+  }
+  return out;
+}
+
+// A scan with range limits 0.1 m to 10 m.
+void scan(CM & m, uint64_t now, int64_t stamp, const std::vector<Rec> & recs, bool usable = true)
+{
+  const auto bytes = encode(recs);
+  m.on_scan(now, stamp, usable, f(0.1f), f(10.0f), bytes.data(), bytes.size());
+}
+
+// A command: forward at 0.5 m/s, turning at 0.2 rad/s.
+CM::Output fwd(CM & m, uint64_t now)
+{
+  return m.on_cmd(now, d(0.5), d(0.0), d(0.0), d(0.0), d(0.0), d(0.2));
+}
+
+CM::Output halt(CM & m, uint64_t now)
+{
+  return m.on_cmd(now, d(0.0), d(-0.0), d(0.0), d(0.0), d(0.0), d(0.0));
+}
+
+bool is(const CM::Output & o, Kind kind, uint32_t zone = 0, uint64_t ratio = 0)
+{
+  return o.kind == kind && o.zone == zone && o.ratio_bits == ratio;
+}
+
+// A coordinate in metres that lies in the middle of millimetre `mm`: it
+// truncates to `mm` whatever the rounding of the decimal fraction.
+double mid(int mm)
+{
+  return mm == 0 ? 0.0 : (mm + (mm > 0 ? 0.5 : -0.5)) / 1000.0;
+}
+
+// n readings at range 0.2 m, at the point that truncates to (x, y) mm.
+std::vector<Rec> at(int x, int y, size_t n = 4)
+{
+  return std::vector<Rec>(n, Rec{0.2f, mid(x), mid(y)});
+}
+
+// A radius in metres that converts to exactly `mm` millimetres (rounded up,
+// plus 1).
+double radius(int mm) {return (mm - 1.5) / 1000.0;}
+
+// Zone 0: stop circle of 300 mm, 2 points. Zone 1: slowdown circle of 600 mm
+// at 0.5, 2 points. Source timeout 2 s, stop_pub_timeout 1 s.
+CM standard()
+{
+  CM::Builder b;
+  b.set_source(true, 2.0, std::nullopt);
+  b.set_stop_pub_timeout(1.0);
+  b.add_circle(radius(300), CM::ZoneAction::Stop, 0.0, 2, true);
+  b.add_circle(radius(600), CM::ZoneAction::Slowdown, 0.5, 2, true);
+  return b.build();
+}
+
+// A monitor with one stop circle, both timeouts 0.
+CM circle_stop(double radius_m, int64_t min_points = 1)
+{
+  CM::Builder b;
+  b.set_source(true, 0.0, std::nullopt);
+  b.add_circle(radius_m, CM::ZoneAction::Stop, 0.0, min_points, true);
+  return b.build();
+}
+
+// Exact floor of |v| * 1000 for a finite v with |v| < 1000, from the rounded
+// product and its exact error. (An integer can lie between the rounded and
+// the exact product only if the rounded product is that integer.)
+double exact_floor_mm(double v)
+{
+  const double a = std::fabs(v);
+  const double t = a * 1000.0;
+  const double e = std::fma(a, 1000.0, -t);
+  double fl = std::floor(t);
+  if (fl == t && e < 0.0) {
+    fl -= 1.0;
+  }
+  return fl;
+}
+
+double exact_ceil_mm(double v)
+{
+  const double a = std::fabs(v);
+  const double t = a * 1000.0;
+  const double e = std::fma(a, 1000.0, -t);
+  double c = std::ceil(t);
+  if (c == t && e > 0.0) {
+    c += 1.0;
+  }
+  return c;
+}
+
+// Exact round-to-nearest of |v| * 1000, a half away from zero.
+double exact_round_mm(double v)
+{
+  const double a = std::fabs(v);
+  const double t = a * 1000.0;
+  const double e = std::fma(a, 1000.0, -t);
+  const double fl = std::floor(t);
+  if (t - fl == 0.5) {
+    return e < 0.0 ? fl : fl + 1.0;
+  }
+  return t - fl > 0.5 ? fl + 1.0 : fl;
+}
+
+int64_t expected_coord(double v)
+{
+  if (std::isnan(v)) {
+    return 1000000;
+  }
+  if (std::fabs(v) >= 1000.0) {
+    return v > 0 ? 1000000 : -1000000;
+  }
+  const double fl = exact_floor_mm(v);
+  return static_cast<int64_t>(std::signbit(v) ? -fl : fl);
+}
+
+}  // namespace
+
+int main()
+{
+  roslean::initialize();
+  roslean::initialize();  // idempotent
+
+  {
+    // Review CM3/CM4, finding 4c: a leak, measured. One round makes every
+    // wrapper call. The peak resident set size is read after a warm-up and
+    // again after many more rounds; one Lean object leaked per round (16
+    // bytes or more) would add at least 9 MB over 600,000 rounds. The
+    // allowance is for the allocator's own noise. This comes first in the
+    // program: a peak can only show growth while nothing larger has been
+    // allocated, and later tests hold scans of 20 MB.
+    const auto near = encode(at(100, 0, 64));
+    const auto far = encode(at(2000, 0, 64));
+    const auto round_trip = [&](int n) {
+        CM::Builder b;
+        b.set_source(true, 2.0, n % 2 ? std::optional<double>(1.0) : std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(n % 7 ? 0.3 : -1.0e9, CM::ZoneAction::Stop, 0.0, 1, true);  // sometimes refused
+        if (n % 11 == 0) {b.add_vertex(0.0f, 0.0f);}  // sometimes a stray vertex
+        b.add_polygon(CM::ZoneAction::Slowdown, 0.5, 1, true);
+        for (float v : {0.5f, -0.5f}) {
+          b.add_vertex(v, v);
+          b.add_vertex(v, -v);
+        }
+        CM m = b.build();
+        (void)m.ok();
+        (void)m.error();
+        (void)m.zone_error(0);
+        for (int k = 0; k < 4; ++k) {
+          const auto & bytes = k % 2 ? near : far;
+          m.on_scan(k, k, k != 3, 0, f(100.0f), bytes.data(), bytes.size());
+          (void)m.on_cmd(k, d(0.5), 0, 0, 0, 0, 0);
+        }
+        CM m2 = std::move(m);
+        m = std::move(m2);
+        (void)CM::coord_mm(1.5);
+        (void)CM::radius_mm(1.5);
+        (void)CM::vertex_mm(1.5f);
+        (void)CM::timeout_ns(1.5);
+        (void)CM::source_timeout_ns(1.5, std::nullopt);
+      };
+    const int warm = 50000;
+    const int rounds = 600000;
+    for (int n = 0; n < warm; ++n) {round_trip(n);}
+    const long before = peak_rss_kb();
+    for (int n = 0; n < rounds; ++n) {round_trip(n);}
+    const long growth = peak_rss_kb() - before;
+    std::printf("      peak RSS %ld kB after %d rounds, %+ld kB after %d more\n", before, warm, growth, rounds);
+    check(growth < 4096, "no leak: peak memory does not grow over 600000 rounds of every wrapper call");
+  }
+
+  // ---- The calls of the Nav2 extension (SPEC_NAV2.md, section 8) ----
+  {
+    using Tr = RawCM::Transition;
+    using Ph = RawCM::Phase;
+    using Plan = RawCM::Plan;
+    using Rep = RawCM::Report;
+    // Ranges of a scan: 4 bytes per reading.
+    const auto ranges = [](const std::vector<float> & rs) {
+        std::vector<uint8_t> out;
+        for (float r : rs) {put(out, f(r), 4);}
+        return out;
+      };
+    // Coordinate pairs: 16 bytes each.
+    const auto pairs = [](const std::vector<std::pair<double, double>> & ps) {
+        std::vector<uint8_t> out;
+        for (const auto & p : ps) {
+          put(out, d(p.first), 8);
+          put(out, d(p.second), 8);
+        }
+        return out;
+      };
+    // Zone vertices of a command: count and pairs per zone, or "none".
+    using ZV = std::optional<std::vector<std::pair<double, double>>>;
+    const auto zone_verts = [&](const std::vector<ZV> & zs) {
+        std::vector<uint8_t> out;
+        for (const auto & z : zs) {
+          if (!z) {
+            put(out, 0xFFFFFFFFu, 4);
+          } else {
+            put(out, z->size(), 4);
+            const auto b = pairs(*z);
+            out.insert(out.end(), b.begin(), b.end());
+          }
+        }
+        return out;
+      };
+    const std::vector<uint8_t> none;
+    const auto cmd = [&](
+      RawCM & m, uint64_t now, const std::vector<uint8_t> * pts,
+      const std::vector<uint8_t> & zv, double x = 0.5) {
+        return m.on_cmd(
+          now, d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), pts != nullptr,
+          pts ? pts->data() : nullptr, pts ? pts->size() : 0, zv.data(), zv.size());
+      };
+    const auto plan = [&](RawCM & m, uint64_t now, double x = 0.5) {
+        return m.cmd_plan(now, d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0));
+      };
+    const auto scan4 = [&](RawCM & m, uint64_t now, const std::vector<float> & rs) {
+        const auto b = ranges(rs);
+        m.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+      };
+    // Zone 0: stop circle 0.3 m; zone 1: slowdown circle 0.6 m at 0.5.
+    const auto two_circles = [](double timeout, bool enabled = true) {
+        RawCM::Builder b;
+        b.set_source(enabled, timeout, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(0.3, RawCM::ZoneAction::Stop, 0.0, 1, true);
+        b.add_circle(0.6, RawCM::ZoneAction::Slowdown, 0.5, 1, true);
+        return b.build();
+      };
+    const auto in_stop = pairs({{0.1, 0.0}, {0.1, 0.1}});
+    const auto in_slow = pairs({{0.5, 0.0}, {0.5, 0.1}});
+    const auto outside = pairs({{2.0, 0.0}, {2.0, 0.1}});
+    {
+      // Lifecycle (E1 to E5, N2 to N8).
+      auto m = two_circles(100.0);
+      check(m.ok() && m.phase() == Ph::Unconfigured, "a new monitor is unconfigured");
+      check(plan(m, 1) == Plan::None && cmd(m, 1, &in_stop, none).kind == Kind::Silent,
+        "unconfigured: a command is not answered, and nothing is to be looked up");
+      scan4(m, 1, {1.0f, 1.0f});
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Unconfigured, "activate from unconfigured changes nothing");
+      m.on_lifecycle(Tr::Configure);
+      check(m.phase() == Ph::Inactive, "configure: inactive");
+      check(cmd(m, 2, &in_stop, none).kind == Kind::Silent, "inactive: a command is not answered (N4)");
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Active, "activate: active");
+      check(cmd(m, 3, &in_stop, none).kind == Kind::StopSource,
+        "the scan sent while unconfigured was not stored: invalid source");
+      m.on_lifecycle(Tr::Deactivate);
+      scan4(m, 4, {1.0f, 1.0f});
+      check(m.phase() == Ph::Inactive && cmd(m, 5, &in_stop, none).kind == Kind::Silent,
+        "deactivate: inactive, silent");
+      m.on_lifecycle(Tr::Activate);
+      auto o = cmd(m, 6, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.zone == 0 && o.report == Rep::Stop && o.report_zone == 0,
+        "a scan received while inactive is used after activation (N4); the stop is reported");
+      o = cmd(m, 7, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::None, "the same state is not reported twice (N13)");
+      // R15 and N6: the zero is withheld after stop_pub_timeout; deactivate
+      // and activate start the period again and re-report the state.
+      o = cmd(m, 7 + kS + 1, &in_stop, none);
+      check(o.kind == Kind::Withheld && o.report == Rep::None, "withheld after stop_pub_timeout: kind 5");
+      o = cmd(m, 7 + kS + 2, &in_slow, none);
+      check(o.kind == Kind::Slowdown && o.zone == 1 && o.ratio_bits == d(0.5) &&
+        o.report == Rep::Slowdown && o.report_zone == 1, "slowdown: reported with its zone");
+      o = cmd(m, 7 + kS + 3, &in_slow, none, 0.0);
+      check(o.kind == Kind::Slowdown && o.report == Rep::Normal,
+        "a zero command in a slowdown zone reports no action (N14)");
+      o = cmd(m, 7 + kS + 4, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::Stop, "stop again: published and reported");
+      o = cmd(m, 7 + 3 * kS, &outside, none, 0.0);
+      check(o.kind == Kind::Withheld && o.report == Rep::Normal,
+        "a state message while the velocity is withheld (N13)");
+      o = cmd(m, 7 + 3 * kS + 1, nullptr, none, 0.0);
+      check(o.kind == Kind::Withheld && o.report == Rep::Source,
+        "and the invalid source is reported while withheld");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Activate);
+      o = cmd(m, 7 + 3 * kS + 2, &in_stop, none);
+      check(o.kind == Kind::StopZone && o.report == Rep::Stop,
+        "after deactivate and activate the zero is published and the state reported again (N6)");
+      m.on_lifecycle(Tr::Cleanup);
+      check(m.phase() == Ph::Active, "cleanup from active changes nothing");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      check(m.phase() == Ph::Unconfigured, "cleanup: unconfigured");
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(cmd(m, 8 + 3 * kS, &in_stop, none).kind == Kind::StopSource,
+        "cleanup discards the stored scan (N7)");
+      m.on_lifecycle(Tr::Shutdown);
+      check(m.phase() == Ph::Finalized, "shutdown: finalized");
+      scan4(m, 9 + 3 * kS, {1.0f, 1.0f});
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(m.phase() == Ph::Finalized && cmd(m, 10 + 3 * kS, &in_stop, none).kind == Kind::Silent &&
+        plan(m, 10 + 3 * kS) == Plan::None, "after shutdown nothing is answered, whatever follows (ND4)");
+    }
+    {
+      // An unknown transition code changes nothing (C level).
+      RawCM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      auto m = b.build();
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(static_cast<Tr>(5));
+      m.on_lifecycle(static_cast<Tr>(255));
+      check(m.phase() == Ph::Inactive, "transition codes 5 and 255 change nothing");
+    }
+    {
+      // The coordinates of a command (E8, step 3) and the plan.
+      auto m = two_circles(2.0);
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      check(plan(m, kS) == Plan::None, "no scan, timeout not 0: no lookup (the source is invalid at once)");
+      scan4(m, kS, {1.0f, 1.0f});
+      check(plan(m, kS) == Plan::ScanAndZones, "a fresh scan: its transform is looked up");
+      check(cmd(m, kS, &in_stop, none).kind == Kind::StopZone, "one pair per reading: the points count");
+      check(cmd(m, kS, &outside, none).kind == Kind::Pass,
+        "the same stored scan with other coordinates at the next command (N22)");
+      check(cmd(m, kS, nullptr, none).kind == Kind::StopSource, "no coordinates: invalid source (N27)");
+      const auto three = pairs({{2.0, 0.0}, {2.0, 0.0}, {2.0, 0.0}});
+      const auto one = pairs({{2.0, 0.0}});
+      check(cmd(m, kS, &three, none).kind == Kind::StopSource &&
+        cmd(m, kS, &one, none).kind == Kind::StopSource,
+        "more or fewer pairs than readings: invalid source");
+      auto ragged = outside;
+      ragged.resize(ragged.size() + 15, 0);
+      check(cmd(m, kS, &ragged, none).kind == Kind::Pass, "a trailing partial pair is ignored");
+      // Which readings count is decided from the stored ranges (R4).
+      scan4(m, kS, {1.0f, 20.0f});
+      const auto second_in = pairs({{2.0, 0.0}, {0.1, 0.0}});
+      const auto first_in = pairs({{0.1, 0.0}, {2.0, 0.0}});
+      check(cmd(m, kS, &second_in, none).kind == Kind::Pass,
+        "the pair of a reading that is out of range is not a point, wherever it lies");
+      check(cmd(m, kS, &first_in, none).kind == Kind::StopZone, "the pair of the valid reading is");
+      check(plan(m, 3 * kS) == Plan::ScanAndZones && plan(m, 3 * kS + 1) == Plan::None,
+        "a scan older than the timeout: no lookup");
+      {
+        const auto o = cmd(m, 3 * kS + 1, &outside, none);
+        check(o.kind == Kind::Withheld && o.report == Rep::Source,
+          "and the stop for an invalid source, whatever the points (reported; the zero itself is "
+          "withheld, since zero has been demanded for more than stop_pub_timeout)");
+      }
+      check(m.cmd_plan(kS, d(kNaN), 0, 0, 0, 0, 0) == Plan::None, "a command that is not finite: no lookup");
+      auto z = two_circles(0.0);
+      z.on_lifecycle(Tr::Configure);
+      z.on_lifecycle(Tr::Activate);
+      check(plan(z, kS) == Plan::Zones, "timeout 0, no scan: the zones' lookups only");
+      scan4(z, kS, {1.0f, 1.0f});
+      check(plan(z, 100 * kS) == Plan::ScanAndZones, "timeout 0: a scan is never too old");
+      check(cmd(z, kS, nullptr, none).kind == Kind::Pass && cmd(z, kS, &three, none).kind == Kind::Pass,
+        "timeout 0: no coordinates, or the wrong number, is no points (N27)");
+      auto off = two_circles(2.0, false);
+      off.on_lifecycle(Tr::Configure);
+      off.on_lifecycle(Tr::Activate);
+      scan4(off, kS, {1.0f, 1.0f});
+      check(plan(off, kS) == Plan::Zones && cmd(off, kS, &in_stop, none).kind == Kind::Pass,
+        "a disabled source: no lookup for the scan, and its points are not used");
+      RawCM::Builder bad;
+      auto nb = bad.build();
+      nb.on_lifecycle(Tr::Configure);
+      nb.on_lifecycle(Tr::Activate);
+      check(!nb.ok() && nb.phase() == Ph::Active && plan(nb, 1) == Plan::None &&
+        cmd(nb, 1, &outside, none).kind == Kind::StopSource,
+        "a monitor that is not ok follows the lifecycle, plans no lookup and stops every command");
+    }
+    {
+      // Topic zones (E7, N32 to N34). Zone 0: fixed stop circle 0.1 m; zone
+      // 1: stop polygon fed by a topic; zone 2: slowdown polygon fed by a
+      // topic.
+      const auto make = []() {
+          RawCM::Builder b;
+          b.set_source(true, 0.0, std::nullopt);
+          b.set_stop_pub_timeout(1.0);
+          b.add_circle(0.1, RawCM::ZoneAction::Stop, 0.0, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Slowdown, 0.25, 1, true);
+          return b.build();
+        };
+      const auto shape_result = [&](
+        RawCM & m, uint32_t zone, bool foreign, const std::vector<std::pair<double, double>> * vs) {
+          const auto b = vs ? pairs(*vs) : std::vector<uint8_t>();
+          return m.on_shape(zone, foreign, vs != nullptr, b.data(), b.size());
+        };
+      using SR = RawCM::ShapeResult;
+      // "Taken": the message changed what the zone holds.
+      const auto shape = [&](
+        RawCM & m, uint32_t zone, bool foreign, const std::vector<std::pair<double, double>> * vs) {
+          return shape_result(m, zone, foreign, vs) != SR::Ignored;
+        };
+      const std::vector<std::pair<double, double>> box =
+      {{0.4, 0.2}, {0.4, -0.2}, {0.2, -0.2}, {0.2, 0.2}};
+      const std::vector<std::pair<double, double>> tri = {{0.4, 0.2}, {0.4, -0.2}, {0.2, 0.0}};
+      const auto p = pairs({{0.3, 0.0}});
+      auto m = make();
+      check(m.ok(), "a configuration with topic zones is accepted");
+      check(!shape(m, 1, false, &box), "unconfigured: a shape message is not accepted");
+      m.on_lifecycle(Tr::Configure);
+      check(shape(m, 2, false, &box), "inactive: a shape message is accepted (N35)");
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 1, {1.0f});
+      auto o = cmd(m, 1, &p, none);
+      check(o.kind == Kind::Slowdown && o.zone == 2 && o.ratio_bits == d(0.25),
+        "the stop zone has no shape and takes no action (N32); the slowdown zone has one");
+      check(!shape(m, 0, false, &box), "a shape for a fixed zone is refused");
+      check(!shape(m, 3, false, &box) && !shape(m, UINT32_MAX, false, &box), "and for no zone");
+      const std::vector<std::pair<double, double>> two = {{0.4, 0.2}, {0.4, -0.2}};
+      check(!shape(m, 1, false, &two), "two points are refused (N33)");
+      check(!shape(m, 1, true, nullptr), "no vertices (the lookup failed): refused");
+      auto nan_box = box;
+      nan_box[2].first = kNaN;
+      auto far_box = box;
+      far_box[1].second = 999.9976;
+      const std::vector<std::pair<double, double>> moved_away =
+      {{9.4, 0.2}, {9.4, -0.2}, {9.2, 0.0}};
+      check(cmd(m, 2, &p, none).kind == Kind::Slowdown && !m.shape_unusable(1),
+        "after the ignored messages the zone still has no shape");
+      // ND6 (review CM5, finding 1): a vertex that is not finite or beyond
+      // the limit. The zone has no shape and demands its action, whatever
+      // the points, until a usable message arrives.
+      const auto far_away = pairs({{-7.0, 3.0}});
+      check(shape_result(m, 1, false, &nan_box) == SR::Unusable && m.shape_unusable(1) &&
+        !m.shape_unusable(2) && !m.shape_unusable(0) && !m.shape_unusable(7),
+        "a vertex that is not finite: the zone is marked (ND6)");
+      o = cmd(m, 2, &p, none);
+      check(o.kind == Kind::StopZone && o.zone == 1 && o.report == Rep::Stop && o.report_zone == 1,
+        "the marked stop zone stops, and is named");
+      check(cmd(m, 2, &far_away, none).kind == Kind::StopZone &&
+        cmd(m, 2, nullptr, none).kind == Kind::StopZone,
+        "also with a point far away, and without coordinates (source_timeout is 0)");
+      check(!shape(m, 1, false, &two) && m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, none).kind == Kind::StopZone,
+        "an ignored message does not lift the mark");
+      check(shape_result(m, 1, false, &box) == SR::Shape && !m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, none).kind == Kind::Pass,
+        "a usable message lifts it");
+      check(shape_result(m, 1, true, &far_box) == SR::Unusable && m.shape_unusable(1) &&
+        cmd(m, 2, &far_away, zone_verts({std::nullopt, ZV(box)})).kind == Kind::StopZone,
+        "a vertex beyond the limit marks the zone too, and replaces the shape it had; vertices "
+        "handed over with a command are not taken for it");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Activate);
+      check(m.shape_unusable(1) && cmd(m, 2, &far_away, none).kind == Kind::StopZone,
+        "the mark survives deactivation and activation");
+      check(shape_result(m, 2, false, &nan_box) == SR::Unusable &&
+        shape_result(m, 1, false, &moved_away) == SR::Shape,
+        "the slowdown zone marked, the stop zone with a shape far away");
+      o = cmd(m, 2, &far_away, none);
+      check(o.kind == Kind::Slowdown && o.zone == 2 && o.ratio_bits == d(0.25),
+        "a marked slowdown zone slows every command down");
+      check(shape_result(m, 2, false, &box) == SR::Shape && cmd(m, 2, &p, none).kind == Kind::Slowdown,
+        "back to the box");
+      // The zone without a shape again, for what follows: only cleanup does that.
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      m.on_lifecycle(Tr::Configure);
+      check(!m.shape_unusable(1) && !m.shape_unusable(2), "cleanup discards the mark");
+      check(shape(m, 2, false, &box), "the slowdown zone gets its box again");
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 1, {1.0f});
+      check(shape(m, 1, true, &tri), "three points are accepted (N33)");
+      check(cmd(m, 3, &p, none).kind == Kind::StopZone && cmd(m, 3, &p, none).zone == 1,
+        "the topic stop zone now stops");
+      // N34: a shape in another frame follows the vertices of each command.
+      const std::vector<std::pair<double, double>> moved = {{1.4, 0.2}, {1.4, -0.2}, {1.2, 0.0}};
+      check(cmd(m, 4, &p, zone_verts({std::nullopt, ZV(moved), std::nullopt})).kind == Kind::Slowdown,
+        "new vertices for the foreign shape move it away");
+      check(cmd(m, 5, &p, none).kind == Kind::Slowdown, "and it stays there without vertices");
+      check(cmd(m, 6, &p, zone_verts({std::nullopt, std::nullopt})).kind == Kind::Slowdown,
+        "an entry 'none' leaves it where it is");
+      check(cmd(m, 7, &p, zone_verts({std::nullopt, ZV(box)})).kind == Kind::Slowdown,
+        "another number of vertices than the shape has is not taken");
+      check(cmd(m, 8, &p, zone_verts({std::nullopt, ZV(tri)})).kind == Kind::StopZone, "moved back: stop");
+      check(
+        cmd(m, 9, &p, zone_verts({std::nullopt, std::nullopt,
+          ZV({{{5.4, 0.2}, {5.4, -0.2}, {5.2, -0.2}, {5.2, 0.2}}})})).kind == Kind::StopZone,
+        "the stop zone still wins");
+      check(shape(m, 1, true, &moved), "a new message replaces the shape");
+      check(cmd(m, 10, &p, zone_verts({std::nullopt, std::nullopt,
+          ZV({{{5.4, 0.2}, {5.4, -0.2}, {5.2, -0.2}, {5.2, 0.2}}})})).kind == Kind::Slowdown,
+        "a shape given in the base frame is not moved by a command's vertices");
+      // A truncated array: the entry it does not hold in full is 'none'.
+      auto cut = zone_verts({std::nullopt, ZV(tri)});
+      cut.resize(cut.size() - 1);
+      check(cmd(m, 11, &p, cut).kind == Kind::Slowdown, "a truncated entry is not taken");
+      const std::vector<uint8_t> huge = {0xFF, 0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 1, 2, 3};
+      check(cmd(m, 12, &p, huge).kind == Kind::Slowdown,
+        "a count of 0xFFFFFFFE with three bytes behind it is not taken (and costs nothing)");
+      m.on_lifecycle(Tr::Deactivate);
+      m.on_lifecycle(Tr::Cleanup);
+      m.on_lifecycle(Tr::Configure);
+      m.on_lifecycle(Tr::Activate);
+      scan4(m, 13, {1.0f});
+      check(cmd(m, 13, &p, none).kind == Kind::Pass, "cleanup discards every shape (N7, N35)");
+    }
+    {
+      // Vertices of a topic zone are rounded to the nearest millimetre.
+      check(RawCM::vertex_coord_mm(0.2994) == 299 && RawCM::vertex_coord_mm(0.2996) == 300 &&
+        RawCM::vertex_coord_mm(-0.2996) == -300 && RawCM::vertex_coord_mm(0.0) == 0,
+        "vertex_coord_mm rounds to nearest");
+      check(RawCM::vertex_coord_mm(kNaN) == 1000000 && RawCM::vertex_coord_mm(-kInf) == -1000000 &&
+        RawCM::vertex_coord_mm(1024.0) == 1000000 && RawCM::vertex_coord_mm(-5000.0) == -1000000,
+        "not finite, or 1024 m and more: the limit");
+      bool all = true;
+      std::mt19937_64 g(7);
+      std::uniform_real_distribution<double> u(-1010.0, 1010.0);
+      for (int n = 0; n < 200000; ++n) {
+        const double v = n % 2 ? u(g) : std::round(u(g) * 1000.0) / 1000.0 + 0.0005;
+        const double r = exact_round_mm(v);
+        const int64_t want = static_cast<int64_t>(std::signbit(v) ? -r : r);
+        const int64_t got = RawCM::vertex_coord_mm(v);
+        if (got != want) {
+          if (all) {std::printf("      vertex_coord_mm(%.17g) = %lld, expected %lld\n", v,
+              static_cast<long long>(got), static_cast<long long>(want));}
+          all = false;
+        }
+      }
+      check(all, "200000 random vertex coordinates: the exact rounding to nearest, half away from zero");
+    }
+    {
+      // The exported command call against the reference definition, with
+      // coordinates and zone vertices as arguments: random ranges, pairs,
+      // shape messages and zone vertices, well formed and not.
+      uint64_t rng = 0xD1B54A32D192ED03ull;
+      const auto next = [&rng]() {
+          rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+          return rng;
+        };
+      const auto unit = [&next]() {return static_cast<double>(next() >> 11) / 9007199254740992.0;};
+      const double special[] = {0.0, -0.0, kNaN, kInf, -kInf, 5e-324, 1023.9, -1024.0, 999.9995, 1e300};
+      const auto coord = [&]() {
+          const uint64_t k = next() % 12;
+          if (k == 0) {return special[next() % (sizeof special / sizeof special[0])];}
+          if (k < 8) {return (unit() - 0.5) * 1.6;}
+          return (unit() - 0.5) * 0.02 + (next() % 2 ? 0.3 : -0.4);
+        };
+      const auto make = [](double timeout) {
+          RawCM::Builder b;
+          b.set_source(true, timeout, std::nullopt);
+          b.set_stop_pub_timeout(1.0);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 2, true);
+          b.add_circle(0.5, RawCM::ZoneAction::Slowdown, 0.4, 1, true);
+          b.add_topic_polygon(RawCM::ZoneAction::Slowdown, 0.2, 1, true);
+          auto m = b.build();
+          m.on_lifecycle(RawCM::Transition::Configure);
+          m.on_lifecycle(RawCM::Transition::Activate);
+          return m;
+        };
+      size_t compared = 0, differ = 0, accepted = 0, shapes = 0;
+      size_t kinds[6] = {0, 0, 0, 0, 0, 0};
+      size_t reports[5] = {0, 0, 0, 0, 0};
+      for (double timeout : {2.0, 0.0}) {
+        auto fast = make(timeout);
+        auto ref = make(timeout);
+        uint64_t now = 0;
+        size_t readings = 0;
+        for (int round = 0; round < 1500; ++round) {
+          now += next() % (500 * kMs);
+          if (next() % 3 == 0) {
+            readings = next() % 30;
+            std::vector<float> rs(readings);
+            for (auto & r : rs) {r = next() % 8 == 0 ? 20.0f : 0.5f;}
+            const auto b = ranges(rs);
+            fast.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+            ref.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), b.data(), b.size());
+          }
+          if (next() % 4 == 0) {
+            std::vector<std::pair<double, double>> vs(2 + next() % 4);
+            for (auto & v : vs) {v = {coord(), coord()};}
+            const auto b = pairs(vs);
+            const uint32_t zone = static_cast<uint32_t>(next() % 4);
+            const bool foreign = next() % 2;
+            const bool has = next() % 6 != 0;
+            const auto a1 = fast.on_shape(zone, foreign, has, b.data(), b.size());
+            const auto a2 = ref.on_shape(zone, foreign, has, b.data(), b.size());
+            ++shapes;
+            accepted += a1 != RawCM::ShapeResult::Ignored;
+            if (a1 != a2) {++differ;}
+          }
+          if (next() % 40 == 0) {
+            for (auto tr : {Tr::Deactivate, Tr::Activate}) {
+              fast.on_lifecycle(tr);
+              ref.on_lifecycle(tr);
+            }
+          }
+          std::vector<std::pair<double, double>> ps(next() % 10 == 0 ? next() % 30 : readings);
+          for (auto & q : ps) {q = {coord(), coord()};}
+          auto pb = pairs(ps);
+          if (next() % 15 == 0) {pb.resize(pb.size() + next() % 16, 7);}
+          const bool has_points = next() % 10 != 0;
+          std::vector<ZV> zs(next() % 5);
+          for (auto & z : zs) {
+            if (next() % 3 != 0) {
+              std::vector<std::pair<double, double>> vs(2 + next() % 4);
+              for (auto & v : vs) {v = {coord(), coord()};}
+              z = vs;
+            }
+          }
+          auto zb = zone_verts(zs);
+          if (next() % 10 == 0 && !zb.empty()) {zb.resize(next() % zb.size());}
+          if (next() % 20 == 0) {
+            zb.clear();
+            for (int k = next() % 40; k > 0; --k) {zb.push_back(static_cast<uint8_t>(next()));}
+          }
+          const double x = next() % 5 == 0 ? 0.0 : 0.5;
+          const double z = next() % 30 == 0 ? kNaN : 0.0;
+          const auto pl = fast.cmd_plan(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+          const auto a = fast.on_cmd(
+            now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0), has_points, pb.data(), pb.size(),
+            zb.data(), zb.size());
+          const auto e = ref.on_cmd_reference(
+            now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0), has_points, pb.data(), pb.size(),
+            zb.data(), zb.size());
+          ++compared;
+          ++kinds[static_cast<uint8_t>(a.kind) % 6];
+          ++reports[static_cast<uint8_t>(a.report) % 5];
+          if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits ||
+            a.report != e.report || a.report_zone != e.report_zone)
+          {
+            ++differ;
+          }
+          // The plan: 0 means the answer needs no lookup.
+          if (pl == Plan::None && !(a.kind == Kind::Silent || a.kind == Kind::StopSource ||
+            a.kind == Kind::Withheld))
+          {
+            ++differ;
+          }
+        }
+      }
+      std::printf(
+        "      new calls, fast against reference: %zu commands (silent %zu, pass %zu, slowdown %zu, "
+        "stop by zone %zu, stop by source %zu, withheld %zu; reports: none %zu, normal %zu, stop %zu, "
+        "slowdown %zu, source %zu), %zu of %zu shapes accepted, %zu differ\n",
+        compared, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], kinds[5], reports[0], reports[1],
+        reports[2], reports[3], reports[4], accepted, shapes, differ);
+      check(differ == 0,
+        "on_cmd with coordinates and zone vertices answers as on_cmd_reference, report included");
+      check(kinds[0] > 0 && kinds[1] > 0 && kinds[2] > 0 && kinds[3] > 0 && kinds[4] > 0 &&
+        kinds[5] > 0 && reports[1] > 0 && reports[2] > 0 && reports[3] > 0 && reports[4] > 0 &&
+        accepted > 0 && accepted < shapes,
+        "and every kind of answer and of report occurred, and shapes were accepted and refused");
+    }
+    {
+      // Reference counting on the new calls: many rounds, peak memory (one
+      // leaked object of 16 bytes per round would add 6 MB). Nothing before
+      // this point in the program has allocated more than a round does.
+      const auto b4 = ranges(std::vector<float>(64, 1.0f));
+      const auto p16 = pairs(std::vector<std::pair<double, double>>(64, {0.3, 0.0}));
+      const std::vector<std::pair<double, double>> tri = {{0.4, 0.2}, {0.4, -0.2}, {0.2, 0.0}};
+      const auto vb = pairs(tri);
+      const auto zb = zone_verts({ZV(tri), std::nullopt});
+      const auto round_trip = [&](int n) {
+          RawCM::Builder b;
+          b.set_source(true, 2.0, std::nullopt);
+          b.add_topic_polygon(RawCM::ZoneAction::Stop, 0.0, 1, n % 2);
+          auto m = b.build();
+          for (auto tr : {Tr::Configure, Tr::Activate}) {m.on_lifecycle(tr);}
+          (void)m.phase();
+          m.on_scan(1, 1, f(0.1f), f(10.0f), b4.data(), b4.size());
+          (void)m.on_shape(0, true, n % 3 != 0, vb.data(), vb.size());
+          (void)m.cmd_plan(2, d(0.5), 0, 0, 0, 0, 0);
+          (void)m.on_cmd(2, d(0.5), 0, 0, 0, 0, 0, n % 5 != 0, p16.data(), p16.size(), zb.data(), zb.size());
+          (void)m.on_cmd_reference(3, d(0.5), 0, 0, 0, 0, 0, true, p16.data(), p16.size(), zb.data(), zb.size());
+          (void)m.on_cmd_no_clock(d(0.5), 0, 0, 0, 0, 0);
+          for (auto tr : {Tr::Deactivate, Tr::Cleanup, Tr::Shutdown}) {m.on_lifecycle(tr);}
+          (void)RawCM::vertex_coord_mm(1.5);
+        };
+      for (int n = 0; n < 20000; ++n) {round_trip(n);}
+      const long before = peak_rss_kb();
+      for (int n = 0; n < 400000; ++n) {round_trip(n);}
+      const long growth = peak_rss_kb() - before;
+      std::printf("      new calls: peak RSS %+ld kB over 400000 rounds\n", growth);
+      check(growth < 4096, "no leak in the new calls");
+    }
+  }
+
+
+  {
+    // The three decisions, and the source check (R8, R7).
+    auto m = standard();
+    check(m.ok() && m.error() == CErr::None, "standard configuration is accepted");
+    check(m.zone_error(0) == Err::None && m.zone_error(1) == Err::None &&
+      m.zone_error(2) == Err::NoSuchZone && m.zone_error(UINT32_MAX) == Err::NoSuchZone,
+      "zone_error: none for both zones, no such zone beyond the last");
+    check(is(fwd(m, 100 * kMs), Kind::StopSource), "no scan yet: stop for an invalid source");
+    scan(m, 200 * kMs, 200 * kMs, at(2000, 0));
+    check(is(fwd(m, 300 * kMs), Kind::Pass), "points outside every zone: pass");
+    scan(m, 400 * kMs, 400 * kMs, at(500, 0));
+    check(is(fwd(m, 500 * kMs), Kind::Slowdown, 1, d(0.5)), "points in the slowdown zone: zone 1, ratio 0.5");
+    scan(m, 600 * kMs, 600 * kMs, at(200, 0));
+    check(is(fwd(m, 700 * kMs), Kind::StopZone, 0), "points in the stop zone: stop, zone 0");
+    scan(m, 800 * kMs, 800 * kMs, at(2000, 0));
+    check(is(fwd(m, 2800 * kMs), Kind::Pass), "scan not too old exactly at the timeout");
+    check(is(fwd(m, 2800 * kMs + 1), Kind::StopSource), "scan too old 1 ns after the timeout");
+    scan(m, 2900 * kMs, 5000 * kMs, at(2000, 0));
+    check(is(fwd(m, 3000 * kMs), Kind::Pass), "a scan stamped in the future is valid");
+  }
+  {
+    // Zone boundaries and counting (R9, R11); coordinates truncate toward 0.
+    auto m = standard();
+    scan(m, 0, 0, at(300, 0));
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "a point on the stop circle is outside it");
+    scan(m, 0, 0, at(299, 0));
+    check(is(fwd(m, 1), Kind::StopZone, 0), "a point 1 mm inside the stop circle");
+    scan(m, 0, 0, at(299, 0, 1));
+    check(is(fwd(m, 1), Kind::Pass), "one point is below min_points 2");
+    scan(m, 0, 0, {{0.2f, mid(299), 0.0}, {0.2f, 0.0, mid(-299)}});
+    check(is(fwd(m, 1), Kind::StopZone, 0), "two points reach min_points 2");
+    scan(m, 0, 0, at(180, 240));
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "(180, 240) is on the 300 mm circle: outside");
+    scan(m, 0, 0, at(-179, -240));
+    check(is(fwd(m, 1), Kind::StopZone, 0), "negative coordinates keep their sign");
+    scan(m, 0, 0, at(0, -599));
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "negative y alone");
+    scan(m, 0, 0, at(0, 599));
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "positive y alone");
+    scan(m, 0, 0, {{0.2f, 0.5999999, 0.0}, {0.2f, -0.5999999, 0.0}});
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "599.9999 mm truncates to 599, either sign: inside");
+    scan(m, 0, 0, {{0.2f, 0.6, 0.0}, {0.2f, -0.6, 0.0}});
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)),
+      "0.6 as a double is just below 600 mm: truncated to 599, inside");
+    scan(m, 0, 0, {{0.2f, 0.6000001, 0.0}, {0.2f, -0.6000001, 0.0}});
+    check(is(fwd(m, 1), Kind::Pass), "600.0001 mm is 600: on the circle, outside");
+  }
+  {
+    // Validity of readings (R4): range_min <= range <= range_max on floats.
+    auto m = standard();
+    const double x = 0.1;
+    scan(m, 0, 0, {{0.05f, x, 0}, {0.05f, x, 0}, {20.0f, x, 0}, {kNaNF, x, 0}, {kInfF, x, 0},
+        {-1.0f, x, 0}});
+    check(is(fwd(m, 1), Kind::Pass), "readings outside the limits, NaN and inf are skipped");
+    scan(m, 0, 0, {{0.1f, x, 0}, {10.0f, x, 0}});
+    check(is(fwd(m, 1), Kind::StopZone, 0), "readings equal to the limits are valid");
+    auto bytes = encode({{kInfF, x, 0}, {kInfF, x, 0}});
+    m.on_scan(0, 0, true, f(0.1f), f(kInfF), bytes.data(), bytes.size());
+    check(is(fwd(m, 1), Kind::StopZone, 0), "an infinite reading is valid if range_max is infinite");
+    bytes = encode(at(100, 0));
+    m.on_scan(0, 0, true, f(kNaNF), f(10.0f), bytes.data(), bytes.size());
+    check(is(fwd(m, 1), Kind::Pass), "NaN range_min: no reading is valid");
+    m.on_scan(0, 0, true, f(0.1f), f(kNaNF), bytes.data(), bytes.size());
+    check(is(fwd(m, 1), Kind::Pass), "NaN range_max: no reading is valid");
+    // Limits in the right order: min then max.
+    m.on_scan(0, 0, true, f(10.0f), f(0.1f), bytes.data(), bytes.size());
+    check(is(fwd(m, 1), Kind::Pass), "range_min above range_max: no reading is valid");
+    bytes = encode({{0.0f, x, 0}, {-0.0f, x, 0}});
+    m.on_scan(0, 0, true, f(-0.0f), f(0.0f), bytes.data(), bytes.size());
+    check(is(fwd(m, 1), Kind::StopZone, 0), "0 and -0 are equal");
+  }
+  {
+    // A scan of zero length, partial records, and replacement (R5).
+    auto m = standard();
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), nullptr, 0);
+    check(is(fwd(m, 1), Kind::Pass), "an empty scan is free space");
+    scan(m, 0, 0, at(100, 0));
+    check(is(fwd(m, 1), Kind::StopZone, 0), "an obstacle");
+    const uint8_t none = 0;
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), &none, 0);
+    check(is(fwd(m, 1), Kind::Pass), "an empty scan replaces the stored one");
+    auto bytes = encode(at(100, 0, 2));
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), bytes.data(), 39);
+    check(is(fwd(m, 1), Kind::Pass), "39 bytes are one record: the partial record is ignored");
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), bytes.data(), 40);
+    check(is(fwd(m, 1), Kind::StopZone, 0), "40 bytes are two records");
+    bytes.push_back(0xff);
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), bytes.data(), 41);
+    check(is(fwd(m, 1), Kind::StopZone, 0), "41 bytes are two records");
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), bytes.data(), 19);
+    check(is(fwd(m, 1), Kind::Pass), "19 bytes are no record");
+  }
+  {
+    // A scan that is not usable (no transform for its frame, D11) discards
+    // the stored scan: the source has no data.
+    auto m = standard();
+    scan(m, 0, 0, at(2000, 0));
+    check(is(fwd(m, 1), Kind::Pass), "usable scan: pass");
+    scan(m, 2, 2, at(2000, 0), false);
+    check(is(fwd(m, 3), Kind::StopSource), "unusable scan: stop for an invalid source");
+    check(is(fwd(m, 4), Kind::StopSource), "and it stays so");
+    scan(m, 5, 5, at(2000, 0));
+    check(is(fwd(m, 6), Kind::Pass), "the next usable scan restores the source");
+    // With source_timeout 0 a missing scan is "no points" (R8).
+    auto m0 = circle_stop(radius(300));
+    scan(m0, 0, 0, at(100, 0));
+    check(is(fwd(m0, 1), Kind::StopZone, 0), "timeout 0: obstacle stops");
+    scan(m0, 2, 2, at(100, 0), false);
+    check(is(fwd(m0, 3), Kind::Pass), "timeout 0: an unusable scan contributes no points, as upstream");
+  }
+  {
+    // Zero is published for stop_pub_timeout, then nothing (R15); a
+    // non-finite command is ignored (R2).
+    auto m = standard();
+    scan(m, 0, 0, at(100, 0));
+    check(is(fwd(m, 1000 * kMs), Kind::StopZone, 0), "stop published");
+    check(is(fwd(m, 2000 * kMs), Kind::StopZone, 0), "still published exactly at stop_pub_timeout");
+    check(is(fwd(m, 2000 * kMs + 1), Kind::Withheld), "silent 1 ns after stop_pub_timeout");
+    check(
+      is(m.on_cmd(2001 * kMs, d(0.5), d(0.0), d(kNaN), d(0.0), d(0.0), d(0.2)), Kind::Silent),
+      "NaN in linear.z: ignored");
+    scan(m, 2001 * kMs, 2001 * kMs, at(2000, 0));
+    check(is(halt(m, 2002 * kMs), Kind::Withheld), "a zero command continues the silence");
+    check(is(fwd(m, 2003 * kMs), Kind::Pass), "a non-zero command is published");
+    check(is(halt(m, 2004 * kMs), Kind::Pass), "zero command: published as pass");
+    check(is(halt(m, 3004 * kMs), Kind::Pass), "zero command still published at the timeout");
+    check(is(halt(m, 3004 * kMs + 1), Kind::Withheld), "and dropped after it");
+    // Each of the six components is checked, in its own position.
+    const double bad[] = {kInf, -kInf, kNaN};
+    bool all = true;
+    for (int i = 0; i < 6; ++i) {
+      uint64_t v[6] = {d(0.5), d(0.0), d(0.0), d(0.0), d(0.0), d(0.2)};
+      v[i] = d(bad[i % 3]);
+      all = is(m.on_cmd(4000 * kMs, v[0], v[1], v[2], v[3], v[4], v[5]), Kind::Silent) && all;
+    }
+    check(all, "a non-finite value in any of the six components: silent");
+    // Only linear.x, linear.y and angular.z count for "zero".
+    scan(m, 4000 * kMs, static_cast<int64_t>(100 * kS), at(2000, 0));
+    check(is(fwd(m, 4500 * kMs), Kind::Pass), "a non-zero command ends the zero phase");
+    check(is(m.on_cmd(5000 * kMs, d(0.0), d(0.0), d(1.0), d(1.0), d(1.0), d(0.0)), Kind::Pass),
+      "planar-zero command starts a zero phase");
+    check(is(m.on_cmd(6000 * kMs + 1, d(0.0), d(0.0), d(1.0), d(1.0), d(1.0), d(0.0)), Kind::Withheld),
+      "linear.z, angular.x, angular.y do not make it non-zero");
+    check(is(m.on_cmd(6000 * kMs + 2, d(0.0), d(1e-300), d(0.0), d(0.0), d(0.0), d(0.0)), Kind::Pass),
+      "linear.y counts");
+    check(is(halt(m, 6000 * kMs + 3), Kind::Pass), "zero again: published");
+    check(is(m.on_cmd(8000 * kMs, d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), d(-5e-324)), Kind::Pass),
+      "angular.z counts");
+  }
+  {
+    // The exported command call against the definition the theorems are
+    // stated on (proved equal in ROSlean/CollisionMonitor/Fast.lean): two
+    // monitors with the same configuration get the same calls, one through
+    // on_cmd and one through on_cmd_reference, and must give the same
+    // answers. Points are drawn around the zone boundaries, on both sides
+    // of zero, with values that are not finite, far away, and subnormal.
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    const auto next = [&rng]() {
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        return rng;
+      };
+    const auto unit = [&next]() {return static_cast<double>(next() >> 11) / 9007199254740992.0;};
+    const double special[] = {0.0, -0.0, kNaN, kInf, -kInf, 5e-324, -5e-324, 1023.9, -1023.9,
+      1024.0, -1024.0, 999.9995, 1e300, -1e300, 0.3, -0.3, 0.4, -0.4, 0.2995, 0.3005, 0.6, 0.001};
+    const auto coord = [&]() {
+        const uint64_t k = next() % 10;
+        if (k == 0) {return special[next() % (sizeof special / sizeof special[0])];}
+        if (k < 6) {return (unit() - 0.5) * 1.4;}  // around the zones
+        if (k < 8) {return (unit() - 0.5) * 0.02 + (next() % 2 ? 0.3 : -0.4);}  // at an edge
+        return (unit() - 0.5) * 20.0;
+      };
+    const auto make = [](int kind, double timeout) {
+        CM::Builder b;
+        b.set_source(true, timeout, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        if (kind == 0) {
+          b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 3, true);
+          b.add_circle(0.6, CM::ZoneAction::Slowdown, 0.5, 2, true);
+        } else {
+          b.add_polygon(CM::ZoneAction::Slowdown, 0.3, 2, true);
+          for (auto v : {std::pair{0.4f, 0.4f}, {0.4f, -0.4f}, {-0.4f, -0.4f}, {-0.4f, 0.4f}}) {
+            b.add_vertex(v.first, v.second);
+          }
+          b.add_polygon(CM::ZoneAction::Stop, 0.5, 3, true);
+          // Not convex, and with a vertex that is not on the millimetre grid.
+          for (auto v : {std::pair{0.3f, 0.3f}, {0.05f, 0.0f}, {0.3f, -0.3f}, {0.0f, -0.3001f},
+              {-0.1f, 0.0f}, {0.0f, 0.3f}})
+          {
+            b.add_vertex(v.first, v.second);
+          }
+          if (kind == 2) {
+            b.add_circle(0.5, CM::ZoneAction::Slowdown, 0.4, 1, true);
+          }
+        }
+        return b.build();
+      };
+    size_t compared = 0;
+    size_t differ = 0;
+    size_t kinds[5] = {0, 0, 0, 0, 0};
+    for (int kind = 0; kind < 3; ++kind) {
+      for (double timeout : {2.0, 0.0}) {
+        auto fast = make(kind, timeout);
+        auto ref = make(kind, timeout);
+        uint64_t now = 0;
+        for (int round = 0; round < 400; ++round) {
+          now += next() % (700 * kMs);
+          if (next() % 3 != 0) {
+            std::vector<Rec> recs(next() % 40);
+            for (auto & r : recs) {
+              r = Rec{next() % 8 == 0 ? 20.0f : 0.5f, coord(), coord()};
+            }
+            const bool usable = next() % 12 != 0;
+            scan(fast, now, static_cast<int64_t>(now), recs, usable);
+            scan(ref, now, static_cast<int64_t>(now), recs, usable);
+          }
+          for (int c = 0; c < 4; ++c) {
+            now += next() % (400 * kMs);
+            const double x = next() % 5 == 0 ? 0.0 : 0.5;
+            const double z = next() % 30 == 0 ? kNaN : 0.0;
+            const auto a = fast.on_cmd(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+            const auto e = ref.on_cmd_reference(now, d(x), d(0.0), d(z), d(0.0), d(0.0), d(0.0));
+            ++compared;
+            ++kinds[static_cast<uint8_t>(a.kind) % 5];
+            if (a.kind != e.kind || a.zone != e.zone || a.ratio_bits != e.ratio_bits ||
+              a.report != e.report || a.report_zone != e.report_zone)
+            {
+              ++differ;
+            }
+          }
+        }
+      }
+    }
+    std::printf(
+      "      fast against reference: %zu commands (silent %zu, pass %zu, slowdown %zu, "
+      "stop by zone %zu, stop by source %zu), %zu differ\n",
+      compared, kinds[0], kinds[1], kinds[2], kinds[3], kinds[4], differ);
+    check(differ == 0, "on_cmd answers as on_cmd_reference, the definition the theorems are on");
+    check(
+      kinds[0] > 0 && kinds[1] > 0 && kinds[2] > 0 && kinds[3] > 0 && kinds[4] > 0,
+      "and every kind of answer occurred in the comparison");
+  }
+  {
+    // D15: a command without a clock reading (stepNoClock). Always the stop
+    // for an invalid source, never withheld; nothing else is disturbed.
+    const auto nc = [](CM & m, double x = 0.5) {
+        return m.on_cmd_no_clock(d(x), d(0.0), d(0.0), d(0.0), d(0.0), d(0.2));
+      };
+    auto m = standard();
+    scan(m, 0, 0, at(2000, 0));
+    check(is(fwd(m, 1 * kMs), Kind::Pass), "no clock: with a clock and a clear scan, pass");
+    check(is(nc(m), Kind::StopSource), "no clock: stop although the scan is clear and fresh");
+    bool all = true;
+    for (int k = 0; k < 50; ++k) {
+      all = is(nc(m), Kind::StopSource) && all;
+    }
+    check(all, "no clock: the zero is published every time, never withheld");
+    check(is(nc(m, kNaN), Kind::Silent), "no clock: a non-finite command is ignored (R2)");
+    check(is(fwd(m, 2 * kMs), Kind::Pass), "clock back: the stored scan is used again, pass");
+    // R15 starts anew after a command without a clock.
+    scan(m, 3 * kMs, 3 * kMs, at(100, 0));
+    check(is(fwd(m, 1000 * kMs), Kind::StopZone, 0), "stop by the zone");
+    check(is(fwd(m, 2000 * kMs + 1), Kind::Withheld), "withheld after stop_pub_timeout");
+    check(is(nc(m), Kind::StopSource), "no clock while zero is withheld: published");
+    check(is(fwd(m, 9000 * kMs), Kind::StopSource),
+      "clock back, scan too old: the stop is published, not withheld");
+    check(is(fwd(m, 10000 * kMs), Kind::StopSource), "and for stop_pub_timeout from then");
+    check(is(fwd(m, 10000 * kMs + 1), Kind::Withheld), "then withheld again");
+    // With the staleness check off and with the source disabled: still a stop.
+    CM::Builder b0;
+    b0.set_source(true, 0.0, std::nullopt);
+    b0.set_stop_pub_timeout(1.0);
+    b0.add_circle(0.3, CM::ZoneAction::Stop, 0.5, 4, true);
+    auto m0 = b0.build();
+    check(m0.ok() && is(fwd(m0, 1), Kind::Pass), "timeout 0, no scan: pass with a clock");
+    check(is(nc(m0), Kind::StopSource), "timeout 0: stop without a clock");
+    CM::Builder b1;
+    b1.set_source(false, 2.0, std::nullopt);
+    b1.set_stop_pub_timeout(1.0);
+    auto m1 = b1.build();
+    check(m1.ok() && is(fwd(m1, 1), Kind::Pass), "source disabled, no zones: pass with a clock");
+    check(is(nc(m1), Kind::StopSource), "source disabled: stop without a clock");
+  }
+  {
+    // Argument order and meaning of add_circle and set_source.
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);  // timeout 0: no data is "no points"
+    // Disabled stop zone, then an always-triggering slowdown (min_points -3).
+    b.add_circle(0.5, CM::ZoneAction::Stop, 0.25, 1, false);
+    b.add_circle(0.0, CM::ZoneAction::Slowdown, 0.25, -3, true);
+    auto m = b.build();
+    check(m.ok(), "accepted");
+    check(is(fwd(m, 5), Kind::Slowdown, 1, d(0.25)), "negative min_points: triggers without points");
+    scan(m, 0, 0, at(100, 0));
+    check(is(fwd(m, 5), Kind::Slowdown, 1, d(0.25)), "a disabled stop zone does not stop");
+    check(is(fwd(m, UINT64_MAX), Kind::Slowdown, 1, d(0.25)), "timeout 0: never too old");
+  }
+  {
+    // The source's own timeout replaces the node's (argument order).
+    CM::Builder b;
+    b.set_source(true, 5.0, 1.0);
+    auto m = b.build();
+    scan(m, 0, 0, {});
+    check(is(fwd(m, kS), Kind::Pass) && is(fwd(m, kS + 1), Kind::StopSource),
+      "own timeout 1 s is used, not the node's 5 s");
+    b.set_source(true, 5.0, std::nullopt);
+    auto m2 = b.build();
+    scan(m2, 0, 0, {});
+    check(is(fwd(m2, 5 * kS), Kind::Pass) && is(fwd(m2, 5 * kS + 1), Kind::StopSource),
+      "without an own timeout the node's 5 s is used");
+  }
+  {
+    // A disabled source contributes nothing and is never invalid (R6).
+    CM::Builder b;
+    b.set_source(false, 1e-9, std::nullopt);
+    b.add_circle(0.5, CM::ZoneAction::Stop, 0.0, 1, true);
+    auto m = b.build();
+    check(is(fwd(m, 5 * kS), Kind::Pass), "disabled source, no scan: pass");
+    scan(m, 0, 0, at(100, 0));
+    check(is(fwd(m, 5 * kS), Kind::Pass), "disabled source: its points are not used");
+  }
+  {
+    // Action codes at the C level: 1 is slowdown, everything else is stop.
+    lean_object * b = roslean_cm_builder_new(roslean_core_unit());
+    b = roslean_cm_builder_set_source(b, 1, d(0.0), 0, d(0.0));
+    b = roslean_cm_builder_add_circle(b, d(0.5), 7, d(0.5), 0, 9 /* any non-zero flag */);
+    lean_object * m = roslean_cm_new(b);
+    m = roslean_cm_on_lifecycle(m, 0);
+    m = roslean_cm_on_lifecycle(m, 1);
+    m = roslean_cm_on_cmd(
+      m, 5, d(0.5), 0, 0, 0, 0, 0, 0, roslean_core_byte_array(nullptr, 0),
+      roslean_core_byte_array(nullptr, 0));
+    roslean_core_inc(m);
+    check(roslean_cm_out_kind(m) == 3, "action code 7 is stop; flag 9 is enabled");
+    roslean_core_dec(m);
+  }
+  {
+    // Slowdown selection (R13): the smallest ratio below 1; the earlier of
+    // two equal ones; a stop zone after them wins (R12).
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.7, 1, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.3, 1, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.3, 1, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 1.0, 1, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, kNaN, 1, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, kInf, 1, true);
+    check(b.add_circle(0.2, CM::ZoneAction::Stop, 0.0, 1, true) == 6, "seventh zone is zone 6");
+    auto m = b.build();
+    check(m.ok(), "ratios of 1, NaN and infinity are accepted");
+    scan(m, 0, 0, at(500, 0));
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.3)), "smallest ratio, earlier of two equal zones");
+    scan(m, 0, 0, at(100, 0));
+    check(is(fwd(m, 1), Kind::StopZone, 6), "a later stop zone wins over slowdown zones");
+  }
+  {
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 1.0, 0, true);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 2.0, 0, true);
+    auto m = b.build();
+    check(is(fwd(m, 1), Kind::Pass), "ratios of 1 and above never take effect");
+  }
+  {
+    // A ratio of 0 yields zero: published for stop_pub_timeout only (D6).
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.set_stop_pub_timeout(1e-8);
+    b.add_circle(1.0, CM::ZoneAction::Slowdown, 0.0, 0, true);
+    auto m = b.build();
+    check(m.ok() && CM::timeout_ns(1e-8) == 10, "ratio 0 is accepted; 1e-8 s is 10 ns");
+    check(is(fwd(m, 100), Kind::Slowdown, 0, 0), "ratio 0: slowdown with pattern 0");
+    check(is(fwd(m, 110), Kind::Slowdown, 0, 0), "published at the timeout (10 ns)");
+    check(is(fwd(m, 111), Kind::Withheld), "silent after it");
+  }
+  {
+    // Polygon: vertices in order, signed coordinates, the 4-vertex rule.
+    // The box of upstream's example: x in [0, 300], y in [-300, 300] mm.
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+    b.add_vertex(0.3f, 0.3f);
+    b.add_vertex(0.3f, -0.3f);
+    b.add_vertex(0.0f, -0.3f);
+    b.add_vertex(0.0f, 0.3f);
+    auto m = b.build();
+    check(m.ok(), "box accepted");
+    scan(m, 0, 0, at(150, -200, 1));
+    check(is(fwd(m, 1), Kind::StopZone, 0), "inside the box, negative y");
+    scan(m, 0, 0, at(-150, 200, 1));
+    check(is(fwd(m, 1), Kind::Pass), "x and y are not swapped or negated");
+    scan(m, 0, 0, at(302, 0, 1));
+    check(is(fwd(m, 1), Kind::StopZone, 0), "2 mm outside an edge: within the margin (D4)");
+    scan(m, 0, 0, at(303, 0, 1));
+    check(is(fwd(m, 1), Kind::Pass), "3 mm outside an edge");
+    scan(m, 0, 0, at(-3, 0, 1));
+    check(is(fwd(m, 1), Kind::Pass), "3 mm outside the edge at x = 0");
+    scan(m, 0, 0, {{0.2f, kInf, kNaN}, {0.2f, -kInf, 0.1}, {0.2f, 1e300, -1e300}});
+    check(is(fwd(m, 1), Kind::Pass), "saturated points are in no zone");
+  }
+  {
+    // A box entirely at negative coordinates, far out.
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_polygon(CM::ZoneAction::Slowdown, 0.5, 1, true);
+    b.add_vertex(-900.0f, -900.0f);
+    b.add_vertex(-900.0f, -800.0f);
+    b.add_vertex(-800.0f, -800.0f);
+    b.add_vertex(-800.0f, -900.0f);
+    auto m = b.build();
+    check(m.ok(), "far negative box accepted");
+    scan(m, 0, 0, {{0.2f, -850.0, -850.0}});
+    check(is(fwd(m, 1), Kind::Slowdown, 0, d(0.5)), "inside the far negative box");
+    scan(m, 0, 0, {{0.2f, 850.0, 850.0}});
+    check(is(fwd(m, 1), Kind::Pass), "the mirrored point is outside");
+  }
+  {
+    // add_vertex applies to the zone added last.
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+    b.add_vertex(0.1f, 0.1f);
+    b.add_vertex(0.1f, -0.1f);
+    b.add_vertex(-0.1f, -0.1f);
+    b.add_circle(0.05, CM::ZoneAction::Stop, 0.0, 1, true);
+    auto m = b.build();
+    check(!m.ok() && m.error() == CErr::Zone, "a polygon left with three vertices is refused");
+    check(m.zone_error(0) == Err::Points && m.zone_error(1) == Err::None, "zone_error names the triangle");
+
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+    b.add_vertex(0.1f, 0.1f);
+    b.add_vertex(0.1f, -0.1f);
+    b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+    b.add_vertex(0.1f, 0.1f);
+    b.add_vertex(0.1f, -0.1f);
+    b.add_vertex(-0.1f, -0.1f);
+    b.add_vertex(-0.1f, 0.1f);
+    auto m2 = b.build();
+    check(m2.zone_error(0) == Err::Points && m2.zone_error(1) == Err::None,
+      "vertices go to the polygon added last");
+  }
+  {
+    // Review finding 1: a negative radius is its magnitude, as upstream (R9).
+    auto m = circle_stop(-0.3);
+    check(m.ok(), "radius -0.3 is accepted");
+    scan(m, 0, 0, {{0.2f, 0.2, 0.0}});
+    check(is(fwd(m, 1), Kind::StopZone, 0), "radius -0.3: a point at 0.2 m stops, as with +0.3");
+    scan(m, 0, 0, {{0.2f, 0.31, 0.0}});
+    check(is(fwd(m, 1), Kind::Pass), "radius -0.3: a point at 0.31 m is outside");
+  }
+  {
+    // What is refused, and how it is reported.
+    auto circle = [](double r) {return circle_stop(r).zone_error(0);};
+    check(circle(0.3) == Err::None && circle(0.0) == Err::None && circle(-0.0) == Err::None &&
+      circle(999.9989) == Err::None && circle(-999.9989) == Err::None, "radii below 1000 m are accepted");
+    check(circle(999.9999) == Err::Radius && circle(1000.0) == Err::Radius &&
+      circle(-1000.0) == Err::Radius && circle(1e300) == Err::Radius,
+      "radii whose zone would exceed 1000 m are refused, either sign");
+    check(circle(kInf) == Err::Radius && circle(-kInf) == Err::Radius && circle(kNaN) == Err::Radius &&
+      circle(std::numeric_limits<double>::max()) == Err::Radius, "non-finite and huge radii are refused");
+    check(!circle_stop(kNaN).ok() && circle_stop(kNaN).error() == CErr::Zone, "and the monitor is not ok");
+
+    auto ratio = [](double r) {
+        CM::Builder b;
+        b.set_source(true, 0.0, std::nullopt);
+        b.add_circle(0.1, CM::ZoneAction::Slowdown, r, 1, true);
+        return b.build().zone_error(0);
+      };
+    check(ratio(0.5) == Err::None && ratio(7.0) == Err::None && ratio(kInf) == Err::None &&
+      ratio(kNaN) == Err::None && ratio(0.0) == Err::None, "sign-clear ratios accepted");
+    check(ratio(-0.5) == Err::Ratio && ratio(-0.0) == Err::Ratio && ratio(-kInf) == Err::Ratio,
+      "ratios with the sign bit refused (D5)");
+    {
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.add_circle(0.1, CM::ZoneAction::Stop, -0.5, 1, true);
+      check(b.build().ok(), "the ratio of a stop zone is ignored");
+    }
+
+    // Review finding 13: min_points outside the range of a 32-bit int.
+    auto mp = [](int64_t n) {return circle_stop(0.3, n).zone_error(0);};
+    check(mp(0) == Err::None && mp(INT32_MAX) == Err::None && mp(-1) == Err::None &&
+      mp(INT32_MIN) == Err::None, "min_points within the int range is accepted");
+    check(mp(static_cast<int64_t>(INT32_MAX) + 1) == Err::MinPoints && mp(4294967297LL) == Err::MinPoints &&
+      mp(INT64_MAX) == Err::MinPoints && mp(static_cast<int64_t>(INT32_MIN) - 1) == Err::MinPoints &&
+      mp(INT64_MIN) == Err::MinPoints, "min_points beyond the int range is refused");
+
+    auto box = [](float lim) {
+        CM::Builder b;
+        b.set_source(true, 0.0, std::nullopt);
+        b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+        b.add_vertex(lim, 1.0f);
+        b.add_vertex(1.0f, -1.0f);
+        b.add_vertex(-1.0f, -1.0f);
+        b.add_vertex(-1.0f, lim);
+        return b.build().zone_error(0);
+      };
+    check(box(999.99f) == Err::None && box(-999.99f) == Err::None, "vertices within 999.997 m");
+    check(box(999.999f) == Err::Points && box(-999.999f) == Err::Points && box(1e30f) == Err::Points,
+      "vertices beyond 999.997 m are refused");
+    check(box(kInfF) == Err::Points && box(-kInfF) == Err::Points && box(kNaNF) == Err::Points,
+      "non-finite vertices are refused");
+    {
+      // A refused vertex is not silently dropped: five vertices, one NaN.
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+      b.add_vertex(1.0f, 1.0f);
+      b.add_vertex(1.0f, -1.0f);
+      b.add_vertex(kNaNF, 0.0f);
+      b.add_vertex(-1.0f, -1.0f);
+      b.add_vertex(-1.0f, 1.0f);
+      check(b.build().zone_error(0) == Err::Points, "a NaN vertex among four good ones refuses the zone");
+    }
+
+    auto timeouts = [](double node, std::optional<double> own, double stop_pub) {
+        CM::Builder b;
+        b.set_source(true, node, own);
+        b.set_stop_pub_timeout(stop_pub);
+        return b.build().error();
+      };
+    check(timeouts(2.0, std::nullopt, 1.0) == CErr::None && timeouts(0.0, 0.0, 0.0) == CErr::None &&
+      timeouts(-0.0, -0.0, -0.0) == CErr::None && timeouts(9.1e9, 9.1e9, 9.1e9) == CErr::None,
+      "timeouts from 0 to below 9.2e9 s are accepted, -0.0 included");
+    check(timeouts(-1.0, std::nullopt, 1.0) == CErr::SourceTimeout &&
+      timeouts(-5e-324, std::nullopt, 1.0) == CErr::SourceTimeout &&
+      timeouts(kNaN, std::nullopt, 1.0) == CErr::SourceTimeout &&
+      timeouts(kInf, std::nullopt, 1.0) == CErr::SourceTimeout &&
+      timeouts(9.2e9, std::nullopt, 1.0) == CErr::SourceTimeout,
+      "negative, non-finite and huge source_timeout refused (D9)");
+    check(timeouts(-1.0, 2.0, 1.0) == CErr::SourceTimeout,
+      "the node's source_timeout is checked even if the source has its own");
+    check(timeouts(2.0, -1.0, 1.0) == CErr::OwnSourceTimeout && timeouts(2.0, kNaN, 1.0) == CErr::OwnSourceTimeout,
+      "the source's own timeout");
+    check(timeouts(2.0, std::nullopt, -1.0) == CErr::StopPubTimeout &&
+      timeouts(2.0, std::nullopt, kInf) == CErr::StopPubTimeout &&
+      timeouts(2.0, std::nullopt, 1e10) == CErr::StopPubTimeout, "stop_pub_timeout");
+    {
+      // Which part is reported when several are wrong.
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.add_circle(0.1, CM::ZoneAction::Slowdown, -0.5, 1, true);
+      b.add_circle(2000.0, CM::ZoneAction::Slowdown, -0.5, INT64_MAX, true);
+      b.add_circle(0.1, CM::ZoneAction::Stop, 0.0, INT64_MAX, true);
+      auto m = b.build();
+      check(m.zone_error(0) == Err::Ratio && m.zone_error(1) == Err::Radius &&
+        m.zone_error(2) == Err::MinPoints && m.error() == CErr::Zone, "one code per zone");
+    }
+    CM::Builder b;
+    b.set_source(true, 0.0, std::nullopt);
+    check(b.build().ok(), "no zones: accepted");
+  }
+  {
+    // Review finding 7: a monitor that is not ok is not advisory. It answers
+    // every command with a stop, whatever the command and the scans.
+    const auto never_passes = [](CM m, const std::string & what) {
+        bool all = !m.ok();
+        all = is(fwd(m, 1), Kind::StopSource) && all;
+        scan(m, 2, 2, at(5000, 0));
+        all = is(fwd(m, 3), Kind::StopSource) && all;
+        all = is(fwd(m, 100 * kS), Kind::StopSource) && all;  // no silence after stop_pub_timeout
+        all = is(halt(m, 200 * kS), Kind::StopSource) && all;
+        all = is(m.on_cmd(300 * kS, d(kNaN), 0, 0, 0, 0, 0), Kind::StopSource) && all;
+        check(all, "not ok, every command is stopped: " + what);
+      };
+    {
+      // Were a negative source_timeout taken as 0, this would pass.
+      CM::Builder b;
+      b.set_source(true, -1.0, std::nullopt);
+      never_passes(b.build(), "negative source_timeout");
+    }
+    {
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.set_stop_pub_timeout(kNaN);
+      never_passes(b.build(), "NaN stop_pub_timeout");
+    }
+    never_passes(circle_stop(kNaN), "NaN radius");
+    never_passes(circle_stop(0.3, 4294967297LL), "min_points 4294967297");
+    {
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.add_circle(0.3, CM::ZoneAction::Slowdown, -0.5, 1, true);
+      never_passes(b.build(), "negative slowdown ratio");
+    }
+    {
+      CM::Builder b;
+      b.set_source(true, 0.0, std::nullopt);
+      b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+      never_passes(b.build(), "polygon without vertices");
+    }
+  }
+  {
+    // Review CM3/CM4, finding 6: the builder is fail-closed.
+    const auto stopped = [](CM m, CErr why, const std::string & what) {
+        bool all = !m.ok() && m.error() == why;
+        all = is(fwd(m, 1), Kind::StopSource) && all;
+        scan(m, 2, 2, at(5000, 0));
+        all = is(fwd(m, 3), Kind::StopSource) && all;
+        check(all, "not ok, every command is stopped: " + what);
+      };
+    {
+      // Without set_source the timeout would be 0, "check off": a command
+      // with no scan would pass.
+      CM::Builder b;
+      stopped(b.build(), CErr::SourceNotSet, "new builder");
+      b.set_stop_pub_timeout(1.0);
+      b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 1, true);
+      stopped(b.build(), CErr::SourceNotSet, "zones and stop_pub_timeout, but no set_source");
+      lean_object * raw = roslean_cm_new(
+        roslean_cm_builder_add_circle(roslean_cm_builder_new(roslean_core_unit()), d(0.3), 0, 0, 1, 1));
+      roslean_core_inc(raw);
+      const bool ok = roslean_cm_ok(raw) != 0;
+      raw = roslean_cm_on_lifecycle(raw, 0);
+      raw = roslean_cm_on_lifecycle(raw, 1);
+      raw = roslean_cm_on_cmd(
+        raw, 5, d(0.5), 0, 0, 0, 0, 0, 0, roslean_core_byte_array(nullptr, 0),
+        roslean_core_byte_array(nullptr, 0));
+      roslean_core_inc(raw);
+      check(!ok && roslean_cm_out_kind(raw) == 4, "the same through the C functions: add_circle, cm_new, a command");
+      roslean_core_dec(raw);
+    }
+    {
+      // A vertex that belongs to no polygon, refused or not, is recorded.
+      const auto stray = [&](int where, float x) {
+          CM::Builder b;
+          b.set_source(true, 0.0, std::nullopt);
+          if (where == 0) {b.add_vertex(x, 0.0f);}  // before any zone
+          b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 1, true);
+          if (where == 1) {b.add_vertex(x, 0.0f);}  // after a circle
+          b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+          for (float v : {0.5f, -0.5f}) {
+            b.add_vertex(v, v);
+            b.add_vertex(v, -v);
+          }
+          return b.build();
+        };
+      check(stray(2, 0.0f).ok(), "no stray vertex: accepted");
+      stopped(stray(0, kNaNF), CErr::StrayVertex, "a NaN vertex before any zone");
+      stopped(stray(1, kNaNF), CErr::StrayVertex, "a NaN vertex after a circle");
+      stopped(stray(0, 1.0f), CErr::StrayVertex, "a finite vertex before any zone");
+      stopped(stray(1, 1.0f), CErr::StrayVertex, "a finite vertex after a circle");
+    }
+    {
+      // No later call clears a refusal.
+      CM::Builder b;
+      b.set_source(true, -1.0, std::nullopt);
+      b.set_source(true, 2.0, std::nullopt);
+      stopped(b.build(), CErr::SourceTimeout, "a refused source_timeout followed by a good one");
+      b.set_source(true, 2.0, kNaN);
+      b.set_source(true, 2.0, 1.0);
+      stopped(b.build(), CErr::OwnSourceTimeout, "a refused own timeout followed by a good one");
+      b.set_source(true, 2.0, std::nullopt);
+      b.set_stop_pub_timeout(kNaN);
+      b.set_stop_pub_timeout(1.0);
+      stopped(b.build(), CErr::StopPubTimeout, "a refused stop_pub_timeout followed by a good one");
+      b.set_source(true, 2.0, std::nullopt);
+      b.set_stop_pub_timeout(1.0);
+      check(b.build().ok(), "and a build clears the builder's refusals");
+    }
+  }
+  {
+    // Extreme times: sums at and above 2^63 take Lean's big-number path.
+    CM::Builder b;
+    b.set_source(true, 9.1e9, std::nullopt);
+    b.set_stop_pub_timeout(9.1e9);
+    b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, INT32_MAX, true);
+    auto m = b.build();
+    const uint64_t timeout = 9100000000000000000ULL;
+    check(m.ok() && CM::source_timeout_ns(9.1e9, std::nullopt) == static_cast<int64_t>(timeout),
+      "extreme timeouts and min_points accepted");
+    check(is(fwd(m, UINT64_MAX), Kind::StopSource), "no scan at t = 2^64 - 1");
+    scan(m, 5, 5, at(100, 0));
+    check(is(fwd(m, UINT64_MAX), Kind::StopSource), "5 + 9.1e18 < 2^64 - 1: too old");
+    scan(m, 5, INT64_MAX, at(100, 0));
+    const uint64_t limit = static_cast<uint64_t>(INT64_MAX) + timeout;
+    check(is(fwd(m, limit), Kind::Pass), "stamp 2^63 - 1: not too old exactly at the timeout");
+    check(is(fwd(m, limit + 1), Kind::StopSource), "and too old 1 ns after it");
+  }
+  {
+    // A negative stamp is taken as 0 (D8).
+    auto m = standard();
+    scan(m, 0, -1, at(2000, 0));
+    check(is(fwd(m, 2 * kS), Kind::Pass), "stamp -1 counts as 0: valid at the timeout");
+    check(is(fwd(m, 2 * kS + 1), Kind::StopSource), "and too old after it");
+    scan(m, 0, INT64_MIN, at(2000, 0));
+    check(is(fwd(m, 2 * kS + 1), Kind::StopSource), "stamp INT64_MIN counts as 0");
+  }
+  {
+    // Byte layout of a record: range 0.2f is 0x3E4CCCCD; x = 0.25 is
+    // 0x3FD0000000000000; y = -2.0 is 0xC000000000000000.
+    auto m = standard();
+    const uint8_t rec[20] = {0xCD, 0xCC, 0x4C, 0x3E, 0, 0, 0, 0, 0, 0, 0xD0, 0x3F, 0, 0, 0, 0, 0, 0, 0, 0xC0};
+    std::vector<uint8_t> two(rec, rec + 20);
+    two.insert(two.end(), rec, rec + 20);
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), two.data(), two.size());
+    check(is(fwd(m, 1), Kind::Pass), "little-endian record: (0.25, -2.0) m is outside");
+    two[19] = 0x80;  // y of the first record becomes -0.0
+    two[39] = 0x00;  // y of the second record becomes +0.0
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), two.data(), two.size());
+    check(is(fwd(m, 1), Kind::StopZone, 0), "(0.25, -0.0) and (0.25, 0.0) m are inside 300 mm");
+    two[10] = 0xE0;  // x of the first record becomes 0.5
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), two.data(), two.size());
+    check(is(fwd(m, 1), Kind::Slowdown, 1, d(0.5)), "byte 6 of x is in the exponent: 0.5 m");
+    std::vector<uint8_t> ones(40, 0xff);  // range and coordinates are NaN patterns
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), ones.data(), ones.size());
+    check(is(fwd(m, 1), Kind::Pass), "all-ones records: NaN ranges, skipped");
+    m.on_scan(0, 0, true, 0xffffffffu, 0xffffffffu, ones.data(), ones.size());
+    check(is(fwd(m, 1), Kind::Pass), "all-ones limits");
+  }
+  {
+    // A large scan: 1,000,000 readings.
+    auto m = standard();
+    std::vector<Rec> recs(1000000, Rec{0.2f, 2.0, -1.5});
+    auto bytes = encode(recs);
+    const auto t0 = std::chrono::steady_clock::now();
+    m.on_scan(0, 0, true, f(0.1f), f(10.0f), bytes.data(), bytes.size());
+    const auto t1 = std::chrono::steady_clock::now();
+    const bool pass = is(fwd(m, 1), Kind::Pass);
+    const auto t2 = std::chrono::steady_clock::now();
+    check(pass, "1,000,000 readings outside");
+    std::printf(
+      "      1,000,000 readings: scan event %.1f ns per reading (decoding and conversion to mm), "
+      "command event %.1f ns per reading (two zones)\n",
+      std::chrono::duration<double, std::nano>(t1 - t0).count() / 1e6,
+      std::chrono::duration<double, std::nano>(t2 - t1).count() / 1e6);
+    recs[999998] = Rec{0.2f, 0.1, 0.0};
+    recs[999999] = Rec{0.2f, 0.0, -0.1};
+    scan(m, 0, 0, recs);
+    check(is(fwd(m, 1), Kind::StopZone, 0), "the last two of 1,000,000 readings are inside");
+    recs.assign(1000000, Rec{0.2f, -0.1, 0.0});
+    scan(m, 0, 0, recs);
+    check(is(fwd(m, 1), Kind::StopZone, 0), "1,000,000 readings inside");
+  }
+  {
+    // A build empties the builder; moves; a moved-from monitor throws.
+    CM::Builder b;
+    b.set_source(true, 7.5e-9, std::nullopt);
+    b.set_stop_pub_timeout(1e-7);
+    b.add_circle(0.3, CM::ZoneAction::Stop, 0.0, 0, true);
+    auto m1 = b.build();
+    check(b.add_circle(0.3, CM::ZoneAction::Slowdown, 0.5, 0, true) == 0, "builder is empty after a build");
+    {
+      // The source settings were reset too: without a new set_source the
+      // second monitor is not ok (and not "timeout 0, check off").
+      auto unset = b.build();
+      check(!unset.ok() && unset.error() == CErr::SourceNotSet && is(fwd(unset, 1), Kind::StopSource),
+        "a build resets the source: the next monitor is not ok until set_source is called again");
+    }
+    b.set_source(true, 0.0, std::nullopt);
+    b.add_circle(0.3, CM::ZoneAction::Slowdown, 0.5, 0, true);
+    auto m2 = b.build();
+    check(is(fwd(m1, 1), Kind::StopSource), "first monitor has the source timeout: no scan, stop");
+    check(m2.ok() && is(fwd(m2, 1), Kind::Slowdown, 0, d(0.5)),
+      "second monitor is independent, with the source settings of its own set_source");
+    scan(m1, 0, 0, {});
+
+    CM m3(std::move(m1));
+    check(is(fwd(m3, 2), Kind::StopZone, 0), "move-constructed monitor works");
+    m2 = std::move(m3);
+    check(is(fwd(m2, 3), Kind::StopZone, 0), "move-assigned monitor works");
+    int threw = 0;
+    try {
+      fwd(m3, 4);
+    } catch (const std::logic_error &) {
+      ++threw;
+    }
+    try {
+      m3.on_scan(0, 0, true, 0, 0, nullptr, 0);
+    } catch (const std::logic_error &) {
+      ++threw;
+    }
+    try {
+      m3.ok();
+    } catch (const std::logic_error &) {
+      ++threw;
+    }
+    try {
+      m3.zone_error(0);
+    } catch (const std::logic_error &) {
+      ++threw;
+    }
+    try {
+      m3.error();
+    } catch (const std::logic_error &) {
+      ++threw;
+    }
+    check(threw == 5, "a moved-from monitor throws instead of crashing");
+    // An exception that crosses a frame which has called into Lean is caught
+    // (PLAN, lesson 14: Lean's unwinder must not replace the system's).
+    bool caught = false;
+    try {
+      auto m = standard();
+      scan(m, 0, 0, at(100, 0));
+      if (is(fwd(m, 1), Kind::StopZone, 0)) {
+        throw std::runtime_error("thrown after calls into Lean");
+      }
+    } catch (const std::runtime_error & e) {
+      caught = std::string(e.what()) == "thrown after calls into Lean";
+    }
+    check(caught, "an exception thrown after calls into Lean is caught");
+  }
+  {
+    // Repeated build cycles: reference counting on every path.
+    bool all = true;
+    for (int n = 0; n < 20000; ++n) {
+      CM::Builder b;
+      b.set_source(true, 0.0, n % 3 == 0 ? std::optional<double>(0.0) : std::nullopt);
+      b.set_stop_pub_timeout(5e-9);
+      b.add_polygon(CM::ZoneAction::Stop, 0.0, 1, true);
+      b.add_vertex(0.1f, 0.1f);
+      b.add_vertex(0.1f, -0.1f);
+      b.add_vertex(-0.1f, -0.1f);
+      b.add_vertex(-0.1f, 0.1f);
+      b.add_circle(0.5, CM::ZoneAction::Slowdown, 0.5, 1, n % 2 == 0);
+      auto m = b.build();
+      all = m.ok() && m.zone_error(1) == Err::None && m.error() == CErr::None && all;
+      scan(m, 0, 0, at(300, 0, 1));
+      all = (fwd(m, 1).kind == (n % 2 == 0 ? Kind::Slowdown : Kind::Pass)) && all;
+      if (n % 5 == 0) {
+        scan(m, 0, 0, at(300, 0, 1), false);
+      }
+    }
+    check(all, "20000 build cycles");
+  }
+  {
+    // Long run over scan and command events: decisions stay right. (A double
+    // free shows here as a crash; a leak is measured by the first test of
+    // this program.)
+    auto m = standard();
+    bool all = true;
+    const auto near = encode(at(100, 0));
+    const auto far = encode(at(2000, 0));
+    for (uint64_t t = 0; t < 300000; ++t) {
+      const bool stop = t % 3 == 0;
+      const auto & bytes = stop ? near : far;
+      m.on_scan(t, static_cast<int64_t>(t), true, f(0.1f), f(10.0f), bytes.data(), bytes.size());
+      all = (fwd(m, t).kind == (stop ? Kind::StopZone : Kind::Pass)) && all;
+      all = m.ok() && all;
+    }
+    check(all, "300000 scan and command events");
+  }
+  // ---- The conversions Lean performs, against floating-point references ----
+
+  std::mt19937_64 gen(1);
+  {
+    // Scan coordinates: truncated toward zero, saturated, NaN to +limit.
+    check(CM::coord_mm(0.0) == 0 && CM::coord_mm(-0.0) == 0, "coord_mm(0)");
+    check(CM::coord_mm(0.25) == 250 && CM::coord_mm(-0.25) == -250, "exact millimetre values are kept");
+    check(CM::coord_mm(std::nextafter(0.25, 0.0)) == 249, "just below +250 mm truncates to 249");
+    check(CM::coord_mm(std::nextafter(0.25, 1.0)) == 250, "just above +250 mm stays 250");
+    check(CM::coord_mm(std::nextafter(-0.25, 0.0)) == -249, "just inside -250 mm truncates to -249");
+    check(CM::coord_mm(std::nextafter(-0.25, -1.0)) == -250, "just beyond -250 mm stays -250");
+    check(CM::coord_mm(0.0009999) == 0 && CM::coord_mm(-0.0009999) == 0, "less than 1 mm is 0, either sign");
+    check(CM::coord_mm(0.0019999) == 1 && CM::coord_mm(-0.0019999) == -1, "1.9999 mm is 1, either sign");
+    // 0.3 as a double is below 0.3. Its floating-point product with 1000
+    // rounds up to 300.0; the exact value is 299.99999999999998…
+    check(0.3 * 1000.0 == 300.0 && CM::coord_mm(0.3) == 299 && CM::coord_mm(-0.3) == -299,
+      "0.3 (just below 300 mm) truncates to 299: exact, where the rounded product gives 300");
+    check(CM::coord_mm(5e-324) == 0 && CM::coord_mm(-5e-324) == 0 && CM::coord_mm(2.3e-308) == 0,
+      "denormals and tiny values are 0");
+    check(CM::coord_mm(999.9999) == 999999 && CM::coord_mm(-999.9999) == -999999, "just inside the limit");
+    check(CM::coord_mm(1000.0) == 1000000 && CM::coord_mm(-1000.0) == -1000000, "at the limit");
+    check(CM::coord_mm(1023.9) == 1000000 && CM::coord_mm(1024.0) == 1000000 &&
+      CM::coord_mm(-1024.5) == -1000000, "beyond the limit");
+    check(CM::coord_mm(1e300) == 1000000 && CM::coord_mm(-1e300) == -1000000 &&
+      CM::coord_mm(std::numeric_limits<double>::max()) == 1000000, "huge values");
+    check(CM::coord_mm(kInf) == 1000000 && CM::coord_mm(-kInf) == -1000000, "infinities");
+    check(CM::coord_mm(kNaN) == 1000000 && CM::coord_mm(-kNaN) == 1000000,
+      "NaN of either sign saturates to the positive limit");
+    std::uniform_real_distribution<double> dist(-1100.0, 1100.0);
+    std::uniform_int_distribution<uint64_t> any;
+    bool exact = true, patterns = true;
+    for (int n = 0; n < 300000; ++n) {
+      double v = dist(gen);
+      if (n % 3 == 1) {
+        v /= 1000.0;
+      } else if (n % 3 == 2) {
+        // Next to a whole millimetre.
+        v = std::nextafter(std::round(v * 1000.0) / 1000.0, n % 2 ? kInf : -kInf);
+      }
+      const int64_t mm = CM::coord_mm(v);
+      exact = mm == expected_coord(v) && exact;
+      double w;
+      const uint64_t bits = any(gen);
+      std::memcpy(&w, &bits, sizeof w);
+      patterns = CM::coord_mm(w) == expected_coord(w) && patterns;
+    }
+    // The exact truncation is never away from the origin and less than 1 mm
+    // from the value (proved in Lean: coordMm_abs_le, coordMm_abs_gt). A
+    // check of that against the rounded product v * 1000.0 would be wrong:
+    // for 0.3 the rounded product is 300.0, a full millimetre above 299.
+    check(exact, "300000 random coordinates: equal to the exact truncation");
+    check(patterns, "300000 random bit patterns: equal to the exact truncation");
+  }
+  {
+    // Radius: magnitude, rounded up, plus 1.
+    check(CM::radius_mm(0.25) == 251 && CM::radius_mm(-0.25) == 251, "0.25 m: 250 + 1, either sign");
+    check(CM::radius_mm(std::nextafter(0.25, 1.0)) == 252, "just above 0.25 m: rounded up to 251, + 1");
+    check(CM::radius_mm(std::nextafter(0.25, 0.0)) == 251, "just below 0.25 m: rounded up to 250, + 1");
+    check(CM::radius_mm(0.0) == 1 && CM::radius_mm(-0.0) == 1 && CM::radius_mm(5e-324) == 2,
+      "0 m: 0 + 1; the smallest positive value: 1 + 1");
+    check(CM::radius_mm(0.3) == 301 && CM::radius_mm(0.1) == 102,
+      "0.3 as a double is below 300 mm: 301. 0.1 is above 100 mm: 102");
+    check(CM::radius_mm(999.9989) == 1000000 && !CM::radius_mm(999.9991).has_value(), "the limit");
+    check(!CM::radius_mm(kNaN) && !CM::radius_mm(kInf) && !CM::radius_mm(-kInf) && !CM::radius_mm(1e300),
+      "NaN, infinite and huge radii are refused");
+    std::uniform_real_distribution<double> dist(-999.9, 999.9);
+    bool exact = true, up = true;
+    for (int n = 0; n < 200000; ++n) {
+      const double r = n % 2 ? dist(gen) : dist(gen) / 1000.0;
+      const auto mm = CM::radius_mm(r);
+      exact = mm.has_value() && static_cast<double>(*mm) == exact_ceil_mm(r) + 1.0 && exact;
+      up = mm.has_value() && static_cast<double>(*mm) >= std::fabs(r) * 1000.0 + 1.0 && up;
+    }
+    check(exact, "200000 random radii: equal to the exact ceiling plus 1");
+    check(up, "200000 random radii: at least 1 mm above the magnitude");
+  }
+  {
+    // Vertices: rounded to nearest, a half away from zero.
+    check(CM::vertex_mm(0.25f) == 250 && CM::vertex_mm(-0.25f) == -250, "exact values");
+    check(CM::vertex_mm(0.3f) == 300 && CM::vertex_mm(-0.3f) == -300, "0.3f");
+    check(CM::vertex_mm(0.0004f) == 0 && CM::vertex_mm(-0.0004f) == 0, "0.4 mm rounds to 0");
+    check(CM::vertex_mm(0.0006f) == 1 && CM::vertex_mm(-0.0006f) == -1, "0.6 mm rounds to 1, either sign");
+    check(CM::vertex_mm(0.2996f) == 300 && CM::vertex_mm(-0.2994f) == -299, "299.6 and -299.4 mm");
+    check(CM::vertex_mm(0.0625f) == 63 && CM::vertex_mm(-0.0625f) == -63,
+      "62.5 mm (exact in binary) rounds away from zero");
+    check(CM::vertex_mm(0.0f) == 0 && CM::vertex_mm(-0.0f) == 0 && CM::vertex_mm(1e-45f) == 0, "zeros");
+    check(!CM::vertex_mm(kNaNF) && !CM::vertex_mm(kInfF) && !CM::vertex_mm(-kInfF), "non-finite refused");
+    check(CM::vertex_mm(3e38f) == (1LL << 62) && CM::vertex_mm(-3e38f) == -(1LL << 62),
+      "huge values are reported at the query's limit");
+    std::uniform_real_distribution<float> dist(-1000.0f, 1000.0f);
+    bool exact = true;
+    for (int n = 0; n < 200000; ++n) {
+      const float v = n % 2 ? dist(gen) : dist(gen) / 1000.0f;
+      const double want = exact_round_mm(static_cast<double>(v));
+      exact = CM::vertex_mm(v) == static_cast<int64_t>(std::signbit(v) ? -want : want) && exact;
+    }
+    check(exact, "200000 random vertices: equal to the exact rounding");
+  }
+  {
+    // Timeouts: (int64_t)(seconds * 1e9), the expression of
+    // rclcpp::Duration::from_seconds, reproduced bit for bit.
+    check(CM::timeout_ns(2.0) == 2000000000 && CM::timeout_ns(0.0) == 0 && CM::timeout_ns(-0.0) == 0,
+      "whole seconds");
+    check(CM::timeout_ns(0.1) == 100000000 && CM::timeout_ns(1.9999999999) == 1999999999,
+      "fractions; truncated, not rounded");
+    check(CM::timeout_ns(9.99e-10) == 0 && CM::timeout_ns(5e-324) == 0, "below 1 ns is 0 (R7)");
+    check(CM::timeout_ns(2.094) == 2093999999, "2.094 s is 2,093,999,999 ns, as upstream");
+    check(CM::timeout_ns(std::nextafter(9.2e9, 0.0)).has_value() && !CM::timeout_ns(9.2e9), "the limit");
+    check(!CM::timeout_ns(-1e-9) && !CM::timeout_ns(-5e-324) && !CM::timeout_ns(kNaN) &&
+      !CM::timeout_ns(kInf) && !CM::timeout_ns(-kInf) && !CM::timeout_ns(1e300),
+      "negative, non-finite and huge timeouts are refused");
+    std::uniform_real_distribution<double> exponent(-12.0, 9.9);
+    std::uniform_int_distribution<int> thousandths(0, 30000);
+    bool same = true, same_default = true;
+    int lost = 0;
+    for (int n = 0; n < 300000; ++n) {
+      const double s = n % 2 ? std::pow(10.0, exponent(gen)) : thousandths(gen) / 1000.0;
+      const int64_t ns = static_cast<int64_t>(s * 1e9);
+      same = CM::timeout_ns(s) == ns && same;
+      // The default of the source's timeout: through seconds and back.
+      const int64_t again = static_cast<int64_t>((static_cast<double>(ns) / 1e9) * 1e9);
+      same_default = CM::source_timeout_ns(s, std::nullopt) == again && same_default;
+      lost += again != ns;
+    }
+    check(same, "300000 random timeouts: equal to (int64_t)(seconds * 1e9)");
+    check(same_default, "and the default of the source's timeout equals the double conversion");
+    check(lost > 0, "which differs from the single conversion for some of them");
+    check(CM::source_timeout_ns(2.094, std::nullopt) == 2093999998,
+      "node timeout 2.094 s as the source's default: 2,093,999,998 ns (1 ns lost, as upstream)");
+    check(CM::source_timeout_ns(2.094, 2.094) == 2093999999, "set on the source itself: 2,093,999,999 ns");
+    check(CM::source_timeout_ns(5.0, 0.25) == 250000000 && !CM::source_timeout_ns(-1.0, 0.25) &&
+      !CM::source_timeout_ns(5.0, kNaN), "own value used; either value can be refused");
+  }
+
+  {
+    // Review CM5, finding 5: the wrapper prepares every thread that calls into
+    // Lean (`lean_initialize_thread`), once, and not the thread that
+    // initialised the runtime. A monitor built in one thread is used in two
+    // others, one after the other, and destroyed in a third: what a node
+    // loaded as a component does in its container's executor threads.
+    const auto build = []() {
+        RawCM::Builder b;
+        b.set_source(true, 2.0, std::nullopt);
+        b.set_stop_pub_timeout(1.0);
+        b.add_circle(0.5, RawCM::ZoneAction::Stop, 0.0, 1, true);
+        auto m = b.build();
+        m.on_lifecycle(RawCM::Transition::Configure);
+        m.on_lifecycle(RawCM::Transition::Activate);
+        return m;
+      };
+    const auto use = [](RawCM & m, uint64_t now, double x) {
+        const float r = 1.0f;
+        uint8_t ranges[4];
+        std::memcpy(ranges, &r, 4);
+        m.on_scan(now, static_cast<int64_t>(now), f(0.1f), f(10.0f), ranges, 4);
+        std::vector<uint8_t> p;
+        put(p, d(x), 8);
+        put(p, d(0.0), 8);
+        return m.on_cmd(
+          now, d(0.5), d(0.0), d(0.0), d(0.0), d(0.0), d(0.0), true, p.data(), p.size(), nullptr,
+          0).kind;
+      };
+    const int before = roslean_core_thread_inits();
+    auto m = std::make_optional(build());
+    const Kind here = use(*m, 1000, 0.25);
+    check(roslean_core_thread_inits() == before && here == Kind::StopZone,
+      "the thread that initialised the runtime is not initialised a second time");
+    Kind first = Kind::Silent, second = Kind::Silent, third = Kind::Silent;
+    int inits_first = 0;
+    std::thread t1([&]() {
+        first = use(*m, 2000, 2.0);
+        second = use(*m, 3000, 0.25);
+        inits_first = roslean_core_thread_inits();
+      });
+    t1.join();
+    check(first == Kind::Pass && second == Kind::StopZone,
+      "a monitor built in one thread answers in another");
+    check(inits_first == before + 1,
+      "the other thread was prepared for Lean code, once for all its calls");
+    std::thread t2([&]() {
+        third = use(*m, 4000, 2.0);
+        m.reset();  // the last reference is given up here
+      });
+    t2.join();
+    check(third == Kind::Pass && roslean_core_thread_inits() == before + 2,
+      "and in a third, which also destroys it: prepared too");
+    std::thread t3([&]() {
+        auto local = build();
+        third = use(local, 1000, 0.25);
+      });
+    t3.join();
+    check(third == Kind::StopZone && roslean_core_thread_inits() == before + 3,
+      "a monitor built, used and destroyed in a thread of its own");
+  }
+
+  std::printf("%d failure(s)\n", failures);
+  return failures == 0 ? 0 : 1;
+}

@@ -1,4 +1,4 @@
-# Lean-backed twist_mux on ROS 2 Jazzy (Ubuntu 24.04).
+# Lean-backed twist_mux and collision monitor on ROS 2 Jazzy (Ubuntu 24.04).
 #
 #   docker build -f docker/Dockerfile -t roslean-twist-mux .
 #   docker run --rm --network host roslean-twist-mux
@@ -17,7 +17,12 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
-      ros-${ROS_DISTRO}-twist-mux \
+      ros-${ROS_DISTRO}-sensor-msgs ros-${ROS_DISTRO}-twist-mux \
+      ros-${ROS_DISTRO}-rclcpp-lifecycle ros-${ROS_DISTRO}-rclcpp-components \
+      ros-${ROS_DISTRO}-nav2-util ros-${ROS_DISTRO}-nav2-msgs \
+      ros-${ROS_DISTRO}-tf2 ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-tf2-geometry-msgs \
+      ros-${ROS_DISTRO}-tf2-msgs ros-${ROS_DISTRO}-lifecycle-msgs \
+      ros-${ROS_DISTRO}-nav2-collision-monitor ros-${ROS_DISTRO}-nav2-lifecycle-manager \
     && rm -rf /var/lib/apt/lists/*
 
 # elan installs the toolchain pinned in lean-toolchain on first use.
@@ -36,13 +41,18 @@ RUN cd core && lake build
 FROM toolchain AS builder
 ARG RUN_TESTS=1
 COPY ros ros
+# The image holds the two nodes. Left out: roslean_demos (it needs the
+# simulators) and roslean_nav2_bringup (it needs nav2_bringup, which is not
+# installed here).
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
     && colcon build --base-paths ros --install-base /opt/roslean \
+         --packages-skip roslean_demos roslean_nav2_bringup \
          --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 RUN if [ "${RUN_TESTS}" = "1" ]; then \
       source /opt/ros/${ROS_DISTRO}/setup.bash \
       && colcon test --base-paths ros --install-base /opt/roslean \
+           --packages-skip roslean_demos roslean_nav2_bringup \
            --event-handlers console_direct+ \
       && colcon test-result --verbose; \
     fi
@@ -70,12 +80,21 @@ FROM ros:${ROS_DISTRO}-ros-base
 ARG ROS_DISTRO
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-geometry-msgs ros-${ROS_DISTRO}-std-msgs \
+      ros-${ROS_DISTRO}-sensor-msgs \
+      ros-${ROS_DISTRO}-rclcpp-lifecycle ros-${ROS_DISTRO}-rclcpp-components \
+      ros-${ROS_DISTRO}-nav2-util ros-${ROS_DISTRO}-nav2-msgs \
+      ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-tf2-geometry-msgs \
+      ros-${ROS_DISTRO}-nav2-lifecycle-manager \
       ros-${ROS_DISTRO}-twist-mux \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/roslean /opt/roslean
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 # Mount your own parameter file and pass it instead to configure the inputs.
+# The collision monitor is in the same image. It is a lifecycle node; with
+# Nav2's lifecycle manager, which configures and activates it:
+#   docker run --rm --network host roslean-twist-mux ros2 launch \
+#     /opt/roslean/roslean_collision_monitor/share/roslean_collision_monitor/launch/collision_monitor_launch.py
 # Upstream's twist_mux from apt is installed as well, for twist_marker and
 # joystick_relay.py. The entrypoint sources /opt/roslean after /opt/ros, so
 # `ros2 run twist_mux twist_mux` and `ros2 launch twist_mux twist_mux_launch.py`

@@ -1,0 +1,7 @@
+This package named nav2_collision_monitor is the overlay of the ROSlean
+repository: the Lean-backed collision monitor under upstream's package name.
+It is not upstream's nav2_collision_monitor. See docs/DROP_IN_COLLISION_MONITOR.md
+in https://github.com/Beneficial-AI-Foundation/ROSlean.
+
+The tests of roslean_collision_monitor look for this file and refuse to take
+this package for upstream's.

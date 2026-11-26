@@ -106,7 +106,7 @@ section + section { border-top: 1px solid var(--line); }
 /* Package list: one row per verified package */
 .packages { list-style: none; margin: 1.25rem 0 0; padding: 0; border: 1px solid var(--line); background: var(--surface); }
 .packages li {
-  display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 9rem minmax(0, 1fr) 9.5rem 10.5rem;
   gap: 0.25rem 1rem; align-items: baseline; padding: 0.8rem 1rem; font-size: 0.95rem;
 }
 .packages li + li { border-top: 1px solid var(--line); }
@@ -218,6 +218,7 @@ tr.warn td { color: var(--accent); font-weight: 500; }
 .toc a { color: var(--muted); text-decoration: none; }
 .toc a:hover { color: var(--ink); }
 .toc .eyebrow { margin-bottom: 0.75rem; }
+.toc .toc-next { margin-top: 1.5rem; }
 .doc main { min-width: 0; max-width: 50rem; }
 @media (max-width: 900px) {
   .doc { grid-template-columns: 1fr; gap: 0; }
@@ -227,3 +228,64 @@ tr.warn td { color: var(--accent); font-weight: 500; }
 
 footer { border-top: 1px solid var(--line); margin-top: 2rem; }
 footer .wrap { padding-block: 1.5rem 2.5rem; font-size: 0.9rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between; }
+
+/* Gaps page: one block per gap, with the same five questions answered for each */
+.gap { margin: 1.5rem 0; border: 1px solid var(--line); background: var(--surface); }
+.gap > h3 { margin: 0; padding: 0.7rem 1rem; font-size: 1.05rem; border-bottom: 1px solid var(--line); }
+.gap > p { margin: 0; padding: 0.7rem 1rem 0; font-size: 0.95rem; }
+.gap dl { margin: 0; padding: 0.7rem 1rem 0.8rem; display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.5rem 1rem; font-size: 0.93rem; line-height: 1.5; }
+.gap dt { font: 500 0.75rem/1.9 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.gap dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .gap dl { grid-template-columns: 1fr; gap: 0.1rem; } .gap dd { margin-bottom: 0.5rem; } }
+.kind { font: 500 0.72rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.kind.proved { color: var(--proved); }
+td code, dd code { overflow-wrap: anywhere; }
+blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--code-bg); border-left: 3px solid var(--line); font: 0.84rem/1.5 var(--font-mono); overflow-wrap: anywhere; }
+
+/* The command path, as a diagram. Scrolls sideways below its minimum width. */
+.flow { margin: 1.25rem 0 0; }
+.flow-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); padding: 0.75rem; }
+.flow svg { display: block; width: 100%; min-width: 34rem; height: auto; }
+.flow figcaption { color: var(--muted); font-size: 0.95rem; margin-top: 0.6rem; }
+.flow text { font-family: var(--font-body); fill: var(--ink); text-anchor: middle; }
+.flow .flow-name { font: 600 17px var(--font-display); }
+.flow .flow-name.small { font-size: 15px; }
+.flow .flow-sub { font-size: 13px; fill: var(--muted); }
+.flow .flow-label { font-size: 13px; fill: var(--muted); text-anchor: start; }
+.flow .flow-decides { font-size: 15px; }
+.flow .flow-strong { font-weight: 600; }
+.flow .flow-tag { font: 500 11px var(--font-mono); letter-spacing: 0.08em; fill: var(--proved); }
+.flow .flow-start { text-anchor: start; }
+.flow .flow-end { text-anchor: end; }
+.flow-other rect { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+.flow-lean rect { fill: var(--surface); stroke: var(--proved); stroke-width: 2.5; }
+.flow-line { fill: none; stroke: var(--muted); stroke-width: 1.8; }
+.flow-dash { stroke-dasharray: 5 4; }
+.flow-headfill { fill: var(--muted); }
+
+/* What the shim does and what Lean does: two boxes and what crosses. */
+.flow .split-item { font-size: 14.5px; }
+.flow .split-dot { fill: var(--muted); }
+.flow .split-mid { text-anchor: middle; }
+.flow .split-trusted { fill: var(--muted); }
+.flow .split-code { font-family: var(--font-mono); font-size: 12.5px; }
+
+/* The other Lean node, where a diagram highlights only one. */
+.flow .flow-dim .flow-tag { fill: var(--muted); }
+
+/* A linked preview picture (the playground on the overview). */
+.shot { display: block; margin: 1.25rem 0 0.75rem; border: 1px solid var(--line); }
+.shot img { display: block; width: 100%; height: auto; }
+
+/* Lessons learned: three numbered boxes of equal weight. */
+.lessons { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+@media (max-width: 760px) { .lessons { grid-template-columns: 1fr; } }
+.lessons li {
+  background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--proved);
+  padding: 1.1rem 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.6rem;
+}
+.lesson-n { font: 600 2.4rem/1 var(--font-display); color: var(--proved); }
+.lessons h3 { margin: 0; font-size: 1.12rem; line-height: 1.3; }
+.lessons p { margin: 0; font-size: 0.95rem; }
+.lessons .lesson-limit { color: var(--muted); font-size: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.lessons a { margin-top: auto; padding-top: 0.4rem; font-weight: 600; font-size: 0.95rem; }

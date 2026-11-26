@@ -1,0 +1,92 @@
+# Example configuration for the Lean-backed collision monitor.
+#
+# The format is that of nav2_collision_monitor; this is upstream's example
+# (params/collision_monitor_params.yaml) restricted to what this node provides:
+# one laser scan source; `circle` and `polygon` zones with fixed shapes, and
+# `polygon` zones whose shape arrives on a topic; the actions `stop` and
+# `slowdown`. Anything else fails the `configure` transition with one message
+# that names every refused parameter (docs/collision_monitor/SPEC.md,
+# "Excluded features"; SPEC_NAV2.md, section 6).
+#
+# The node is a lifecycle node, like upstream's: Nav2's lifecycle manager
+# configures and activates it (launch/collision_monitor_launch.py starts both).
+# By hand:
+#
+#   ros2 run roslean_collision_monitor collision_monitor --ros-args \
+#     --params-file config/example.yaml
+#   ros2 lifecycle set /collision_monitor configure
+#   ros2 lifecycle set /collision_monitor activate
+#
+# or add `-p autostart_node:=true` to the first command.
+collision_monitor:
+  ros__parameters:
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    enable_stamped_cmd_vel: false
+    # A nav2_msgs/CollisionMonitorState message on each change of the acting
+    # zone. Empty or unset: no state topic.
+    state_topic: "collision_monitor_state"
+    # How long a command is held, by the node clock, while a transform it
+    # needs is missing; then it is answered with a stop (with a non-zero
+    # source_timeout). Not a bound on the age of a transform.
+    transform_tolerance: 0.5
+    # A stored scan older than this (by its header stamp) stops the robot, and
+    # so does having no scan at all, or no transform for it. 0.0 switches all
+    # three checks off.
+    source_timeout: 5.0
+    # true (upstream's default): the scan's points are corrected for the
+    # robot's motion since the scan, through odom_frame_id. Every command then
+    # needs an odometry transform stamped at or after the command's time.
+    # false: the newest transform from the scan's frame to base_frame_id.
+    base_shift_correction: true
+    # Zero is published for this long after it first appears, then nothing.
+    stop_pub_timeout: 2.0
+    # Zones are checked in this order. The first triggered stop zone wins over
+    # everything; otherwise the triggered slowdown zone with the smallest ratio.
+    polygons: ["PolygonStop", "PolygonSlow", "CircleSlow"]
+    PolygonStop:
+      type: "polygon"
+      points: "[[0.3, 0.3], [0.3, -0.3], [0.0, -0.3], [0.0, 0.3]]"
+      action_type: "stop"
+      min_points: 4
+      # Publishes the zone as geometry_msgs/PolygonStamped on polygon_pub_topic.
+      visualize: true
+      polygon_pub_topic: "polygon_stop"
+      enabled: true
+    PolygonSlow:
+      type: "polygon"
+      points: "[[0.4, 0.4], [0.4, -0.4], [-0.4, -0.4], [-0.4, 0.4]]"
+      action_type: "slowdown"
+      min_points: 4
+      slowdown_ratio: 0.3
+      visualize: true
+      polygon_pub_topic: "polygon_slowdown"
+      enabled: true
+    CircleSlow:
+      type: "circle"
+      radius: 0.6
+      action_type: "slowdown"
+      min_points: 4
+      slowdown_ratio: 0.7
+      enabled: true
+    # A zone whose shape arrives on a topic, not in the list above. Until its
+    # first message with at least three points it takes no action, and a shape
+    # given in another frame (the costmap publishes the footprint in odom)
+    # stays where it was last published until the next message. The fixed
+    # polygon is the recommended form.
+    #
+    # FootprintStop:
+    #   type: "polygon"
+    #   action_type: "stop"
+    #   polygon_sub_topic: "/local_costmap/published_footprint"
+    #   min_points: 6
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      enabled: true
+      # The pose of the sensor comes from TF: the transform from the scan's
+      # frame_id to base_frame_id, as in nav2_collision_monitor. (The parameter
+      # `roslean_sensor_pose` of earlier versions is gone and is refused.)
