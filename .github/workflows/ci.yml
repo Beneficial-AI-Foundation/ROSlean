@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         # The Lean side is verified on Linux x86-64 and macOS (Apple silicon).
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

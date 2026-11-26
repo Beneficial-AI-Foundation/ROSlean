@@ -1,8 +1,9 @@
 # Contributing to ROSlean
 
 Thanks for your interest in contributing. ROSlean builds ROS 2 nodes whose
-decision logic is written and proved in Lean 4; the first target is a
-`twist_mux`-compatible velocity multiplexer. This guide covers how to build it,
+decision logic is written and proved in Lean 4. There are two so far: a
+`twist_mux`-compatible velocity multiplexer and the stop and slowdown core of
+Nav2's collision monitor. This guide covers how to build it,
 the standards we hold the proofs to, and how to send a change. It follows the
 shared contribution standard used across the
 [Beneficial AI Foundation](https://github.com/Beneficial-AI-Foundation) Lean
@@ -44,15 +45,21 @@ pixi run build        # colcon build of the core + the ROS packages
 
 ```sh
 pixi run prove        # check all theorems (fetches or builds Mathlib first)
-pixi run test         # FFI tests and scenarios compared against upstream twist_mux
+pixi run test-quick   # the ROS tests without the long comparisons, about 6 minutes
+pixi run test         # everything, including the long comparisons with upstream
+                      # twist_mux and nav2_collision_monitor, about 30 minutes
 pixi run demo         # turtlesim driven through the Lean-backed mux
+pixi run cm-check     # the collision monitor's Gazebo demo, checked without a window
 ```
+
+Use `test-quick` while you work and `test` once before you open a pull request.
+The times are from one Apple-silicon Mac.
 
 Continuous integration (`.github/workflows/ci.yml`) builds the executable core
 and the Mathlib-backed proofs on Linux and macOS for every push and pull
 request — the equivalent of `pixi run prove`. It does **not** run the ROS 2
-integration (`pixi run test`, the C++ shim, the comparison with upstream
-`twist_mux`): that needs a full ROS 2 Jazzy install, which CI does not stand up.
+integration (`pixi run test`, the C++ shims, the comparisons with upstream
+`twist_mux` and `nav2_collision_monitor`): that needs a full ROS 2 Jazzy install, which CI does not stand up.
 Please run `pixi run test` locally before opening a PR that touches the node.
 
 ## Proof discipline
@@ -60,13 +67,18 @@ Please run `pixi run test` locally before opening a PR that touches the node.
 Correctness here comes from machine-checked proofs, so the sources must stay free
 of proof escape hatches:
 
-- **No `sorry` or `admit`.** The theorems in `ROSlean/Mux/` are complete.
+- **No `sorry`, `admit` or `native_decide`.** The theorems in `ROSlean/Mux/` and
+  `ROSlean/CollisionMonitor/` are complete.
 - The proofs rely only on Lean's three standard axioms — `propext`,
   `Classical.choice` and `Quot.sound`. Check with `#print axioms <theorem>` if
   you are unsure.
 - The executable core (`core/ROSleanCore/`) stays free of Mathlib, so building a
   ROS node never needs it; keep new runtime code there and new proofs in
   `ROSlean/`.
+- The playground on the project site runs `core/` compiled to WebAssembly, and
+  the compiled files are committed under `site/playground/`. If you change
+  `core/`, run `site/playground/tools/check_fresh.sh`; it fails when those files
+  no longer match, and `site/playground/README.md` says how to rebuild them.
 
 ## Submitting a change
 
