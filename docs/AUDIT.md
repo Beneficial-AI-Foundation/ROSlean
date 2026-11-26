@@ -365,7 +365,7 @@ Against the repository's files (read), unless "observed":
   the environment is `nav2-collision-monitor` 1.3.12 and Gazebo Sim 8.10
   (observed, `conda-meta`); `rmw_fastrtps_cpp`.
 - The demo's geometry: stop zone to 0.30 m, slowdown zone to 0.70 m with
-  ratio 0.4 (`demo/gazebo/monitor.yaml`), a 0.4 m box 1.2 m ahead
+  ratio 0.4 (`ros/roslean_demos/gazebo/monitor/monitor.yaml`), a 0.4 m box 1.2 m ahead
   (`obstacle.py`); the turtlesim demo's priorities 10, 100, 255 and the
   half second (`demo.yaml`); the narrator's lines (`narrator.py`).
 - Every path of the README's layout table, every relative link of the

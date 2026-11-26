@@ -197,7 +197,7 @@ parameters, subscribes, reads the clock and publishes.
 
 ```sh
 pixi run bash -c 'source install/setup.bash && \
-  ros2 launch roslean_twist_mux demo_launch.py mux_package:=twist_mux'
+  ros2 launch roslean_demos demo_launch.py mux_package:=twist_mux'
 ```
 
 **Watch the messages.** While the demo runs, in another terminal:
@@ -207,7 +207,7 @@ pixi run bash -c 'source install/setup.bash && ros2 topic echo /turtle1/cmd_vel'
 ```
 
 **Change the configuration.** The demo's inputs and priorities are in
-`ros/roslean_twist_mux/demo/demo.yaml`. For example, give `teleop` priority
+`ros/roslean_demos/turtlesim/demo.yaml`. For example, give `teleop` priority
 255 and restart the demo: the e-stop no longer stops the keyboard, because a
 lock blocks only *strictly* lower priorities. The node warns about this at
 start-up.

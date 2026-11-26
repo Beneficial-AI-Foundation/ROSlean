@@ -175,19 +175,20 @@ repeat the command above for that.
 For the renamed package instead of the overlay (option B):
 
 ```sh
-colcon build --packages-up-to roslean_collision_monitor   # roslean_core, roslean_twist_mux, roslean_collision_monitor
+colcon build --packages-up-to roslean_collision_monitor   # roslean_core, roslean_collision_monitor
 ```
 
 For the bring-up package (option C):
 
 ```sh
-colcon build --packages-up-to roslean_nav2_bringup   # the three above and roslean_nav2_bringup
+colcon build --packages-up-to roslean_nav2_bringup   # the two above and roslean_nav2_bringup
 ```
 
-`roslean_collision_monitor` also holds the demos and the tests, and its
-`package.xml` names their dependencies: `roslean_twist_mux` (hence the third
-package), Gazebo, the TurtleBot3 packages, `nav2_bringup` and upstream's
-`nav2_collision_monitor`. `rosdep` on it installs all of them. The overlay
+`roslean_collision_monitor` also holds the node's tests; its `package.xml`
+names, as test dependencies, upstream's `nav2_collision_monitor` and
+`nav2_bringup` (one test reads Nav2's parameter file). The demos, with the
+simulator and the TurtleBot3 packages, are in a package of their own,
+`roslean_demos`, which none of the commands above builds. The overlay
 package depends only on what the node needs.
 
 Lean is needed to build, not to run. The install tree contains the Lean
@@ -461,11 +462,9 @@ macOS).
 #### What the package depends on
 
 `package.xml` names `nav2_bringup`, `roslean_collision_monitor` and what the
-launch files import. Because `roslean_collision_monitor` also holds the
-demos and the tests ([Install](#from-source-in-your-workspace)),
-`colcon build --packages-up-to roslean_nav2_bringup` builds
-`roslean_twist_mux` as well, and `rosdep` on it asks for Gazebo and the
-TurtleBot3 packages. At run time the package uses none of those.
+launch files import. `colcon build --packages-up-to roslean_nav2_bringup`
+builds `roslean_core`, `roslean_collision_monitor` and this package; no
+simulator is among the dependencies.
 
 ### Nav2's default parameters: the expected refusal
 
@@ -602,7 +601,7 @@ Differences of the packaging only:
 
 ## What was tested
 
-On 2026-11-25, on macOS arm64 with ROS 2 Jazzy from RoboStack (pixi) and
+On 2026-11-25, and where a row says so on 2026-11-26, on macOS arm64 with ROS 2 Jazzy from RoboStack (pixi) and
 upstream `nav2_collision_monitor` and `nav2_bringup` 1.3.12. Nothing on this
 page was run on Linux. No simulator and no robot: where Nav2 was started,
 the transforms were static (`map` → `odom` → `base_footprint` → `base_link`
@@ -620,15 +619,19 @@ the node and formed the bond with it, not that a robot was protected.
 | `ros2 launch nav2_bringup navigation_launch.py`, unedited, with Nav2's unedited `nav2_params.yaml`, overlay sourced, with and without composition | Refused as shown under [Nav2's default parameters](#nav2s-default-parameters-the-expected-refusal); node `unconfigured`; bring-up aborted |
 | This repository's `smoke_node.py` (pass-through, slowdown, stop, refused configurations, under simulated time) and `bond_manager.py` (bond with Nav2's lifecycle manager, the manager's reaction to the node's death) on the overlay's executable | 0 failures |
 | The collision detector through the overlay: `ros2 run`, `collision_detector_node.launch.py use_composition:=False`, `ros2 component load` of `nav2_collision_monitor::CollisionDetector` | Upstream's executable runs; the node becomes active; upstream's library is loaded |
-| `colcon build` in a separate workspace that contains a copy of this repository: the command of option A; then the command of option B | 2 packages; 3 packages. A plain `colcon list` does not show the overlay |
+| `colcon build` in a separate workspace that contains a copy of this repository: the command of option A; then the command of option B | 2 packages; 3 packages (the third was `roslean_twist_mux`, while the demos were in `roslean_collision_monitor`; not repeated since). A plain `colcon list` does not show the overlay |
 | The guard of the tests: `roslean_collision_monitor` configured with the overlay sourced; a test script asked for `nav2_collision_monitor/collision_monitor` with the overlay sourced | CMake warns and registers no test against upstream; the script exits with a message |
 | `check_params.py` on Nav2's `nav2_params.yaml` and `nav2_multirobot_params_1.yaml`, upstream's `collision_monitor_params.yaml`, and the parameter files of this repository | Refusal reported for the first two, none for the others, as the node decides |
 | `roslean_nav2_bringup`: `ros2 launch roslean_nav2_bringup navigation_launch.py`, with each of the two parameter files, each with `use_composition` `False` (default) and `True` (with a `nav2_container` started by hand) | `[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: …; nothing unsupported found`; `Managed nodes are active`; the node's `Monitoring …` line with 1 and 2 zones; stand-alone: the process is `…/lib/roslean_collision_monitor/collision_monitor`, `active`, bonded; composed: `Load Library: …/libcollision_monitor_component.dylib` |
-| `ros2 launch roslean_nav2_bringup bringup_launch.py map:=…` with the demo's map (static transforms, no scan): default; `use_composition:=True zones:=stop_slowdown`; `slam:=True` without a map | `lifecycle_manager_localization` (with `slam:=True`: `lifecycle_manager_slam`) and `lifecycle_manager_navigation`: `Managed nodes are active`; the monitor as in the row above |
+| `ros2 launch roslean_nav2_bringup bringup_launch.py map:=…` with the demo's map (static transforms, no scan): with the slowdown file; with `use_composition:=True` and the stop and slowdown file; `slam:=True` without a map | `lifecycle_manager_localization` (with `slam:=True`: `lifecycle_manager_slam`) and `lifecycle_manager_navigation`: `Managed nodes are active`; the monitor as in the row above |
 | The same two launch files with Nav2's own `nav2_params.yaml` as `params_file` | The message under [Your own parameter file](#your-own-parameter-file), exit code 1, no node started. With `check_params:=false`: the node's own refusal and `Aborting bringup`, as under [Nav2's default parameters](#nav2s-default-parameters-the-expected-refusal) |
 | `bringup_launch.py` of `roslean_nav2_bringup` in the simulated apartment (Gazebo without a window, TurtleBot3, the demo's parameters for that robot), Nav2 driving the tour, 300 simulated seconds, slowdown zone only, three runs | The table under [Which zones, and what was measured](#which-zones-and-what-was-measured) |
 | The tests of `roslean_nav2_bringup` (`params_follow_nav2`, `derive`): the parameter files against the installed `nav2_params.yaml`; the edits on the installed launch files, and on altered texts | Passed; an altered text is refused |
-| The repository's short test set (`pixi run test-quick`) with `roslean_nav2_bringup` added | Not a valid run: the machine went to sleep repeatedly during it. 15 of 19 passed, among them the two of `roslean_nav2_bringup`; `smoke_node`, `roslean_fault_clock_negative` and `upstream_nav2_bond` ran into their time limits and `upstream_probes` failed. Run again alone, with the machine still going to sleep, three of the four passed and `smoke_node` reported 3 failures in checks that wait for a message, in a run of over two hours of wall time. To be repeated on a machine that stays awake |
+| On 2026-11-26, with the demos in `roslean_demos`: `colcon build --packages-up-to roslean_nav2_bringup` in a separate workspace that contains a copy of this repository | 3 packages: `roslean_core`, `roslean_collision_monitor`, `roslean_nav2_bringup` |
+| The same day: `ros2 launch roslean_nav2_bringup navigation_launch.py` without `zones`, and with `zones:=slowdown` | `Monitoring … 2 zone(s)` and `… 1 zone(s)`; `Managed nodes are active`; the node `active` |
+| The same day, the demos from `roslean_demos`: `pixi run demo` (turtlesim without a window, 25 s), `pixi run cm-check`, `pixi run cm-check --nav2`, `pixi run nav2-bringup-sim gui:=false` (90 s) | The narrator's `planner drives` line; `PASSED` twice; Nav2 from `roslean_nav2_bringup` active with 2 zones and the tour reaching its first place |
+| The same day: the repository's short test set (`pixi run test-quick`), six packages | 19 of 19 passed, in 5 min 37 s |
+| The same day: the repository's tests (`pixi run test`), six packages | 31 of 31 passed, in 31 min 18 s |
 | The repository's tests (`pixi run test`), after the change, the overlay not sourced | 28 of 29 passed, among them all 25 of `roslean_collision_monitor`. The one failure was the `scenario` test of `roslean_twist_mux`, which this change does not touch: one message was missing while another program had the machine at a load of about 40; run again alone it passed twice. In an earlier run of the short set (`pixi run test-quick`), `upstream_probes`, which drives upstream's node alone, failed on a source timeout probe; repeated, it failed once more and passed four times |
 
 Not tested: Linux (the node itself and its tests were run on Linux arm64
@@ -667,9 +670,6 @@ the Docker image.
   not run.
 - **Other ROS distributions.** Only Jazzy; the node follows
   `nav2_collision_monitor` 1.3.12.
-- **A package for the demos.** As long as the demos and the tests are in
-  `roslean_collision_monitor`, that package depends on the simulator and on
-  `roslean_twist_mux`.
 - **Building without Lean, a `.deb`, a conda package.** Not tried. Compiling
   the C that Lean generates also needs Lean's headers and its runtime, so a
   build without elan would have to carry those per platform; a release

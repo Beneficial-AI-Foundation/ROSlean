@@ -2,7 +2,7 @@
 """Runs the demo's box scenario for the video and tells the recorder what happened.
 
 The scenario is the demo's own: `scenario()` of
-ros/roslean_collision_monitor/demo/gazebo/obstacle.py (what `obstacle.py run`
+ros/roslean_demos/gazebo/monitor/obstacle.py (what `obstacle.py run`
 and `pixi run cm-gazebo-scenario` execute). This node calls it and publishes
 each of its events ('dropped' with the box's pose, 'rest', 'removed',
 'moving', 'missed') on /video/event as JSON with the simulated time. After

@@ -109,7 +109,7 @@ Then:
 cd $WS/src && git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd $WS && source /opt/ros/jazzy/setup.bash
 colcon build --packages-up-to twist_mux              # option A
-# colcon build --packages-up-to roslean_twist_mux   # option B (its package.xml also names demo dependencies)
+# colcon build --packages-up-to roslean_twist_mux   # option B
 ```
 
 Expected last lines: `Summary: 2 packages finished` (`roslean_core`,
@@ -121,7 +121,7 @@ harmless.
 Do not use `--symlink-install` if the install tree is to be copied to another
 machine. Do not run `colcon build` without `--packages-up-to` or
 `--packages-select` unless the human wants all packages of the repository:
-that also builds the demo package and `roslean_bench`, which downloads
+that also builds the demos (`roslean_demos`, which needs the simulators) and `roslean_bench`, which downloads
 upstream's sources.
 
 If the build fails in `roslean_core` with `lake` or `lean` not found, `PATH`

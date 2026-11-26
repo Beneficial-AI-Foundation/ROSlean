@@ -369,8 +369,8 @@ def main():
     args = parser.parse_args()
     variant = VARIANTS['nav2' if args.nav2 else 'mux']
 
-    launch_file = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                               'demo', 'gazebo', variant['launch'])
+    launch_file = os.path.join(get_package_share_directory('roslean_demos'),
+                               'gazebo', 'monitor', variant['launch'])
     log = open(args.log, 'w+') if args.log else tempfile.TemporaryFile(mode='w+')
     if args.nav2:
         print("variant: Nav2's bring-up starts the monitor; the patrol script drives "

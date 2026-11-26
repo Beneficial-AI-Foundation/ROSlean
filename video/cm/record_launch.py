@@ -1,6 +1,6 @@
 """Records a take for the collision monitor video without opening a window.
 
-The same nodes as the demo (ros/roslean_collision_monitor/demo/gazebo/
+The same nodes as the demo (ros/roslean_demos/gazebo/monitor/
 cm_gazebo_launch.py with scenario:=true): the Lean-backed twist_mux with
 gazebo.yaml, the Lean-backed collision monitor with monitor.yaml behind it,
 the lifecycle manager and robot_state_publisher the monitor needs, the base
@@ -38,8 +38,8 @@ STATE_TOPIC = 'collision_monitor_state'
 
 
 def generate_launch_description():
-    cm = os.path.join(get_package_share_directory('roslean_collision_monitor'), 'demo', 'gazebo')
-    mux = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    cm = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'monitor')
+    mux = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     with open(os.path.join(get_package_share_directory('turtlebot3_description'),
                            'urdf', 'turtlebot3_burger.urdf')) as f:

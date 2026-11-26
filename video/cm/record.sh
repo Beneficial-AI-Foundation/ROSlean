@@ -13,7 +13,7 @@ out=$(cd "$1" && pwd)
 width=${2:-3840} height=${3:-2160} rtf=${4:-0.1}
 source "$here/../../install/setup.bash"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-84} GZ_PARTITION=${GZ_PARTITION:-roslean_cm_video_$$}
-python3 "$here/make_world.py" "$here/../../ros/roslean_twist_mux/demo/gazebo/apartment.sdf" \
+python3 "$here/make_world.py" "$here/../../ros/roslean_demos/gazebo/mux/apartment.sdf" \
   "$out/world.sdf" "$width" "$height" "$rtf"
 camera=true; [ "$width" = 0 ] && camera=false
 ros2 launch "$here/record_launch.py" world:="$out/world.sdf" out:="$out" camera:=$camera

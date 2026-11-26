@@ -116,7 +116,7 @@ def occupied_cells():
     the footprints of the low furniture, and what the lidar saw when the map
     was made), in world coordinates, which are the map's."""
     import yaml
-    folder = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    folder = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     with open(os.path.join(folder, 'apartment_map.yaml')) as f:
         meta = yaml.safe_load(f)
     with open(os.path.join(folder, meta['image']), 'rb') as f:
@@ -250,8 +250,8 @@ def main():
     parser.add_argument('--log')
     args = parser.parse_args()
 
-    launch_file = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                               'demo', 'gazebo', 'cm_nav2_launch.py')
+    launch_file = os.path.join(get_package_share_directory('roslean_demos'),
+                               'gazebo', 'monitor', 'cm_nav2_launch.py')
     log = open(args.log, 'w+') if args.log else tempfile.TemporaryFile(mode='w+')
     print(f'{args.what}: monitor {args.monitor}, zones {args.zones}, bringup {args.bringup}, '
           f"ROS_DOMAIN_ID={os.environ['ROS_DOMAIN_ID']}")

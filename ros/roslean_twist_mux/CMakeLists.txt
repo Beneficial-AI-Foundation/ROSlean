@@ -33,7 +33,8 @@ set_target_properties(twist_mux PROPERTIES
   INSTALL_RPATH "${_origin}/../../../roslean_core/lib;${_origin}/..")
 
 install(TARGETS twist_mux DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config demo launch DESTINATION share/${PROJECT_NAME})
+# The demos are in the package roslean_demos.
+install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   # End-to-end scenarios over real topics under simulated time. If upstream

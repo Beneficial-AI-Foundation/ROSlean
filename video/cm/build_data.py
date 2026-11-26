@@ -46,7 +46,7 @@ DO_NOTHING, STOP, SLOWDOWN = 0, 1, 2   # nav2_msgs/CollisionMonitorState.action_
 
 take = sys.argv[1]
 config = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    HERE, '..', '..', 'ros', 'roslean_collision_monitor', 'demo', 'gazebo', 'monitor.yaml')
+    HERE, '..', '..', 'ros', 'roslean_demos', 'gazebo', 'monitor', 'monitor.yaml')
 T = json.load(open(os.path.join(take, 'trace.json')))
 params = yaml.safe_load(open(config))['cm_gate']['ros__parameters']
 

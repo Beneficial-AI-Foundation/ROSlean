@@ -212,10 +212,9 @@ colcon build --base-paths src src/ROSlean/overlay/opt_in/nav2_collision_monitor 
 ```
 
 Expected last lines: `Summary: 2 packages finished` (`roslean_core` and
-`nav2_collision_monitor`); with option B, `Summary: 3 packages finished`
-(`roslean_core`, `roslean_twist_mux`, `roslean_collision_monitor`; the
-second is there because the demos in the third depend on it); with option
-C, `Summary: 4 packages finished` (those three and `roslean_nav2_bringup`).
+`nav2_collision_monitor`); with option B, `Summary: 2 packages finished`
+(`roslean_core`, `roslean_collision_monitor`); with option
+C, `Summary: 3 packages finished` (those two and `roslean_nav2_bringup`).
 The first
 build downloads the Lean toolchain pinned in `$ROSLEAN/lean-toolchain`; it
 needs network access. Warnings from `install_name_tool` on macOS are

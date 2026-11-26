@@ -63,7 +63,7 @@ e-stop lock (255)      ─┘
   explains why it is there.
 
 The mux configuration is
-`ros/roslean_twist_mux/demo/gazebo/gazebo.yaml`.
+`ros/roslean_demos/gazebo/mux/gazebo.yaml`.
 
 ## 4. Experiment 1: patrol, keyboard, e-stop
 
@@ -222,7 +222,7 @@ Start without the tour:
 
 ```sh
 pixi run bash -c 'source install/setup.bash && ros2 launch \
-  $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py \
+  $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/mux/gazebo_launch.py \
   planner:=nav2 tour:=false'
 ```
 
@@ -248,7 +248,7 @@ keeps executing the last command it received. When this demo was first put
 together, engaging the e-stop made the mux go silent, correctly, and the
 robot rolled on across the room.
 
-The base watchdog (`demo/gazebo/base_watchdog.py`) fixes that. It passes the
+The base watchdog (`ros/roslean_demos/gazebo/mux/base_watchdog.py`) fixes that. It passes the
 mux output to the robot and sends zero velocity once the mux has been silent
 for 0.3 s. It plays the part of the robot's firmware and is ordinary,
 unverified code. The theorems say when a message is forwarded; that the
@@ -287,7 +287,7 @@ same:
 
 ```sh
 pixi run bash -c 'source install/setup.bash && ros2 launch \
-  $(ros2 pkg prefix roslean_twist_mux)/share/roslean_twist_mux/demo/gazebo/gazebo_launch.py \
+  $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/mux/gazebo_launch.py \
   mux_package:=twist_mux'
 ```
 
@@ -298,18 +298,18 @@ pixi run bash -c 'source install/setup.bash && ros2 launch \
 pixi run bash -c 'source install/setup.bash && ros2 topic echo /cmd_vel_mux'
 ```
 
-**Make the e-stop useless.** In `demo/gazebo/gazebo.yaml` give `teleop`
+**Make the e-stop useless.** In `ros/roslean_demos/gazebo/mux/gazebo.yaml` give `teleop`
 priority 255 and restart. The e-stop no longer stops the keyboard, because a
 lock blocks only *strictly* lower priorities. The node warns about this when
 it starts.
 
-**Move the furniture.** Edit the poses in `demo/gazebo/apartment.sdf`. For
+**Move the furniture.** Edit the poses in `ros/roslean_demos/gazebo/mux/apartment.sdf`. For
 Nav2, regenerate the map afterwards: start `pixi run gazebo`, and in another
 terminal run
 
 ```sh
 pixi run bash -c 'source install/setup.bash && python3 \
-  ros/roslean_twist_mux/demo/gazebo/make_map.py ros/roslean_twist_mux/demo/gazebo'
+  ros/roslean_demos/gazebo/mux/make_map.py ros/roslean_demos/gazebo/mux'
 ```
 
 It listens for two minutes while the robot patrols, then writes the map.

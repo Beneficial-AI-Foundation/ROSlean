@@ -28,7 +28,7 @@ uses them from where `roslean_twist_mux` installs them. New are:
   `nav2_collision_monitor`; what it supports is listed in
   [collision_monitor/SPEC.md](collision_monitor/SPEC.md).
 - **Two zones** in front of the robot, in
-  `ros/roslean_collision_monitor/demo/gazebo/monitor.yaml`:
+  `ros/roslean_demos/gazebo/monitor/monitor.yaml`:
 
   ```
             y (left, m)
@@ -297,7 +297,7 @@ needs the furniture from Gazebo's online library.
 
 ```sh
 pixi run bash -c 'source install/setup.bash && ros2 launch \
-  $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_gazebo_launch.py \
+  $(ros2 pkg prefix roslean_demos)/share/roslean_demos/gazebo/monitor/cm_gazebo_launch.py \
   scenario:=true monitor_package:=nav2_collision_monitor'
 ```
 
@@ -364,7 +364,7 @@ the demo's launch file includes the two files directly instead.)
 **The parameters.** In the `collision_monitor` section of
 `nav2_bringup/params/nav2_params.yaml`, Nav2's zone is replaced by two fixed
 polygons (comments left out; the section is
-`ros/roslean_collision_monitor/demo/gazebo/nav2_monitor.yaml`):
+`ros/roslean_demos/gazebo/monitor/nav2_monitor.yaml`):
 
 ```diff
  collision_monitor:
