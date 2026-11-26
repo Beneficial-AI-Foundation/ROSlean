@@ -1,0 +1,30 @@
+/* Additions to ../../web/common.css for the collision monitor video. */
+
+/* The fonts of both videos. A machine that has them installed uses its own;
+   otherwise they come from node_modules (see video/README.md). */
+@font-face { font-family: 'Inter'; font-weight: 100 900; font-style: normal;
+  src: local('Inter Variable'), local('Inter'),
+       url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 100 800; font-style: normal;
+  src: local('JetBrains Mono'),
+       url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2'); }
+
+:root { --pass: #5aa9ff; --slow: #ffb42e; --stop: #ff5468; --silent: #aeb6c4; }
+#caption .slow { color: var(--slow); }
+#caption .stop { color: var(--stop); }
+
+#tag { position: absolute; transform: translate(-50%, -100%); padding: 7px 14px; border-radius: 999px;
+  font-size: 16px; font-weight: 700; letter-spacing: 0.12em; color: #0b0f17; white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); }
+
+/* The panel: command in, the monitor, what it publishes, its state over time. */
+#hud .label { font-size: 13px; font-weight: 600; letter-spacing: 0.10em; fill: var(--muted); }
+#hud .value { font-family: 'JetBrains Mono', monospace; font-size: 25px; font-weight: 600; }
+#hud .small { font-family: 'JetBrains Mono', monospace; font-size: 14px; fill: var(--muted); }
+#hud .node { font-family: 'JetBrains Mono', monospace; font-size: 19px; font-weight: 600; }
+#hud .state { font-size: 23px; font-weight: 700; letter-spacing: 0.04em; }
+#hud .state tspan { font-size: 15px; font-weight: 500; letter-spacing: 0.02em; fill: #c5cedb; }
+#hud .legend { font-size: 11.5px; font-weight: 600; letter-spacing: 0.12em; fill: var(--muted); }
+#end li b { width: 290px; }
+#end .note { margin-top: 40px; font-size: 26px; color: #c5cedb; max-width: 1300px; }
+#end .foot { margin-top: 44px; }
