@@ -90,34 +90,6 @@
 
     </section>
 
-    <section id="lessons">
-      <h2>Lessons learned</h2>
-      <p>Three things this project has shown so far, each with its limits.</p>
-      <ol class="lessons">
-        <li>
-          <span class="lesson-n" aria-hidden="true">1</span>
-          <h3>ROS decision logic can be written in Lean</h3>
-          <p>Two nodes run with their decisions made by a Lean function compiled to C. Each takes the original package's parameter file and topics and starts like any ROS 2 node.</p>
-          <p class="lesson-limit">Tested in simulation, on one machine. The collision monitor covers part of Nav2's monitor.</p>
-          <a href="lessons.html#lean">What was built</a>
-        </li>
-        <li>
-          <span class="lesson-n" aria-hidden="true">2</span>
-          <h3>A theorem shows what an implementation really does</h3>
-          <p>"When a stop is demanded, zero is published" could not be proved, because it is false: Nav2's monitor publishes zero for one second and then nothing. That is deliberate and documented.</p>
-          <p class="lesson-limit">Not a bug. It is the reason one theorem is weaker than expected.</p>
-          <a href="lessons.html#silence">The stop that is not published</a>
-        </li>
-        <li>
-          <span class="lesson-n" aria-hidden="true">3</span>
-          <h3>Stating the guarantees points at places to harden</h3>
-          <p>Writing down what the monitor does for every input showed that a laser scan with unusable range limits reads as free space: the command passes and nothing is logged.</p>
-          <p class="lesson-limit">Unlikely with common drivers. A narrow check would close it.</p>
-          <a href="lessons.html#scan-limits">Scans that read as free space</a>
-        </li>
-      </ol>
-    </section>
-
     <section id="demo-section">
       <h2 id="video">See it run</h2>
       <p>A TurtleBot3 in Gazebo with the Lean <code>twist_mux</code> between a planner, scripted keyboard commands, and a stop lock.</p>
@@ -144,6 +116,32 @@
       <div class="links">
         <a class="cta" href="playground/">Open the playground</a>
       </div>
+    </section>
+
+    <section id="lessons">
+      <h2>Lessons learned</h2>
+      <p>Three things this project has shown so far, each with its limits.</p>
+      <ol class="lessons">
+        <li>
+          <span class="lesson-n" aria-hidden="true">1</span>
+          <h3>It is feasuble to write ROS decision logic in Lean</h3>
+          <p>Two nodes run with their decisions made by a Lean function compiled to C. Each takes the original package's parameter file and topics and starts like any ROS 2 node.</p>        
+          <a href="lessons.html#lean">What was built</a>
+        </li>
+        <li>
+          <span class="lesson-n" aria-hidden="true">2</span>
+          <h3>A theorem sheds light on important aspects of the implementation.</h3>
+          <p>"When a stop is demanded, zero is published" could not be proved, because it is false: If for whatever reason a 0 was published shortly before, a stop will have no effect.</p>          
+          <a href="lessons.html#silence">The stop that is not published</a>
+        </li>
+        <li>
+          <span class="lesson-n" aria-hidden="true">3</span>
+          <h3>Theorems point at places to harden</h3>
+          <p>Writing down what the monitor does for every input showed that a laser scan with unusable range limits reads as free space: the command passes and nothing is logged.</p>
+          <p class="lesson-limit">Unlikely with common drivers. Still worth hardening the node.</p>
+          <a href="lessons.html#scan-limits">Scans that read as free space</a>
+        </li>
+      </ol>
     </section>
 
   </div>
