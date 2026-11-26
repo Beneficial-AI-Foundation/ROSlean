@@ -12,3 +12,4 @@ issues. Paste each as an issue; the first line is the title.
 | [nd13-refused-refresh.md](nd13-refused-refresh.md) | ND13 stays as built |
 | [binary-packages.md](binary-packages.md) | None; a proposal for installing the nodes without Lean and without a build |
 | [nav2-bringup-zones.md](nav2-bringup-zones.md) | The bring-up package defaults to stop + slowdown zones |
+| [velocity-polygons.md](velocity-polygons.md) | None; a proposal for a way out of a stop zone |
