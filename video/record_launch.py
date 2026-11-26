@@ -1,6 +1,6 @@
 """Records the footage for the demo video without opening a window.
 
-The same nodes as the Gazebo demo (demo/gazebo/gazebo_launch.py): the
+The same nodes as the Gazebo demo (ros/roslean_demos/gazebo/mux/gazebo_launch.py): the
 Lean-backed twist_mux with gazebo.yaml, the patrol planner and the base
 watchdog. Added: a world with a camera (make_world.py), the scripted operator
 and e-stop (scenario.py) and the recorder (recorder.py).
@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def generate_launch_description():
-    demo = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    demo = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     sim_time = {'use_sim_time': True}
     recorder = Node(executable='python3', arguments=[os.path.join(HERE, 'recorder.py')],

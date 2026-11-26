@@ -85,11 +85,10 @@ def world_file(apartment):
 
 
 def generate_launch_description():
-    here = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                        'demo', 'gazebo')
+    here = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'monitor')
     # The pieces shared with the twist_mux demo.
-    mux_demo = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo')
-    mux_gz = os.path.join(mux_demo, 'gazebo')
+    mux_demo = os.path.join(get_package_share_directory('roslean_demos'), 'turtlesim')
+    mux_gz = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     gz_launch = os.path.join(
         get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')

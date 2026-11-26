@@ -13,7 +13,7 @@ The project page plays the 3D replay first and lets viewers switch to Gazebo foo
 ## What is real in them
 
 The run is the demo as it is: the Lean-backed `roslean_twist_mux` with
-`demo/gazebo/gazebo.yaml`, the patrol planner and the base watchdog, on a
+`ros/roslean_demos/gazebo/mux/gazebo.yaml`, the patrol planner and the base watchdog, on a
 TurtleBot3 in Gazebo. A script plays the operator (it publishes on `key_vel`
 what a held teleop key sends) and switches the e-stop lock.
 

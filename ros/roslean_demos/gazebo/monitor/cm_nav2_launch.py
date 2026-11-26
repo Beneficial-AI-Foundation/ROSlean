@@ -33,9 +33,7 @@ Arguments:
                            Nav2 is started by bringup_launch.py of the package
                            roslean_nav2_bringup (docs/DROP_IN_COLLISION_MONITOR.md,
                            option C) in the place of the copy edited here; the
-                           parameters are this demo's, for this robot. That
-                           package must be built; it is not a dependency of
-                           this one
+                           parameters are this demo's, for this robot
   driver:=tour             (default) Nav2 drives: nav_tour.py sends goals
   driver:=patrol           the patrol script publishes on `cmd_vel_nav`, the
                            topic of Nav2's controller, and Nav2 gets no goal.
@@ -110,9 +108,8 @@ def edited_params(base, section):
 
 def nav2(context):
     """Nav2's localisation and navigation, as bringup_launch.py starts them."""
-    here = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                        'demo', 'gazebo')
-    mux_gz = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    here = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'monitor')
+    mux_gz = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     nav2_launch = os.path.join(get_package_share_directory('nav2_bringup'), 'launch')
     package = LaunchConfiguration('monitor_package').perform(context)
     zones = LaunchConfiguration('zones').perform(context)
@@ -179,9 +176,8 @@ def nav2(context):
 
 
 def generate_launch_description():
-    here = os.path.join(get_package_share_directory('roslean_collision_monitor'),
-                        'demo', 'gazebo')
-    mux_gz = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    here = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'monitor')
+    mux_gz = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     gz_launch = os.path.join(
         get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')

@@ -74,7 +74,7 @@ agent; the findings and what was done about them are in
   source as position-independent code would bring this down to a few MB.
 - **Gazebo / Nav2 demo: done on macOS, with gaps.** A TurtleBot3 in a
   furnished apartment, with a patrol script or Nav2 as the planner
-  (`demo/gazebo/`). On Linux it has run only without the furniture and
+  (`ros/roslean_demos/gazebo/monitor/`). On Linux it has run only without the furniture and
   with software rendering (see the tutorial). Not done: a Linux run of the
   furnished apartment on a desktop, and an
   automated test; it was checked by scripts that are not in the repository.
@@ -117,7 +117,7 @@ an arm64 container in Docker on the same machine unless said otherwise.
 | CM3 | C interface | done | `core/ROSleanCore/CollisionMonitorFFI.lean`. Every parameter crosses as the bit pattern the shim read; conversions and refusals are in Lean. |
 | CM4 | Node | done | `ros/roslean_collision_monitor`. Review CM3/CM4: no conversion, refusal, ownership or signature defect; eight findings around the node. Fixed, and verified by T01: each fix removed in turn makes a test fail. |
 | | Upstream harness | done | `ros/roslean_collision_monitor/test/`, [`UPSTREAM_BEHAVIOUR.md`](collision_monitor/UPSTREAM_BEHAVIOUR.md): what upstream's binary does, written without sight of the SPEC. 55 scenarios with 277 checks and a random differential test against a reference model. |
-| | Gazebo demo behind the mux | done | `demo/gazebo/`, [TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md). The headless check passed in nine runs of nine. |
+| | Gazebo demo behind the mux | done | `ros/roslean_demos/gazebo/monitor/`, [TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md). The headless check passed in nine runs of nine. |
 | T00 | Cloud environment | done | `scripts/cloud_setup.sh`. The one run on Linux x86-64 so far: build, 11 tests, all theorems, the headless Gazebo check, on the node as it then was. |
 | T02 | Comparison with upstream | done | [`COMPARISON.md`](collision_monitor/COMPARISON.md). 720 random cases with 65,056 commands and 34.0 million point tests on each of macOS and Linux: no divergence in the unsafe direction, the zones grow as stated and no more. Found two defects: a negative `/clock` ended the node, and a command was 50 to 70 times slower than upstream's. |
 | T03 | The two defects | done | D15: the node answers with zero while the clock is unusable (`stepNoClock`). A second command path over machine words, proved equal to `step` (`stepCmdFast_eq`); a budget for the cost of a command, asserted by a test. |
@@ -183,7 +183,7 @@ point markers. What follows is the rest.
   `site/media/`). No person sat in front of the windows, the zones were
   not shown in RViz, and the keyboard was not used. (T10 rewrote the tutorial for the node as it is
   and replaced the four theorem names that the Lean sources do not
-  contain, in the tutorial and in `demo/gazebo/monitor_narrator.py`.)
+  contain, in the tutorial and in `ros/roslean_demos/gazebo/monitor/monitor_narrator.py`.)
   `check_demo.py` does not notice when Gazebo exits early and waits for
   minutes (T00).
 - **A stop zone under Nav2's planner.** With the documented edit (a stop

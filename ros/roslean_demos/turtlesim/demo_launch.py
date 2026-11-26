@@ -17,7 +17,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    demo = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo')
+    demo = os.path.join(get_package_share_directory('roslean_demos'), 'turtlesim')
     return LaunchDescription([
         DeclareLaunchArgument('mux_package', default_value='roslean_twist_mux'),
         Node(package='turtlesim', executable='turtlesim_node', name='turtlesim'),

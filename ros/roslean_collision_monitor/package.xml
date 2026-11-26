@@ -30,18 +30,8 @@
   <exec_depend>nav2_common</exec_depend>
   <exec_depend>nav2_lifecycle_manager</exec_depend>
 
-  <!-- Gazebo demo (demo/gazebo): begin -->
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>roslean_twist_mux</exec_depend>
-  <exec_depend>ros_gz_sim</exec_depend>
-  <exec_depend>ros_gz_bridge</exec_depend>
-  <exec_depend>turtlebot3_gazebo</exec_depend>
-  <exec_depend>turtlebot3_description</exec_depend>
-  <exec_depend>robot_state_publisher</exec_depend>
-  <exec_depend>nav2_bringup</exec_depend>
-  <exec_depend>nav2_collision_monitor</exec_depend>
-  <exec_depend>tf2_msgs</exec_depend>
-  <!-- Gazebo demo: end -->
+  <!-- scripts/check_params.py -->
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>rclpy</test_depend>
   <test_depend>ament_index_python</test_depend>
@@ -51,6 +41,8 @@
   <test_depend>nav2_msgs</test_depend>
   <test_depend>python3-numpy</test_depend>
   <test_depend>nav2_collision_monitor</test_depend>
+  <!-- test/scenario_nav2.py reads nav2_bringup's nav2_params.yaml -->
+  <test_depend>nav2_bringup</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

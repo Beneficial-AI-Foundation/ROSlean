@@ -43,8 +43,8 @@ CAMERA = ('pose: {position: {x: -5.4, y: -4.0, z: 3.9}, '
 
 
 def generate_launch_description():
-    here = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
-    demo = os.path.dirname(here)
+    here = os.path.join(get_package_share_directory('roslean_demos'), 'gazebo', 'mux')
+    demo = os.path.join(get_package_share_directory('roslean_demos'), 'turtlesim')
     tb3 = get_package_share_directory('turtlebot3_gazebo')
     gz_launch = os.path.join(
         get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
