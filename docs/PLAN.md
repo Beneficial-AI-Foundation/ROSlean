@@ -80,8 +80,8 @@ agent; the findings and what was done about them are in
   automated test; it was checked by scripts that are not in the repository.
 - **Stretch: silence leads to zero.** A timer and a proved stop command, as a
   deliberate difference from upstream.
-- **Upstream extras.** Diagnostics, `twist_marker`, `joystick_relay`, launch
-  file (D3, D9).
+- **Upstream extras.** Diagnostics, `twist_marker`, `joystick_relay` (D3).
+  The launch file is done (D9 withdrawn; `docs/DROP_IN_TWIST_MUX.md`).
 
 ## The collision monitor
 

@@ -111,13 +111,13 @@ theorems.
 | --- | --- | --- | --- |
 | D1 | — | — | Withdrawn. ROSlean used to reject equal input priorities at start-up; it now reproduces R10, and the node obtains the handle order from the same `list_parameters` call as upstream. The number is kept so that D2–D9 stay stable. |
 | D2 | `now − stamp` computed in floating-point seconds | Integer nanoseconds throughout; timeouts truncated to ns as upstream | No floating point in the core. Can differ from upstream only when `now − stamp` is within about a microsecond of the timeout; see "Extent of D2" below. |
-| D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided | Out of scope. |
+| D3 | Diagnostics publisher, `twist_marker`, `joystick_relay` | Not provided. Where the helper nodes are wanted, upstream's are used: the launch file starts them from the package `twist_mux`, and the overlay package forwards to them ([DROP_IN_TWIST_MUX.md](DROP_IN_TWIST_MUX.md)) | Out of scope. |
 | D4 | Clock re-read for every expiry check within one callback | One clock reading per event, used for the stamp and all checks | Makes a decision a function of (state, event). An expiry check can cross the timeout boundary during the callback. Upstream can expire even the input that just arrived if its timeout is short enough. |
 | D5 | NaN, infinite or very large timeouts are accepted; beyond ±2⁶³ ns the conversion is undefined behaviour | Non-finite timeouts and timeouts of magnitude 9.2e9 s or more are rejected at start-up | Avoids undefined behaviour. (Slightly conservative: 9.2e9 s to 9.22e9 s is still well defined upstream.) |
 | D6 | Priority read as 32-bit `int` before clamping | Clamped from the 64-bit parameter value | Differs only for priorities beyond ±2³¹. |
 | D7 | A start-up error escapes `main` and aborts the process (SIGABRT) | Logged as FATAL, exit code 1 | Clean failure. Visible to launch files that inspect exit codes. |
 | D8 | — | Negative node time would be treated as 0 | Not observable: `rclcpp` aborts both nodes on a negative `/clock` value before either sees it. The clamp in the shim is defensive only. |
-| D9 | Ships a launch file | None; run the executable with `--ros-args --params-file` | Out of scope. |
+| D9 | Ships a launch file | Withdrawn. `twist_mux_launch.py` is installed with the same arguments and defaults, together with copies of upstream's three config files. (Upstream's ROS 1 file `twist_mux.launch` is not copied.) | — |
 
 Everything else, including R5, R9, R10, R13 and the fatal errors in R14, is
 reproduced as is.

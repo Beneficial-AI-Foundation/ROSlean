@@ -233,7 +233,7 @@
             <tr><td>NaN, infinite or huge timeouts accepted; undefined behaviour beyond 2<sup>63</sup> ns</td><td>Rejected at start-up</td><td>Avoids undefined behaviour.</td></tr>
             <tr><td>Priorities narrowed to 32 bits before clamping</td><td>Clamped from the 64-bit parameter value</td><td>Very large priorities can select a different input (D6).</td></tr>
             <tr><td>A start-up error aborts the process</td><td>Logged as fatal, exit code 1</td><td>Clean failure.</td></tr>
-            <tr><td>Diagnostics, <code>twist_marker</code>, <code>joystick_relay</code>, launch file</td><td>Not provided</td><td>Out of scope.</td></tr>
+            <tr><td>Diagnostics, <code>twist_marker</code>, <code>joystick_relay</code></td><td>Not provided; the helper nodes of the original are used where wanted</td><td>Out of scope.</td></tr>
           </tbody>
         </table>
       </div>

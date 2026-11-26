@@ -33,13 +33,21 @@ set_target_properties(twist_mux PROPERTIES
   INSTALL_RPATH "${_origin}/../../../roslean_core/lib;${_origin}/..")
 
 install(TARGETS twist_mux DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY config demo DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config demo launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   # End-to-end scenarios over real topics under simulated time. If upstream
   # twist_mux is installed, also require identical decisions from it.
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   find_package(twist_mux QUIET)
+  # overlay/twist_mux of this repository is this same node under upstream's
+  # package name. Comparing the node with itself would prove nothing.
+  if(twist_mux_FOUND AND twist_mux_IS_ROSLEAN_OVERLAY)
+    message(WARNING "the package twist_mux that was found is the ROSlean overlay, "
+      "not upstream: build and test without the overlay in the environment "
+      "to get the comparison with upstream")
+    set(twist_mux_FOUND FALSE)
+  endif()
   set(_scenario_args "$<TARGET_FILE:twist_mux>")
   if(twist_mux_FOUND)
     list(APPEND _scenario_args "twist_mux/twist_mux")

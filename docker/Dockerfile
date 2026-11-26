@@ -4,7 +4,8 @@
 #   docker run --rm --network host roslean-twist-mux
 #
 # Two stages. The builder has Lean (elan) and compiles everything; the final
-# image has ROS and the install tree only: no Lean toolchain, no sources.
+# image has ROS, upstream twist_mux (for its helper nodes) and the install
+# tree only: no Lean toolchain, no sources.
 # `--build-arg RUN_TESTS=0` skips the tests (they take about 8 minutes and
 # compare every decision with upstream twist_mux).
 
@@ -51,6 +52,19 @@ RUN if [ "${RUN_TESTS}" = "1" ]; then \
       && colcon test-result --verbose; \
     fi
 
+# The package named twist_mux: the same node under upstream's package name,
+# with upstream's launch and config file names (docs/DROP_IN_TWIST_MUX.md).
+# Built after the tests on purpose: they compare with the package called
+# twist_mux, which until here is upstream's from apt.
+COPY overlay overlay
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && source /opt/roslean/setup.bash \
+    && colcon build --base-paths overlay --build-base build_overlay \
+         --install-base /opt/roslean --cmake-args -DCMAKE_BUILD_TYPE=Release
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && source /opt/roslean/setup.bash \
+    && test "$(ros2 pkg prefix twist_mux)" = /opt/roslean/twist_mux \
+    && test -x /opt/roslean/twist_mux/lib/twist_mux/twist_mux \
+    && ros2 pkg executables twist_mux
+
 # Fail the build if the install tree still refers to the Lean toolchain or to
 # the source tree.
 COPY docker/check_install.sh /tmp/check_install.sh
@@ -66,6 +80,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-${ROS_DISTRO}-nav2-util ros-${ROS_DISTRO}-nav2-msgs \
       ros-${ROS_DISTRO}-tf2-ros ros-${ROS_DISTRO}-tf2-geometry-msgs \
       ros-${ROS_DISTRO}-nav2-lifecycle-manager \
+      ros-${ROS_DISTRO}-twist-mux \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/roslean /opt/roslean
 COPY docker/entrypoint.sh /entrypoint.sh
@@ -75,5 +90,9 @@ ENTRYPOINT ["/entrypoint.sh"]
 # Nav2's lifecycle manager, which configures and activates it:
 #   docker run --rm --network host roslean-twist-mux ros2 launch \
 #     /opt/roslean/roslean_collision_monitor/share/roslean_collision_monitor/launch/collision_monitor_launch.py
+# Upstream's twist_mux from apt is installed as well, for twist_marker and
+# joystick_relay.py. The entrypoint sources /opt/roslean after /opt/ros, so
+# `ros2 run twist_mux twist_mux` and `ros2 launch twist_mux twist_mux_launch.py`
+# start the Lean-backed node; upstream's is /opt/ros/$ROS_DISTRO/lib/twist_mux/twist_mux.
 CMD ["ros2", "run", "roslean_twist_mux", "twist_mux", "--ros-args", "--params-file", \
      "/opt/roslean/roslean_twist_mux/share/roslean_twist_mux/config/example.yaml"]

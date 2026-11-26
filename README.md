@@ -7,11 +7,14 @@ the C++ integration, and the robot hardware are outside those proofs.
 - **`roslean_twist_mux`** selects a velocity source by priority, timeout, and locks. It accepts the upstream YAML format and uses the same command topics. See the [compatibility differences](docs/SPEC.md#deliberate-differences-in-roslean).
 - **`roslean_collision_monitor`** supports one lidar, circle and polygon zones, and the `stop` and `slowdown` actions. To use it with Nav2, [edit the launch file and replace the default `approach` zone](#under-nav2).
 
+**IMPORTANT** This repo is in an exploratory, still very unstable phase.
+
 | | twist_mux | Collision monitor |
 | --- | --- | --- |
 | Run a demo | [Turtlesim](docs/TUTORIAL.md), [Gazebo](docs/TUTORIAL_GAZEBO.md) | [Gazebo and Nav2](docs/TUTORIAL_COLLISION_MONITOR.md) |
 | Read the rules | [Specification](docs/SPEC.md) | [Specification](docs/collision_monitor/SPEC.md), [Nav2 integration](docs/collision_monitor/SPEC_NAV2.md) |
 | Read the proofs | [Theorems](docs/THEOREMS.md) | [Theorems](docs/collision_monitor/THEOREMS.md) |
+| Replace the upstream node | [Drop-in guide](docs/DROP_IN_TWIST_MUX.md), [the same for a coding agent](docs/DROP_IN_TWIST_MUX_AGENTS.md) | |
 | Compare with upstream | [Benchmarks](docs/BENCHMARK.md) | [Tests and benchmarks](docs/collision_monitor/COMPARISON.md), [upstream behavior](docs/collision_monitor/UPSTREAM_BEHAVIOUR.md) |
 
 See the [project site](https://beneficial-ai-foundation.github.io/ROSlean/),
@@ -28,6 +31,7 @@ site or its workflow.
 | `ros/roslean_core` | Compiles the C that Lean generates into `libroslean_core` and installs the Lean runtime it needs with it; C++ wrappers, FFI tests. |
 | `ros/roslean_twist_mux` | The mux node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. Its `demo/` holds the turtlesim and Gazebo demos. |
 | `ros/roslean_collision_monitor` | The collision monitor node, as an executable and as a component. A C++ shim: lifecycle, subscriptions, TF lookups and the transform of scan points (`include/…/transforms.hpp`), publishing. `test/` holds the harness that runs it beside upstream; `demo/gazebo/` the demo. |
+| `overlay/twist_mux` | The same node as a package named `twist_mux`, which shadows upstream's in a workspace: same executable, launch file and config file names. Not under `ros/`, and not part of `pixi run build`, because the tests compare with upstream's package of that name (`pixi run build-overlay`). |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
 | `docker/` | Linux build and run-time image, both nodes. |
 | `bench/` | Benchmarks against upstream (`pixi run bench`, `pixi run bench-cm`), their results, and the Linux image in which the collision monitor comparison was run (`bench/cm_linux/`). Not part of the normal build. |
@@ -72,6 +76,11 @@ pixi run bash -c 'source install/setup.bash && ros2 run roslean_twist_mux twist_
   --ros-args --params-file ros/roslean_twist_mux/config/example.yaml'
 ```
 
+Upstream's launch file is there too, with the same arguments
+(`ros2 launch roslean_twist_mux twist_mux_launch.py`). To replace upstream in
+an existing workspace without editing launch files, see
+[docs/DROP_IN_TWIST_MUX.md](docs/DROP_IN_TWIST_MUX.md).
+
 Run the collision monitor with a lifecycle manager that configures and
 activates it, as Nav2 does for upstream's:
 
@@ -112,6 +121,10 @@ the available ROS tests and verifies the install tree before copying it
 into the runtime image. Use `--build-arg RUN_TESTS=0` to skip the tests.
 Four Nav2 scenarios require `nav2_bringup`, which the image omits. The
 [arm64 audit](docs/AUDIT.md) recorded 28 passing tests in 39 minutes.
+The final image also holds apt's `ros-jazzy-twist-mux`, for its helper
+nodes. In it, `ros2 run twist_mux twist_mux` and
+`ros2 launch twist_mux twist_mux_launch.py` start the Lean-backed node (the
+overlay package).
 
 On a Linux host with the ROS dependencies and elan installed, source
 `/opt/ros/jazzy/setup.bash` and run `colcon build --base-paths ros`.

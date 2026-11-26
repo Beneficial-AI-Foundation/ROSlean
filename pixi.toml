@@ -28,6 +28,10 @@ ros-jazzy-rviz2 = ">=14.1.23,<15"
 [tasks]
 
 build = { cmd = "colcon build --symlink-install --base-paths ros --cmake-args -G Ninja" }
+# The package named twist_mux that shadows upstream's (docs/DROP_IN_TWIST_MUX.md).
+# Kept in an install tree of its own: the tests compare with upstream's twist_mux
+# and must not find this one. Use it with: source install_overlay/setup.bash
+build-overlay = { cmd = "bash -c 'source install/setup.bash && colcon build --base-paths overlay --build-base build_overlay --install-base install_overlay --cmake-args -G Ninja'", depends-on = ["build"] }
 noop = { cmd = "bash -c 'source install/setup.bash && ros2 run roslean_noop noop_node'", depends-on = ["build"] }
 test = { cmd = "colcon test --base-paths ros --event-handlers console_direct+ && colcon test-result --verbose", depends-on = ["build"] }
 # The same without the tests labelled `long` in the CMakeLists (the random
