@@ -134,6 +134,9 @@ answers to scans and commands (50,639 pass, 10,868 slowdown, 16,623 stop by
 a zone, 30,900 stop for an invalid source, 9,471 withheld, 66,928 silent).
 `run.sh` prints these counts.
 
+A longer run (`MUX=3000 CM=3000`, seeds 5 to 12): 2,469,626 calls,
+2,082,182 answers, no difference.
+
 What differs between the two builds, and was therefore worth checking:
 
 - **Small integers.** Lean keeps a small `Nat` or `Int` inside the pointer:
