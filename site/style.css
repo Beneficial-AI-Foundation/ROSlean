@@ -276,3 +276,16 @@ blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--cod
 /* A linked preview picture (the playground on the overview). */
 .shot { display: block; margin: 1.25rem 0 0.75rem; border: 1px solid var(--line); }
 .shot img { display: block; width: 100%; height: auto; }
+
+/* Lessons learned: three numbered boxes of equal weight. */
+.lessons { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+@media (max-width: 760px) { .lessons { grid-template-columns: 1fr; } }
+.lessons li {
+  background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--proved);
+  padding: 1.1rem 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.6rem;
+}
+.lesson-n { font: 600 2.4rem/1 var(--font-display); color: var(--proved); }
+.lessons h3 { margin: 0; font-size: 1.12rem; line-height: 1.3; }
+.lessons p { margin: 0; font-size: 0.95rem; }
+.lessons .lesson-limit { color: var(--muted); font-size: 0.9rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.lessons a { margin-top: auto; padding-top: 0.4rem; font-weight: 600; font-size: 0.95rem; }
