@@ -67,11 +67,21 @@ Stop before changing anything, and ask, in each of these cases:
     the choice is the human's.
 11. The human wants the change on a physical robot. Nothing here was tested
     on hardware; say so.
-12. The human has not chosen between option A (overlay) and option B
-    (renamed package). Option A changes which node every Nav2 bring-up
-    launched from that workspace starts, not only the one you were asked
-    about, and a bring-up with Nav2's default parameters then no longer
-    comes up. Explain that and ask.
+12. The human has not chosen between option A (overlay), option B
+    (renamed package) and option C (the bring-up package, step 7a). Option
+    A changes which node every Nav2 bring-up launched from that workspace
+    starts, not only the one you were asked about, and a bring-up with
+    Nav2's default parameters then no longer comes up. Option C is for a
+    human who starts Nav2 with `nav2_bringup`'s own launch files and has no
+    zones of their own: it brings its own zones, which are an example and
+    are not Nav2's `approach` zone. Explain that and ask.
+13. Option C, and the human has not been told that its default parameter
+    file has a stop zone with the consequence of case 1 (under a planner
+    the robot can end up standing for good), that `zones:=slowdown` selects
+    a file with **no stop zone** (the monitor slows the robot near
+    obstacles and never stops it), and that the zone coordinates are an
+    example for a robot of radius 0.22 m. Which zones, and their size, are
+    the human's decision.
 
 ## 1. Preconditions
 
@@ -197,12 +207,16 @@ colcon build --base-paths src src/ROSlean/overlay/opt_in/nav2_collision_monitor 
   --packages-up-to nav2_collision_monitor
 # option B:
 # colcon build --packages-up-to roslean_collision_monitor
+# option C:
+# colcon build --packages-up-to roslean_nav2_bringup
 ```
 
 Expected last lines: `Summary: 2 packages finished` (`roslean_core` and
 `nav2_collision_monitor`); with option B, `Summary: 3 packages finished`
 (`roslean_core`, `roslean_twist_mux`, `roslean_collision_monitor`; the
-second is there because the demos in the third depend on it). The first
+second is there because the demos in the third depend on it); with option
+C, `Summary: 4 packages finished` (those three and `roslean_nav2_bringup`).
+The first
 build downloads the Lean toolchain pinned in `$ROSLEAN/lean-toolchain`; it
 needs network access. Warnings from `install_name_tool` on macOS are
 harmless.
@@ -289,6 +303,42 @@ yaml file, anything that starts `collision_detector`.
 
 Rebuild the packages you edited (`colcon build --packages-select <names>`).
 
+## 7a. Option C: the bring-up package
+
+Nothing to edit. Where the human started `ros2 launch nav2_bringup
+bringup_launch.py …` or `navigation_launch.py …`, the command becomes
+`ros2 launch roslean_nav2_bringup …` with the same arguments. Differences
+to tell the human, from
+[DROP_IN_COLLISION_MONITOR.md](DROP_IN_COLLISION_MONITOR.md#option-c-the-bring-up-package):
+`use_composition` defaults to `False` in both files; without `params_file`
+the package's own file is used (`zones:=stop_slowdown`, the default, or
+`zones:=slowdown`); with `params_file` the file is checked first.
+
+```sh
+ros2 launch roslean_nav2_bringup bringup_launch.py --show-args | grep -A2 -e "'zones'" -e "'check_params'"
+# expected: both arguments, zones with the choices ['stop_slowdown', 'slowdown'] and the default 'stop_slowdown'
+ros2 run roslean_nav2_bringup sync_params.py
+# expected, for each of the two files: "... equal to .../nav2_bringup/params/nav2_params.yaml outside the collision_monitor section"
+```
+
+If `sync_params.py` reports a difference, the installed Nav2 has other
+defaults than the ones the package's files were made from: report it, and
+do not launch on a robot.
+
+If the launch ends at once with `roslean_nav2_bringup: cannot derive a
+launch file from …`, the installed `nav2_bringup` is not the version the
+package was written for (1.3.12). Nothing was started. Stop and report the
+message; do not copy or edit launch files to get around it.
+
+If it ends with `… would refuse the parameter file …`, that is case 1 of
+step 0 for the file given as `params_file`.
+
+Then step 8; the expected first line of the launch output is
+
+```
+[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: <file> (<zones:=… or given as params_file>); collision monitor section: nothing unsupported found
+```
+
 ## 8. Verify
 
 In a new shell:
@@ -313,7 +363,7 @@ ros2 launch nav2_collision_monitor collision_monitor_node.launch.py --show-args
 Option B:
 
 ```sh
-ros2 pkg executables roslean_collision_monitor    # expected: roslean_collision_monitor collision_monitor
+ros2 pkg executables roslean_collision_monitor    # expected: two lines: check_params.py, collision_monitor
 ros2 component types | grep -A1 '^roslean_collision_monitor'   # expected: roslean_collision_monitor::CollisionMonitorNode
 ros2 launch roslean_collision_monitor collision_monitor_node.launch.py --show-args   # the same five arguments
 ros2 pkg prefix nav2_collision_monitor            # expected: NOT inside $WS (the overlay must not have been built)
@@ -414,6 +464,9 @@ ros2 pkg xml nav2_collision_monitor -t version   # expected: 1.3.x
 Option B: revert the edits of step 7 (`git diff` in each edited repository
 shows them) and rebuild those packages.
 
+Option C: launch `nav2_bringup` again in the place of
+`roslean_nav2_bringup`.
+
 Removing everything: additionally delete `$WS/src/ROSlean`,
 `$WS/install/roslean_*`, `$WS/build/roslean_*`. `~/.elan` is left to the
 human. If the human changed their zones (case 1), that edit is theirs to
@@ -423,6 +476,9 @@ keep or revert: upstream's node accepts both versions of the file.
 
 - The output of the parameter check (step 2) and of the dry run (step 5).
 - Which option, which files were edited (option B) or that none were.
+- Option C: which zones file is used, that its coordinates are an example,
+  and what its stop zone means under a planner (or, with `zones:=slowdown`,
+  that there is no stop zone).
 - The outputs of the checks in step 8, including the two diffs.
 - That `~/toggle`, run-time parameter changes and
   `~/collision_points_marker` are gone, and whether anything used them.

@@ -81,6 +81,9 @@ install(TARGETS collision_monitor_component
 # launch/collision_monitor_node.launch.py and params/collision_monitor_params.yaml
 # have the names and the place of upstream's (docs/DROP_IN_COLLISION_MONITOR.md).
 install(DIRECTORY config launch params DESTINATION share/${PROJECT_NAME})
+# ros2 run roslean_collision_monitor check_params.py FILE.yaml; roslean_nav2_bringup's
+# launch files run it on the parameter file before they start Nav2.
+install(PROGRAMS scripts/check_params.py DESTINATION lib/${PROJECT_NAME})
 
 # The tests and their configuration, so that they can be run from the install
 # tree against any node:

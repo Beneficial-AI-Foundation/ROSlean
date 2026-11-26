@@ -37,6 +37,11 @@ how to go back, and what is different. The same procedure as checkable steps
 for a coding agent is in
 [DROP_IN_COLLISION_MONITOR_AGENTS.md](DROP_IN_COLLISION_MONITOR_AGENTS.md).
 
+If you have no bring-up of your own yet and want Nav2 started with this node
+by one command, with a parameter file the node accepts, that is
+[option C, the bring-up package](#option-c-the-bring-up-package). It is not
+stock Nav2's behaviour either.
+
 The repository is in an exploratory phase. What was actually run is listed
 under [What was tested](#what-was-tested); nothing here has been run on a
 physical robot.
@@ -49,6 +54,11 @@ Two packages provide the same node (the same source file, compiled twice):
 | --- | --- | --- |
 | `nav2_collision_monitor` | `overlay/opt_in/nav2_collision_monitor` | You want to edit no launch file. Built in your workspace, which takes a build command that names it, it shadows upstream's package of the same name: Nav2's `navigation_launch.py` and every other launch file that names `nav2_collision_monitor` then start the Lean-backed node. |
 | `roslean_collision_monitor` | `ros/roslean_collision_monitor` | You prefer to see in your launch files which node runs. You change the package name (and, for a composed bring-up, the plugin name). |
+
+A third package, `roslean_nav2_bringup` (`ros/roslean_nav2_bringup`), has
+no node. It has the launch files and the parameter file that start Nav2 with
+the node of `roslean_collision_monitor`:
+[option C](#option-c-the-bring-up-package).
 
 What is the same as upstream 1.3.12 in both:
 
@@ -168,6 +178,12 @@ For the renamed package instead of the overlay (option B):
 colcon build --packages-up-to roslean_collision_monitor   # roslean_core, roslean_twist_mux, roslean_collision_monitor
 ```
 
+For the bring-up package (option C):
+
+```sh
+colcon build --packages-up-to roslean_nav2_bringup   # the three above and roslean_nav2_bringup
+```
+
 `roslean_collision_monitor` also holds the demos and the tests, and its
 `package.xml` names their dependencies: `roslean_twist_mux` (hence the third
 package), Gazebo, the TurtleBot3 packages, `nav2_bringup` and upstream's
@@ -283,6 +299,174 @@ of your own that includes the two. The diff of the one line is in
 older, shorter launch file of this package (the node and a lifecycle
 manager, no composition); it stays.
 
+### Option C: the bring-up package
+
+**What it is not.** It is not stock Nav2. Nav2's default collision monitor
+zone is an `approach` zone, which this node does not have. The package
+starts Nav2 with other zones, so the robot is protected differently: the
+default parameter file has a stop zone inside a slowdown zone, and a stop
+zone answers every command with zero while something is in it, including
+the turn that would clear it, so that under a planner the robot can end up
+standing for good. The zone coordinates in the package's parameter files are an example for
+the robot Nav2's default parameters assume (a circle of radius 0.22 m); they
+are not fitted to your robot. Nothing here was run on a physical robot.
+
+**What it is.** `ros/roslean_nav2_bringup`: two launch files and two
+parameter files. No package is shadowed, no launch file of yours is edited,
+and stock Nav2 stays installed beside it: `ros2 launch nav2_bringup …`
+starts upstream's monitor as before, `ros2 launch roslean_nav2_bringup …`
+starts the Lean-backed one.
+
+```sh
+ros2 launch roslean_nav2_bringup bringup_launch.py map:=my_map.yaml
+ros2 launch roslean_nav2_bringup bringup_launch.py slam:=True
+ros2 launch roslean_nav2_bringup navigation_launch.py
+```
+
+| File | What it is |
+| --- | --- |
+| `launch/navigation_launch.py` | `nav2_bringup`'s `navigation_launch.py` with the collision monitor taken from `roslean_collision_monitor`, as an executable and as a component |
+| `launch/bringup_launch.py` | `nav2_bringup`'s `bringup_launch.py` (localisation or SLAM, and navigation) including the file above. Localisation and SLAM are Nav2's launch files, unchanged |
+| `params/nav2_params.yaml` | `nav2_bringup`'s `nav2_params.yaml` with another `collision_monitor` section: a stop zone inside a slowdown zone. The default |
+| `params/nav2_params_slowdown.yaml` | the same with the slowdown zone only |
+
+The launch files take the arguments of Nav2's files of the same name, with
+the same meaning (`namespace`, `use_sim_time`, `autostart`, `params_file`,
+`use_composition`, `use_respawn`, `log_level`, `container_name`, and for
+`bringup_launch.py` `map`, `slam`, `use_namespace`, `use_localization`).
+`ros2 launch roslean_nav2_bringup bringup_launch.py --show-args` lists them.
+What differs from Nav2's:
+
+| Argument | Here | Why |
+| --- | --- | --- |
+| `params_file` | default: this package's `params/nav2_params.yaml` | Nav2's own file is refused by the node |
+| `zones` (new) | `stop_slowdown` (default) or `slowdown`: which of the package's two files is used when `params_file` is not given. Without effect when it is | see [Which zones](#which-zones-and-what-was-measured) |
+| `use_composition` | default `False`, also in `bringup_launch.py` (Nav2: `True` there) | the stand-alone executable is the form that has every property claimed for the node: only it survives a `/clock` message with a negative time ([SPEC.md](collision_monitor/SPEC.md#deliberate-differences-in-roslean), D15 and ND10). `use_composition:=True` works: the component `roslean_collision_monitor::CollisionMonitorNode` is loaded into `nav2_container` |
+| `check_params` (new) | `true` (default): the parameter file is looked at before anything is started | see [Your own parameter file](#your-own-parameter-file) |
+
+**How the launch files are made.** They are not copies of Nav2's. Each reads
+the installed `nav2_bringup` file of the same name when it is launched,
+changes the package (and, for the component, the plugin) of the collision
+monitor in its text, or the path of the included `navigation_launch.py`, and
+runs the result. A Nav2 update is therefore followed without a change here.
+If a place that is edited is not found exactly once, or the edited text
+still names `nav2_collision_monitor`, the launch stops with a message that
+says so and starts nothing; it does not fall back to upstream's monitor. The
+edits are in `roslean_nav2_bringup/derive.py`. They were written for
+`nav2_bringup` 1.3.12.
+
+**The parameter files** are Nav2's `nav2_params.yaml`, line for line, outside
+the `collision_monitor` section; a comment at the top of that section says
+what was changed. `ros2 run roslean_nav2_bringup sync_params.py` checks this
+against the installed `nav2_bringup`, and the package's test
+`params_follow_nav2` fails when the two differ anywhere else, which is how a
+change of Nav2's defaults is noticed (`sync_params.py SOURCE_DIR --update`
+takes it over and keeps the section).
+
+#### Your own parameter file
+
+With `params_file:=my_nav2_params.yaml` the launch file runs
+`check_params.py` ([Check your parameters first](#check-your-parameters-first))
+on the file before it starts anything. If the node would refuse the file,
+the launch ends with exit code 1 and this, and no process was started:
+
+```
+[ERROR] [launch]: Caught exception in launch (see debug for traceback): roslean_nav2_bringup: the
+  collision monitor of this bring-up (roslean_collision_monitor) would refuse the parameter file
+  …/nav2_bringup/params/nav2_params.yaml:
+    /collision_monitor: FootprintApproach.action_type: approach (only stop and slowdown)
+It provides the actions stop and slowdown, zones of type polygon and circle, and one laser scan.
+  Nothing was started. What to do: take the collision_monitor section of
+  …/roslean_nav2_bringup/params/nav2_params.yaml into your file and fit the zones to your robot,
+  or start stock Nav2 (ros2 launch nav2_bringup ...) to keep upstream's monitor. …
+```
+
+(with Nav2's own `nav2_params.yaml` as `params_file`). Otherwise one line
+says which file is used and that nothing unsupported was found. The check
+is the first look described above, not the node's own: what it does not see
+(numbers, values set elsewhere) the node still refuses when it is
+configured, as under
+[Nav2's default parameters](#nav2s-default-parameters-the-expected-refusal).
+`check_params:=false` skips it.
+
+To start from your own Nav2 file: replace its `collision_monitor` section by
+the one of `params/nav2_params.yaml` and fit the zones.
+
+#### Which zones, and what was measured
+
+Neither file does what `approach` does. The choice between them:
+
+- **`zones:=stop_slowdown`** (default). A stop zone, 0.20 m beyond the
+  assumed footprint ahead and 0.05 m to the sides and behind, inside a
+  slowdown zone, 0.60 m ahead and 0.10 m to the sides and behind. While six
+  readings are in the slowdown zone every command is multiplied by 0.4;
+  while six are in the stop zone every command becomes zero. That stops the
+  robot before an obstacle, and it also answers with zero the turn or the
+  retreat that would clear the zone, and Nav2's recovery behaviours. Under
+  a planner the robot can end up standing for good: in the tours of
+  [TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md), section
+  7.5, it did in three runs of six (this node: 1, 1 and 8 places reached,
+  standing at the end of two runs; upstream's node on the same zones: 8, 2
+  and 5, standing in one; stock Nav2 with `approach`, one run: 11 places,
+  never standing).
+- **`zones:=slowdown`**. The slowdown zone alone. The monitor never stops
+  the robot. Keeping it off obstacles is left to Nav2's planner and
+  controller (the costmaps). If they command a collision, the monitor lets
+  it happen at 0.4 times the speed.
+
+**What was measured with the slowdown zone alone.** In the simulated
+apartment of the tutorial, Nav2 drove a TurtleBot3 on the tour of five
+places for 300 simulated seconds per run, started by this package's
+`bringup_launch.py` (`pixi run nav2-bringup-tour --zones slowdown`, which is
+`nav2_observe.py tour --bringup roslean_nav2_bringup --zones slowdown`). The
+parameters were the demo's for that robot (radius 0.105 m, the slowdown
+zone of the demo's `nav2_monitor.yaml`), not this package's example file.
+Three runs, one after the other:
+
+| Run | Places reached | Distance driven | Time the monitor answered non-zero commands with zero | At the end | Closest to obstacles |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 3 | 21.3 m | 0 s | standing (0.03 m in the last 30 s) at (0.91, 1.84), at the edge of the dining table and its chairs; Nav2's localisation had the robot at (2.2, −1.7), 3.7 m from where it was, and the planner found no path | smallest lidar reading 0.120 m, the lidar's lower limit; for 50 s the robot's outline lay over cells the map marks as occupied |
+| 2 | 1 | 14.6 m | 0 s | at (0.14, 2.69), 0.3 m from the second place, 0.50 m in the last 30 s: the planner failed 88 times to find a path to it | smallest lidar reading 0.154 m; outline 0.10 m from the nearest occupied cell |
+| 3 | 6 | 27.9 m | 0 s | driving | smallest lidar reading 0.120 m; outline 0.01 m from the nearest occupied cell |
+
+What the three runs show, and what they do not:
+
+- The monitor never held the robot. Two runs of three still ended with the
+  robot stuck, for Nav2's own reasons: lost localisation in the first, no
+  path in the second.
+- The robot came within centimetres of obstacles with nothing to stop it.
+  In two runs something was at the lidar's lower limit of 0.12 m, where the
+  body is 0.03 to 0.05 m from it, and in the first run the robot ended
+  inside the area the map reserves for the table and chairs.
+- Whether the robot touched anything is not known: the simulation has no
+  contact sensor. In no run was it driven for a second without moving.
+- There is no baseline. The last column is new; no run with `approach` or
+  with the stop zone has it, so it is not known how close those let the
+  robot come on this tour. The runs with the stop zone and with `approach`
+  quoted above were made earlier, on another day.
+- Three runs, one machine (macOS arm64, load average 2.5 to 6.5 while
+  another session used it), the TurtleBot3's zones.
+
+#### Check that it is this node
+
+The launch prints
+`[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: …`,
+and everything under [Check which node is running](#check-which-node-is-running)
+applies: the node's line `Monitoring 'cmd_vel_smoothed' -> 'cmd_vel' …`, the
+path of the executable
+(`…/lib/roslean_collision_monitor/collision_monitor`), and composed the
+container's `Load Library: …/libcollision_monitor_component.so` (`.dylib` on
+macOS).
+
+#### What the package depends on
+
+`package.xml` names `nav2_bringup`, `roslean_collision_monitor` and what the
+launch files import. Because `roslean_collision_monitor` also holds the
+demos and the tests ([Install](#from-source-in-your-workspace)),
+`colcon build --packages-up-to roslean_nav2_bringup` builds
+`roslean_twist_mux` as well, and `rosdep` on it asks for Gazebo and the
+TurtleBot3 packages. At run time the package uses none of those.
+
 ### Nav2's default parameters: the expected refusal
 
 With either option, Nav2's unedited `nav2_params.yaml` gives this, and it is
@@ -375,6 +559,7 @@ class name, not this node, and neither option touches it.
   `/opt/ros/jazzy` again. A later `colcon build` does not bring the overlay
   back, because it is built only when its directory is named.
 - Option B: change the names back.
+- Option C: launch `nav2_bringup` instead of `roslean_nav2_bringup`.
 
 Upstream's package is never modified or removed by either option. The edit
 of the parameters (a stop zone in the place of `approach`) is separate: it
@@ -438,12 +623,23 @@ the node and formed the bond with it, not that a robot was protected.
 | `colcon build` in a separate workspace that contains a copy of this repository: the command of option A; then the command of option B | 2 packages; 3 packages. A plain `colcon list` does not show the overlay |
 | The guard of the tests: `roslean_collision_monitor` configured with the overlay sourced; a test script asked for `nav2_collision_monitor/collision_monitor` with the overlay sourced | CMake warns and registers no test against upstream; the script exits with a message |
 | `check_params.py` on Nav2's `nav2_params.yaml` and `nav2_multirobot_params_1.yaml`, upstream's `collision_monitor_params.yaml`, and the parameter files of this repository | Refusal reported for the first two, none for the others, as the node decides |
+| `roslean_nav2_bringup`: `ros2 launch roslean_nav2_bringup navigation_launch.py`, with each of the two parameter files, each with `use_composition` `False` (default) and `True` (with a `nav2_container` started by hand) | `[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: …; nothing unsupported found`; `Managed nodes are active`; the node's `Monitoring …` line with 1 and 2 zones; stand-alone: the process is `…/lib/roslean_collision_monitor/collision_monitor`, `active`, bonded; composed: `Load Library: …/libcollision_monitor_component.dylib` |
+| `ros2 launch roslean_nav2_bringup bringup_launch.py map:=…` with the demo's map (static transforms, no scan): default; `use_composition:=True zones:=stop_slowdown`; `slam:=True` without a map | `lifecycle_manager_localization` (with `slam:=True`: `lifecycle_manager_slam`) and `lifecycle_manager_navigation`: `Managed nodes are active`; the monitor as in the row above |
+| The same two launch files with Nav2's own `nav2_params.yaml` as `params_file` | The message under [Your own parameter file](#your-own-parameter-file), exit code 1, no node started. With `check_params:=false`: the node's own refusal and `Aborting bringup`, as under [Nav2's default parameters](#nav2s-default-parameters-the-expected-refusal) |
+| `bringup_launch.py` of `roslean_nav2_bringup` in the simulated apartment (Gazebo without a window, TurtleBot3, the demo's parameters for that robot), Nav2 driving the tour, 300 simulated seconds, slowdown zone only, three runs | The table under [Which zones, and what was measured](#which-zones-and-what-was-measured) |
+| The tests of `roslean_nav2_bringup` (`params_follow_nav2`, `derive`): the parameter files against the installed `nav2_params.yaml`; the edits on the installed launch files, and on altered texts | Passed; an altered text is refused |
+| The repository's short test set (`pixi run test-quick`) with `roslean_nav2_bringup` added | Not a valid run: the machine went to sleep repeatedly during it. 15 of 19 passed, among them the two of `roslean_nav2_bringup`; `smoke_node`, `roslean_fault_clock_negative` and `upstream_nav2_bond` ran into their time limits and `upstream_probes` failed. Run again alone, with the machine still going to sleep, three of the four passed and `smoke_node` reported 3 failures in checks that wait for a message, in a run of over two hours of wall time. To be repeated on a machine that stays awake |
 | The repository's tests (`pixi run test`), after the change, the overlay not sourced | 28 of 29 passed, among them all 25 of `roslean_collision_monitor`. The one failure was the `scenario` test of `roslean_twist_mux`, which this change does not touch: one message was missing while another program had the machine at a load of about 40; run again alone it passed twice. In an earlier run of the short set (`pixi run test-quick`), `upstream_probes`, which drives upstream's node alone, failed on a source timeout probe; repeated, it failed once more and passed four times |
 
 Not tested: Linux (the node itself and its tests were run on Linux arm64
 earlier, see the [README](../README.md); the overlay package, the new launch
 file and this procedure were not); any ROS distribution other than Jazzy;
-`bringup_launch.py` as a whole (it starts localisation and needs a map);
+Nav2's own `bringup_launch.py` as a whole through the overlay (it starts
+localisation and needs a map; the one of `roslean_nav2_bringup` was run);
+of `roslean_nav2_bringup`: `slam:=True` with a scan, a namespace, `use_respawn`, the
+package's own parameter files (the example zones for a radius of 0.22 m)
+with a robot or a simulator, the stop zone in the simulator through
+this package, any `nav2_bringup` other than 1.3.12;
 Nav2 with a simulator or a robot through the overlay (the simulated runs of
 the tutorial use the renamed package and an edited copy of
 `navigation_launch.py`); a namespaced bring-up; `rosdep install` on these

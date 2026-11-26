@@ -731,6 +731,12 @@ got through, the robot was slower than stock Nav2 (fewer places in the same
 time), because the slowdown zone is occupied whenever anything is within
 0.2 m of the robot's side.
 
+Three later runs with the slowdown zone alone (`zones:=slowdown`, no stop
+zone): 3, 1 and 6 places; the monitor never held the robot, two of the
+three runs still ended with the robot stuck for Nav2's own reasons, and the
+robot came within centimetres of obstacles. The table is in
+[DROP_IN_COLLISION_MONITOR.md](DROP_IN_COLLISION_MONITOR.md#which-zones-and-what-was-measured).
+
 ### 7.6 `stop` is not a substitute for `approach`
 
 The Lean node runs in Nav2's bring-up, but it does not do what Nav2's
