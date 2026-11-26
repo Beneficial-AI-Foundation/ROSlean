@@ -66,6 +66,13 @@
             </div>
           </div>
         </li>
+<<<<<<< HEAD
+=======
+<<<<<<< Updated upstream
+        <li class="next">
+          <span>More packages to come.</span>
+=======
+>>>>>>> bbda913 (site description change)
         <li>
           <a href="collision_monitor.html">collision monitor</a>
           <span>Passes, slows, or stops velocity commands using one lidar and configured zones.</span>
@@ -81,10 +88,8 @@
             <span class="tag ok">Verified, in part</span>
             <button class="info" type="button" aria-label="What verified means here" aria-expanded="false" aria-controls="cm-verified">i</button>
             <div class="pop" id="cm-verified" role="note">
-              <p><b>Proved</b>Lean checks when the model passes a command, slows it, demands a stop, or withholds velocity.</p>
-              <p><b>Run</b>For an accepted configuration, the fast C interface returns the model’s output for commands with a valid clock and the supported call history.</p>
-              <p><b>Trusted, not proved</b>The C++ shim computes the scan's points and their transform in floating point, and multiplies the command by the ratio in a slowdown. Lean's compiler and runtime, tf2 and ROS.</p>
-              <p><b>Not covered</b>Nav2's <code>approach</code> and <code>limit</code> actions, point clouds, several sources. Nav2's default configuration uses <code>approach</code>. <a href="gaps.html">Full account</a></p>
+              <p><b>Proved</b>Lean checks when the model passes a command, slows it, demands a stop, or withholds velocity.</p>              
+              <p><b>Trusted, not proved</b>The C++ shim computation of the scan's points and their transform in floating point.</p>              
             </div>
           </div>
         </li>
