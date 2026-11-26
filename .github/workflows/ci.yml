@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lean:
+    name: build library + proofs
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Lean side is verified on Linux x86-64 and macOS (Apple silicon).
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # elan + the toolchain pinned in lean-toolchain, with the Mathlib cache
+      # (`lake exe cache get`) and the .lake build cache. This builds the
+      # Mathlib-free executable core (ROSleanCore) and the Mathlib-backed proofs
+      # in ROSlean/ — the same work as `pixi run prove`. It needs neither pixi
+      # nor a ROS 2 installation.
+      - name: Build ROSleanCore and the ROSlean proofs
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "ROSlean"
+          use-mathlib-cache: true
+          use-github-cache: true
