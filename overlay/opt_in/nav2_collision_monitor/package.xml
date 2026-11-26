@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>nav2_collision_monitor</name>
+  <version>0.1.0</version>
+  <description>
+    Overlay for the nav2_collision_monitor package: the same executable,
+    component, launch file and params file names, with the Lean-backed node of
+    ROSlean as the collision monitor. Not the upstream package. It provides
+    stop and slowdown zones on one laser scan only and refuses any other
+    configuration, Nav2's default (an approach zone) included. The collision
+    detector forwards to upstream's when it is installed underneath. No
+    library and no headers are exported.
+  </description>
+  <maintainer email="noreply@beneficialaifoundation.org">Beneficial AI Foundation</maintainer>
+  <license>Apache-2.0</license>
+  <url type="repository">https://github.com/Beneficial-AI-Foundation/ROSlean</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>roslean_core</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>rclcpp_components</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>rosgraph_msgs</depend>
+  <depend>nav2_util</depend>
+  <depend>nav2_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

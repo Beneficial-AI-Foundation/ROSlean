@@ -1,17 +1,18 @@
 """The Lean-backed collision monitor with a Nav2 lifecycle manager.
 
-The counterpart of nav2_collision_monitor's collision_monitor_node.launch.py
-(without composition): the node under the name `collision_monitor`, with the
-remappings Nav2 uses for TF, and a lifecycle manager that configures and
-activates it and watches its bond.
+A short launch file of this package's own: the node under the name
+`collision_monitor`, with the remappings Nav2 uses for TF, and a lifecycle
+manager that configures and activates it and watches its bond. No
+composition. The launch file with upstream's name and arguments is
+collision_monitor_node.launch.py, next to this one.
 
     ros2 launch roslean_collision_monitor collision_monitor_launch.py \
         params_file:=/path/to/params.yaml use_sim_time:=true
 
 To use the node inside nav2_bringup instead, see
-docs/collision_monitor/SPEC_NAV2.md, section 8.6: in a copy of
-navigation_launch.py replace package 'nav2_collision_monitor' by
-'roslean_collision_monitor' (the executable is `collision_monitor` in both).
+docs/DROP_IN_COLLISION_MONITOR.md: in a copy of navigation_launch.py replace
+package 'nav2_collision_monitor' by 'roslean_collision_monitor' (the
+executable is `collision_monitor` in both), or build the overlay package.
 """
 
 import os

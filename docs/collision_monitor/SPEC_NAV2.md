@@ -792,6 +792,11 @@ node with a lifecycle manager.
    that is built; T04 had proposed `…::CollisionMonitor`). Loaded as a
    component the node lacks the handling of a negative `/clock` (SPEC.md,
    D15, ND10): that is promised for the executable only.
+   Without editing the launch file: build the package `nav2_collision_monitor`
+   of `overlay/opt_in/`, which shadows upstream's package in the workspace and has
+   the executable and the component under upstream's names
+   ([DROP_IN_COLLISION_MONITOR.md](../DROP_IN_COLLISION_MONITOR.md)). The
+   edit of the parameters is needed either way.
 3. Nothing else: the node name, the lifecycle manager's list, the topics
    and the bond are as upstream's.
 
