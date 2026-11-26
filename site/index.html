@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -17,7 +17,7 @@
     <a class="brand" href="./">ROS<span>lean</span></a>
     <nav aria-label="Site">
       <a href="./" aria-current="page">Overview</a>
-      <a href="twist_mux.html"><code>twist_mux</code></a>
+      <a href="twist_mux.html">Twist mux</a>
       <a href="collision_monitor.html">Collision monitor</a>
       <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
     </nav>
@@ -47,7 +47,7 @@
       <p>Both packages use familiar ROS topics and parameter formats. Check each package for compatibility details.</p>
       <ul class="packages">
         <li>
-          <a id="twist_mux" href="twist_mux.html"><code>twist_mux</code></a>
+          <a id="twist_mux" href="twist_mux.html">Twist mux</a>
           <span>Selects a velocity source, such as a planner or joystick. Locks block lower-priority sources.</span>
           <div class="status">
             <span class="tag ok">Ported</span>
@@ -67,7 +67,7 @@
           </div>
         </li>
         <li>
-          <a href="collision_monitor.html">collision monitor</a>
+          <a href="collision_monitor.html">Collision monitor</a>
           <span>Passes, slows, or stops velocity commands using one lidar and configured zones.</span>
           <div class="status">
             <span class="tag ok">Ported in part</span>
@@ -106,7 +106,16 @@
           <button id="demo-switch" type="button">Watch the original Gazebo footage</button>
         </figcaption>
       </figure>
-      <p class="note"><a id="theorem" href="twist_mux.html#theorem">Mux forwarding theorem</a> · <a href="collision_monitor.html#cm-demo">Collision monitor demo</a></p>
+    </section>
+
+    <section id="try">
+      <h2>Try it in the browser</h2>
+      <p>A small simulated robot with both nodes in its command path. Put a box in its way, take over with the arrow keys, or press the emergency stop, and watch which source drives and what the monitor publishes.</p>
+      <a class="shot" href="playground/"><img src="media/playground.jpg" width="1058" height="536" alt="The playground: a robot seen from above with its stop and slowdown zones, a box in front of it, and a panel showing the mux forwarding the planner and the collision monitor in the state STOP."></a>
+      <p class="note">The decisions are made by the same Lean functions the ROS nodes run, compiled to WebAssembly. The robot, the lidar and the boxes are a toy simulation written for the page.</p>
+      <div class="links">
+        <a class="cta" href="playground/">Open the playground</a>
+      </div>
     </section>
 
   </div>
@@ -115,7 +124,7 @@
 <footer>
   <div class="wrap wide">
     <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
-    <span><a href="twist_mux.html">twist_mux</a> · <a href="collision_monitor.html">Collision monitor</a></span>
+    <span><a href="twist_mux.html">Twist mux</a> · <a href="collision_monitor.html">Collision monitor</a></span>
   </div>
 </footer>
 

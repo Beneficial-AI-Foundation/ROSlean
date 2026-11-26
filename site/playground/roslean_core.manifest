@@ -1,0 +1,14 @@
+# Written by tools/build.sh. tools/check_fresh.sh compares these with the tree.
+lean_version=Lean (version 4.37.0-rc1, arm64-apple-darwin24.6.0, commit 0b77e12952ad39077d80d8bd6b66d601f225c321, Release)
+lean_commit=0b77e12952ad39077d80d8bd6b66d601f225c321
+emscripten=emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 7.0.1 (ac0578743420bcbe9a4f77d0b6599c25f8d43702)
+libuv=v1.53.0 840404ce8ba7cc0204be52389a6cfff9f2c90fb6
+init_modules=678
+init_identical_to_stage0=678
+lean_sources_sha256=9c28c13d8e0c49878fb01391cd0c2c1f01bfd83e4e8be6e7a4e3ff10566b7aec
+generated_c_sha256=d1042c45a5ddfb214131d4dca3f19d70c976ef3bf70eff7980f071ab76ea4d9b
+glue_sha256=651907266f30d36c843f79cccd69be9f2f09b9a61e38aaaaaa3a431f1bf54e7d
+wasm_sha256=bad58c44d2a704d12c6c9b6af179da21c7776f57b7d43241a8d1d991c39a5bf7
+js_sha256=9152519a95ec3f1e330bd624a5424cd96de580ccea0739e80916b6f605e807d3
+wasm_bytes=1443271
+wasm_gzip_bytes=250232

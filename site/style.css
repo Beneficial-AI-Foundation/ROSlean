@@ -272,3 +272,7 @@ blockquote.msg { margin: 0.4rem 0; padding: 0.5rem 0.8rem; background: var(--cod
 
 /* The other Lean node, where a diagram highlights only one. */
 .flow .flow-dim .flow-tag { fill: var(--muted); }
+
+/* A linked preview picture (the playground on the overview). */
+.shot { display: block; margin: 1.25rem 0 0.75rem; border: 1px solid var(--line); }
+.shot img { display: block; width: 100%; height: auto; }
