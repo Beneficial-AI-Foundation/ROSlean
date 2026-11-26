@@ -83,8 +83,7 @@ function buildStory(options = {}) {
       <div class="lede">Who gets to drive the robot? Decided by a ROS 2 node whose logic is written, and proved, in Lean 4.</div>
     </div>
     <div class="card" id="end">
-      <div class="kicker"><i></i>Proved in Lean 4</div>
-      <h1>Not just tested. Proved.</h1>
+      <h1>What was proved</h1>
       <ul>
         <li>${CHECK(34)}<b>Priority</b><span>The highest-priority live input is the one forwarded.</span></li>
         <li>${CHECK(34)}<b>Timeouts</b><span>An input that has gone silent never blocks another.</span></li>
