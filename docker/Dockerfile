@@ -41,13 +41,18 @@ RUN cd core && lake build
 FROM toolchain AS builder
 ARG RUN_TESTS=1
 COPY ros ros
+# The image holds the two nodes. Left out: roslean_demos (it needs the
+# simulators) and roslean_nav2_bringup (it needs nav2_bringup, which is not
+# installed here).
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash \
     && colcon build --base-paths ros --install-base /opt/roslean \
+         --packages-skip roslean_demos roslean_nav2_bringup \
          --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 RUN if [ "${RUN_TESTS}" = "1" ]; then \
       source /opt/ros/${ROS_DISTRO}/setup.bash \
       && colcon test --base-paths ros --install-base /opt/roslean \
+           --packages-skip roslean_demos roslean_nav2_bringup \
            --event-handlers console_direct+ \
       && colcon test-result --verbose; \
     fi

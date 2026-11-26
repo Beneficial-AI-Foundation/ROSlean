@@ -30,7 +30,7 @@ If either is "not found", add `~/.elan/bin` and `~/.pixi/bin` to your `PATH`.
 ## 2. Get the code
 
 ```sh
-git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ROSlean
 ```
 

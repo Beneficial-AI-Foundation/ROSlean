@@ -126,7 +126,7 @@ is not evident from their launch files. A bring-up that passes none uses
 The check needs the checkout but no build:
 
 ```sh
-git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git /tmp/ROSlean-check   # or use $ROSLEAN if it exists
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git /tmp/ROSlean-check   # or use $ROSLEAN if it exists
 python3 /tmp/ROSlean-check/ros/roslean_collision_monitor/scripts/check_params.py FILE.yaml
 echo $?
 ```
@@ -200,7 +200,7 @@ export PATH="$HOME/.elan/bin:$PATH"
 Then:
 
 ```sh
-cd $WS/src && git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+cd $WS/src && git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd $WS && source /opt/ros/jazzy/setup.bash
 # option A:
 colcon build --base-paths src src/ROSlean/overlay/opt_in/nav2_collision_monitor \

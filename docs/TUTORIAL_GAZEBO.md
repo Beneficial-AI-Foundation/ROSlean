@@ -30,7 +30,7 @@ without its window.
 ## 2. Get the code and build
 
 ```sh
-git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ROSlean
 pixi run build
 ```

@@ -53,11 +53,11 @@ for Git and the SDK. Open a new terminal so `lake` and `pixi` are on
 21–24 GB for the environment, caches, Lean, and Mathlib if you run every
 step. The graphical demos need a display.
 
-To get both nodes from this branch, clone `collision-monitor`. Run the
+Clone the repository and run the
 build commands from the repository root.
 
 ```sh
-git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ROSlean
 pixi run build        # build the Lean core and four ROS packages
 pixi run test-quick   # skip tests labeled long

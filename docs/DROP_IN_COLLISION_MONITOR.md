@@ -157,7 +157,7 @@ curl -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolch
 export PATH="$HOME/.elan/bin:$PATH"
 
 cd ~/ws/src
-git clone -b collision-monitor https://github.com/Beneficial-AI-Foundation/ROSlean.git
+git clone https://github.com/Beneficial-AI-Foundation/ROSlean.git
 cd ~/ws
 source /opt/ros/jazzy/setup.bash
 # option A: roslean_core and the overlay

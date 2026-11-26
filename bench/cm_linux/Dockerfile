@@ -34,7 +34,8 @@ COPY ros ros
 COPY bench/roslean_bench bench/roslean_bench
 # As `pixi run bench-build`: no build type is passed.
 RUN source /opt/ros/jazzy/setup.bash \
-    && colcon build --base-paths ros bench --event-handlers console_direct+ > /src/build.log 2>&1 \
+    && colcon build --base-paths ros bench --packages-skip roslean_demos roslean_nav2_bringup \
+         --event-handlers console_direct+ > /src/build.log 2>&1 \
     || (tail -100 /src/build.log; false)
 
 COPY docker/entrypoint.sh /entrypoint.sh
