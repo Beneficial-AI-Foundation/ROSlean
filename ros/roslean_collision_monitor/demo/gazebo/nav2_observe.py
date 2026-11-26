@@ -9,10 +9,12 @@ steps 7.5 and 7.6). Starts the demo without windows, like check_demo.py.
         attempt, every half second: the gap between robot and box, the
         command, what the monitor published, and the true speed.
 
-    nav2_observe.py tour [--monitor PKG] [--zones stop|approach] [--seconds N] [--log FILE]
+    nav2_observe.py tour [--monitor PKG] [--zones stop|slowdown|approach] [--seconds N]
+                         [--bringup roslean_nav2_bringup] [--log FILE]
         Nav2 drives the tour of nav_tour.py for N simulated seconds. Prints
         how far the robot got, what the tour reported, what the monitor's
-        state topic said, and for how long the monitor held the robot.
+        state topic said, for how long the monitor held the robot, and how
+        close the robot came to what is in the apartment.
 """
 
 import argparse
@@ -42,10 +44,14 @@ class Recorder(check_demo.Recorder):
         self.inputs = []      # (t, velocity): every command to the monitor
         self.attempts = []    # [t_drop, box, t_end, outcome]
         self.last_scan = None
+        self.nearest = None   # (range, t): the smallest valid reading of any scan
 
     def on_scan(self, msg):
         super().on_scan(msg)
         self.last_scan = msg
+        valid = [r for r in msg.ranges if msg.range_min <= r <= msg.range_max]
+        if valid and (self.nearest is None or min(valid) < self.nearest[0]):
+            self.nearest = (min(valid), self.now())
 
     def readings_in(self, x0, x1, y0, y1):
         """How many valid readings of the last scan lie in a rectangle of the
@@ -105,6 +111,78 @@ def box_profile(rec):
             print(f'    smallest gap seen: {smallest:.3f} m')
 
 
+def occupied_cells():
+    """The centres of the occupied cells of the demo's map (5 cm cells; walls,
+    the footprints of the low furniture, and what the lidar saw when the map
+    was made), in world coordinates, which are the map's."""
+    import yaml
+    folder = os.path.join(get_package_share_directory('roslean_twist_mux'), 'demo', 'gazebo')
+    with open(os.path.join(folder, 'apartment_map.yaml')) as f:
+        meta = yaml.safe_load(f)
+    with open(os.path.join(folder, meta['image']), 'rb') as f:
+        fields = f.read().split(None, 4)
+    assert fields[0] == b'P5' and fields[3] == b'255', fields[:4]
+    width, height, pixels = int(fields[1]), int(fields[2]), fields[4]
+    res, (x0, y0) = meta['resolution'], meta['origin'][:2]
+    dark = 255 * (1.0 - meta['occupied_thresh'])
+    return [(x0 + (i + 0.5) * res, y0 + (height - 1 - j + 0.5) * res)
+            for j in range(height) for i in range(width) if pixels[j * width + i] < dark], res
+
+
+def clearance_summary(rec):
+    """How close the robot's outline (obstacle.BODY, at the true pose) came
+    to the occupied cells of the map, and whether it was driven without
+    moving. Neither is a contact sensor: the simulation has none."""
+    cells, res = occupied_cells()
+    grid = {}
+    for x, y in cells:
+        grid.setdefault((int(x // 0.5), int(y // 0.5)), []).append((x, y))
+    smallest, inside, samples, last = None, 0, 0, None
+    for t, x, y, yaw in rec.track:
+        if last is not None and t - last < 0.1:
+            continue
+        last, samples = t, samples + 1
+        near = [c for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+                for c in grid.get((int(x // 0.5) + dx, int(y // 0.5) + dy), [])]
+        if not near:
+            continue
+        d = min(obstacle._dist_to_rect(obstacle.BODY, *obstacle._to_frame((x, y, yaw), cx, cy))
+                for cx, cy in near)
+        inside += d == 0.0
+        if smallest is None or d < smallest[0]:
+            smallest = (d, t, x, y)
+    if smallest is None:
+        print('clearance to the map: nothing of the map within half a metre, ever')
+    else:
+        d, t, x, y = smallest
+        print(f'smallest distance between the robot\'s outline (true pose) and the centre of an '
+              f'occupied cell of the map: {d:.3f} m, at ({x:.2f}, {y:.2f}), '
+              f'{t - rec.track[0][0]:.0f} s into the run (cells are {res} m; the cell reaches '
+              f'{res / 2:.3f} m further)')
+        print(f'pose samples (every 0.1 s, {samples}) at which the outline covered the centre of '
+              f'an occupied cell: {inside}')
+    if rec.nearest is not None:
+        print(f'smallest lidar reading of the run: {rec.nearest[0]:.3f} m, '
+              f'{rec.nearest[1] - rec.track[0][0]:.0f} s into the run (the lidar reports nothing '
+              'below 0.12 m; the body reaches 0.07 m ahead of it and behind it, 0.089 m beside)')
+    # Driven and not moving: the monitor published at least 0.03 m/s forward
+    # or backward throughout a second and the robot covered less than a
+    # quarter of that distance.
+    outputs = [(s, p[0]) for s, _, p in rec.raw_outputs]
+    t, t1, pushed, longest, run = rec.track[0][0], rec.track[-1][0], 0, 0, 0
+    while t + 1.0 <= t1:
+        sent = [v for s, v in outputs if t <= s < t + 1.0]
+        stuck = (len(sent) >= 5 and min(abs(v) for v in sent) >= 0.03
+                 and check_demo.path_length(rec.between(t, t + 1.0))
+                 < 0.25 * min(abs(v) for v in sent))
+        pushed += stuck
+        run = run + 1 if stuck else 0
+        longest = max(longest, run)
+        t += 1.0
+    print(f'seconds in which the monitor published at least 0.03 m/s throughout and the robot '
+          f'covered less than a quarter of it: {pushed} (longest run: {longest} s)')
+
+
 def tour_summary(rec, log_text, seconds):
     t0, t1 = rec.track[0][0], rec.track[-1][0]
     print(f'\nobserved {t1 - t0:.0f} s of simulated time')
@@ -156,13 +234,18 @@ def tour_summary(rec, log_text, seconds):
         print('readings of the last scan inside the rectangle of FootprintStop: '
               f'{rec.readings_in(-0.155, 0.305, -0.155, 0.155)}, of FootprintSlow: '
               f'{rec.readings_in(-0.205, 0.705, -0.205, 0.205)} (min_points is 6)')
+    clearance_summary(rec)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('what', choices=['box', 'tour'])
     parser.add_argument('--monitor', default='roslean_collision_monitor')
-    parser.add_argument('--zones', default='stop', choices=['stop', 'approach'])
+    parser.add_argument('--zones', default='stop', choices=['stop', 'slowdown', 'approach'])
+    parser.add_argument('--bringup', default='edited_copy',
+                        choices=['edited_copy', 'roslean_nav2_bringup'],
+                        help="what starts Nav2: the demo's edited copy of navigation_launch.py, "
+                             'or the package roslean_nav2_bringup')
     parser.add_argument('--seconds', type=float, default=300.0)
     parser.add_argument('--log')
     args = parser.parse_args()
@@ -170,11 +253,12 @@ def main():
     launch_file = os.path.join(get_package_share_directory('roslean_collision_monitor'),
                                'demo', 'gazebo', 'cm_nav2_launch.py')
     log = open(args.log, 'w+') if args.log else tempfile.TemporaryFile(mode='w+')
-    print(f'{args.what}: monitor {args.monitor}, zones {args.zones}, '
+    print(f'{args.what}: monitor {args.monitor}, zones {args.zones}, bringup {args.bringup}, '
           f"ROS_DOMAIN_ID={os.environ['ROS_DOMAIN_ID']}")
     demo = subprocess.Popen(
         ['ros2', 'launch', launch_file, 'gui:=false', f'monitor_package:={args.monitor}',
-         f'zones:={args.zones}', 'driver:=' + ('patrol' if args.what == 'box' else 'tour')],
+         f'zones:={args.zones}', f'bringup:={args.bringup}',
+         'driver:=' + ('patrol' if args.what == 'box' else 'tour')],
         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     rclpy.init()
     rec = Recorder()

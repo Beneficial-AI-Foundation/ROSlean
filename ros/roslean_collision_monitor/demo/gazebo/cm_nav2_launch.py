@@ -25,8 +25,17 @@ Arguments:
   monitor_package:=nav2_collision_monitor
                            upstream's node, from the unedited launch file,
                            with the same parameters: for comparison
+  zones:=slowdown          the slowdown zone of nav2_monitor.yaml alone, no
+                           stop zone (the default zones:=stop has both)
   zones:=approach          with upstream's node only: Nav2's own zone
                            (`FootprintApproach`), nothing edited at all
+  bringup:=roslean_nav2_bringup
+                           Nav2 is started by bringup_launch.py of the package
+                           roslean_nav2_bringup (docs/DROP_IN_COLLISION_MONITOR.md,
+                           option C) in the place of the copy edited here; the
+                           parameters are this demo's, for this robot. That
+                           package must be built; it is not a dependency of
+                           this one
   driver:=tour             (default) Nav2 drives: nav_tour.py sends goals
   driver:=patrol           the patrol script publishes on `cmd_vel_nav`, the
                            topic of Nav2's controller, and Nav2 gets no goal.
@@ -107,6 +116,11 @@ def nav2(context):
     nav2_launch = os.path.join(get_package_share_directory('nav2_bringup'), 'launch')
     package = LaunchConfiguration('monitor_package').perform(context)
     zones = LaunchConfiguration('zones').perform(context)
+    bringup = LaunchConfiguration('bringup').perform(context)
+    if bringup != 'edited_copy' and (package, zones) not in (
+            ('roslean_collision_monitor', 'stop'), ('roslean_collision_monitor', 'slowdown')):
+        raise RuntimeError(f'bringup:={bringup} starts the Lean node only, with zones:=stop '
+                           'or zones:=slowdown')
 
     navigation = os.path.join(nav2_launch, 'navigation_launch.py')
     if package == 'roslean_collision_monitor':
@@ -128,10 +142,32 @@ def nav2(context):
     else:
         params = edited_params(os.path.join(mux_gz, 'nav2_params.yaml'),
                                os.path.join(here, 'nav2_monitor.yaml'))
+        if zones == 'slowdown':
+            # FootprintStop stays defined in the file and is not read.
+            both = 'polygons: ["FootprintStop", "FootprintSlow"]'
+            with open(params) as f:
+                text = f.read()
+            assert text.count(both) == 1
+            with open(params, 'w') as f:
+                f.write(text.replace(both, 'polygons: ["FootprintSlow"]'))
     print(f'[cm_nav2_launch] monitor: {package}; navigation launch file: {navigation}; '
           f'parameters: {params}')
     common = {'params_file': params, 'use_sim_time': 'true', 'autostart': 'true',
               'use_composition': 'False'}
+    if bringup != 'edited_copy':
+        # Localisation and navigation from that package's bringup_launch.py,
+        # with its own defaults (no composition) and its own check of the
+        # parameters.
+        launch = os.path.join(get_package_share_directory(bringup), 'launch', 'bringup_launch.py')
+        print(f'[cm_nav2_launch] Nav2 is started by {launch}; parameters: {params}')
+        return [IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(launch),
+            launch_arguments={'map': os.path.join(mux_gz, 'apartment_map.yaml'),
+                              'params_file': params, 'use_sim_time': 'true',
+                              # That package has an argument `zones` too, with other
+                              # values; with params_file given it selects nothing.
+                              'zones': 'slowdown' if zones == 'slowdown' else 'stop_slowdown',
+                              }.items())]
     return [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(nav2_launch, 'localization_launch.py')),
@@ -159,7 +195,10 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('monitor_package', default_value='roslean_collision_monitor',
                               choices=['roslean_collision_monitor', 'nav2_collision_monitor']),
-        DeclareLaunchArgument('zones', default_value='stop', choices=['stop', 'approach']),
+        DeclareLaunchArgument('zones', default_value='stop',
+                              choices=['stop', 'slowdown', 'approach']),
+        DeclareLaunchArgument('bringup', default_value='edited_copy',
+                              choices=['edited_copy', 'roslean_nav2_bringup']),
         DeclareLaunchArgument('driver', default_value='tour',
                               choices=['tour', 'patrol', 'none']),
         DeclareLaunchArgument('gui', default_value='true'),

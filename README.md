@@ -29,6 +29,7 @@ site or its workflow.
 | `ros/roslean_core` | Compiles the C that Lean generates into `libroslean_core` and installs the Lean runtime it needs with it; C++ wrappers, FFI tests. |
 | `ros/roslean_twist_mux` | The mux node. A C++ shim with no arbitration logic: it reads parameters, subscribes, reads the clock and publishes. Its `demo/` holds the turtlesim and Gazebo demos. |
 | `ros/roslean_collision_monitor` | The collision monitor node, as an executable and as a component. A C++ shim: lifecycle, subscriptions, TF lookups and the transform of scan points (`include/…/transforms.hpp`), publishing. `test/` holds the harness that runs it beside upstream; `demo/gazebo/` the demo. |
+| `ros/roslean_nav2_bringup` | Launch files and parameter files that start Nav2 with the collision monitor above: `nav2_bringup`'s `navigation_launch.py` and `bringup_launch.py`, derived from the installed files when they are launched, and Nav2's `nav2_params.yaml` with `slowdown` (and optionally `stop`) zones in the place of `approach`. No node. [docs/DROP_IN_COLLISION_MONITOR.md, option C](docs/DROP_IN_COLLISION_MONITOR.md#option-c-the-bring-up-package). |
 | `overlay/opt_in/nav2_collision_monitor` | The same collision monitor as a package named `nav2_collision_monitor`, which shadows upstream's in a workspace, so that Nav2's unedited launch files start it: same executable, component, launch file and params file names. Not under `ros/`, not part of `pixi run build` (`pixi run build-overlay`), and skipped by colcon unless its directory is named. Read [docs/DROP_IN_COLLISION_MONITOR.md](docs/DROP_IN_COLLISION_MONITOR.md) first. |
 | `ros/roslean_noop` | Minimal node that calls a Lean function; the original pipeline check. |
 | `docker/` | Linux build and run-time image, both nodes. |
@@ -102,6 +103,14 @@ launch files, see
 [docs/DROP_IN_COLLISION_MONITOR.md](docs/DROP_IN_COLLISION_MONITOR.md). It
 starts with what the node refuses, which includes Nav2's default
 configuration.
+
+To start Nav2 as a whole with this node by one command there is the package
+`roslean_nav2_bringup`:
+`ros2 launch roslean_nav2_bringup bringup_launch.py map:=MAP.yaml`. It is
+Nav2's bring-up with this collision monitor and with zones the monitor
+accepts, not stock Nav2's behaviour: there is no `approach` zone, and the
+default has no stop zone
+([docs/DROP_IN_COLLISION_MONITOR.md, option C](docs/DROP_IN_COLLISION_MONITOR.md#option-c-the-bring-up-package)).
 
 ## Linux and deployment
 
