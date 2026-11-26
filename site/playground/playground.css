@@ -1,0 +1,100 @@
+/* The playground page. Builds on ../style.css: same tokens, fonts and frames.
+   The colours of the four monitor states and of the toy world are added here. */
+:root {
+  --pass: #1d4ed8;
+  --slow: #b45309;
+  --stop: #b91c1c;
+  --silent: #5b6b78;
+  --floor: #eef2f4;
+  --robot: #14212b;
+  --box: #ea580c;
+  --lidar: #0f6b57;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pass: #7cb0ff;
+    --slow: #fbbf24;
+    --stop: #f87171;
+    --silent: #9aa9b5;
+    --floor: #131d25;
+    --robot: #e6edf1;
+    --box: #fb923c;
+    --lidar: #5fd0b3;
+  }
+}
+
+.runs-here {
+  border: 1px solid var(--line); border-left: 3px solid var(--proved);
+  background: var(--surface); padding: 0.8rem 1rem; font-size: 0.95rem; margin: 1.5rem 0 0;
+}
+.runs-here p { margin: 0 0 0.5rem; }
+.runs-here p:last-child { margin-bottom: 0; }
+
+.pg button {
+  font: 500 0.95rem var(--font-body); padding: 0.5rem 0.9rem; min-height: 2.75rem;
+  border: 1px solid var(--muted); border-radius: 3px; background: var(--surface); color: var(--ink);
+  cursor: pointer;
+}
+.pg button:hover { border-color: var(--ink); }
+.pg button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.pg #estop[aria-pressed="true"] { background: var(--stop); border-color: var(--stop); color: var(--surface); }
+.pg button:disabled { opacity: 0.5; cursor: default; }
+
+.guide { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1.25rem 0 0.75rem; }
+.guide .spacer { flex: 1 1 0; }
+
+.stage-grid { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; gap: 1rem; align-items: start; }
+@media (max-width: 54rem) { .stage-grid { grid-template-columns: 1fr; } }
+
+.stage { position: relative; border: 1px solid var(--line); background: var(--floor); }
+.stage:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage canvas { display: block; width: 100%; height: auto; aspect-ratio: 45 / 32; touch-action: none; cursor: grab; }
+.stage .hint {
+  position: absolute; left: 0.5rem; bottom: 0.4rem; margin: 0; padding: 0.1rem 0.4rem;
+  font: 0.75rem var(--font-mono); color: var(--muted); background: var(--surface); border: 1px solid var(--line);
+  pointer-events: none;
+}
+.stage:focus .hint { color: var(--ink); border-color: var(--accent); }
+.stage .loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 1rem; text-align: center; background: var(--floor); color: var(--muted); margin: 0;
+}
+
+.panel { background: var(--surface); border: 1px solid var(--line); padding: 0.8rem 0.9rem; display: grid; gap: 0.9rem; font-size: 0.92rem; }
+.panel h2 { font: 500 0.72rem var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.25rem; }
+.panel .state { font: 600 1.05rem var(--font-mono); margin: 0 0 0.2rem; min-height: 1.6em; }
+.panel dl { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.1rem 0.6rem; font: 0.8rem/1.5 var(--font-mono); }
+.panel dt { color: var(--muted); }
+.panel dd { margin: 0; text-align: right; white-space: nowrap; }
+.s-pass { color: var(--pass); } .s-slowdown { color: var(--slow); } .s-stop { color: var(--stop); } .s-silent, .s-none { color: var(--silent); }
+
+.pad { display: grid; grid-template-columns: repeat(3, 2.9rem); gap: 0.3rem; }
+.pg .pad button { padding: 0; min-height: 2.9rem; font-size: 1.1rem; }
+
+#try { padding-top: 0.5rem; }
+.under { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; align-items: start; margin-top: 0.8rem; }
+@media (max-width: 34rem) { .under { grid-template-columns: 1fr; justify-items: center; } .under .strip { width: 100%; } }
+.strip { margin: 0; }
+.strip canvas { display: block; width: 100%; height: 3.6rem; min-height: 0; border: 1px solid var(--line); background: var(--surface); }
+.strip figcaption { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; margin-top: 0.4rem; font: 0.75rem var(--font-mono); color: var(--muted); }
+.key { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.key i { width: 0.8rem; height: 0.8rem; display: inline-block; border: 1px solid var(--line); }
+.k-pass { background: var(--pass); } .k-slowdown { background: var(--slow); } .k-stop { background: var(--stop); } .k-silent { background: var(--silent); }
+.k-planner { background: var(--proved); } .k-joystick { background: var(--accent); } .k-nobody { background: var(--bg); }
+
+.wiring-choice { border: 0; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.wiring-choice legend { padding: 0; font: 600 1.15rem var(--font-display); margin-bottom: 0.5rem; }
+.wiring-choice label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.1rem 0.6rem; padding: 0.7rem 0.9rem; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.wiring-choice label:has(input:checked) { border-color: var(--proved); box-shadow: inset 3px 0 0 var(--proved); }
+.wiring-choice input { margin: 0.35rem 0 0; accent-color: var(--proved); width: 1rem; height: 1rem; }
+.wiring-choice b { font-weight: 600; }
+.wiring-choice span { grid-column: 2; color: var(--muted); font-size: 0.95rem; }
+.wiring-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 22rem); gap: 1.25rem; align-items: start; }
+@media (max-width: 54rem) { .wiring-grid { grid-template-columns: 1fr; } }
+.flow.wiring { margin: 0; }
+.flow.wiring svg { min-width: 0; max-width: 22rem; margin: 0 auto; }
+.flow.wiring svg[hidden] { display: none; }
+.flow.wiring .flow-name { font-size: 15px; }
+.flow.wiring .flow-sub { font-size: 12px; }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

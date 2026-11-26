@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playground: ROSlean</title>
+<meta name="description" content="A small simulated robot in the browser. The decisions of twist_mux and of the collision monitor are made by the project's Lean code, compiled to WebAssembly; the robot and its world are a toy.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<link rel="stylesheet" href="../style.css?v=7">
+<link rel="stylesheet" href="playground.css?v=1">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap wide">
+    <a class="brand" href="../">ROS<span>lean</span></a>
+    <nav aria-label="Site">
+      <a href="../">Overview</a>
+      <a href="../twist_mux.html"><code>twist_mux</code></a>
+      <a href="../collision_monitor.html">Collision monitor</a>
+      <a href="https://github.com/Beneficial-AI-Foundation/ROSlean">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pg">
+  <div class="wrap wide hero">
+    <p class="eyebrow"><a href="../#packages">Packages</a> / Playground</p>
+    <h1>Playground</h1>
+    <p class="lede">A robot patrols a circle. Put a box in its way, drive it yourself, or press the emergency stop, and watch what <code>twist_mux</code> and the collision monitor decide.</p>
+
+    <div class="runs-here">
+      <p><strong>What runs here.</strong> Which command the mux forwards, and whether the monitor passes, slows, stops or withholds it, is decided by the same Lean functions the ROS nodes run, compiled to WebAssembly. The robot, the lidar, the boxes, the planner and the base are a toy simulation written for this page.</p>
+      <p>The theorems are about the Lean functions and are checked by Lean, not by this page: <a href="../twist_mux.html#theorem">the mux theorem</a>, <a href="../collision_monitor.html#cm-theorem">two of the monitor's</a>. What the C++ shim does in the real nodes (the scan's points, the transform, the slowdown multiplication) is done here by JavaScript, and is no more verified than the C++ is. <a href="../gaps.html">What is not proved and not covered.</a></p>
+    </div>
+  </div>
+
+  <div class="wrap wide">
+    <section id="try" aria-label="The simulation">
+      <div class="guide">
+        <button type="button" id="g-box">Put a box in the way</button>
+        <button type="button" id="g-joy">Take over with the joystick</button>
+        <button type="button" id="estop" aria-pressed="false">Emergency stop</button>
+        <span class="spacer"></span>
+        <button type="button" id="pause" aria-pressed="false">Pause</button>
+        <button type="button" id="reset">Reset</button>
+      </div>
+
+      <div class="stage-grid">
+        <div>
+          <div class="stage" id="stage" tabindex="0" role="group" aria-label="The floor, seen from above. When this has focus the arrow keys drive the robot." aria-describedby="live">
+            <canvas id="floor" width="900" height="640">A top view: the robot with its stop and slowdown zones, lidar points, and three boxes that can be dragged.</canvas>
+            <p class="hint" id="hint">click here, then arrow keys drive; or use the pad below</p>
+            <p class="loading" id="loading">Loading the Lean core…</p>
+          </div>
+          <div class="under">
+          <div class="pad" role="group" aria-label="Joystick">
+            <span></span><button type="button" data-k="up" aria-label="Forward">↑</button><span></span>
+            <button type="button" data-k="left" aria-label="Turn left">←</button><button type="button" data-k="down" aria-label="Back">↓</button><button type="button" data-k="right" aria-label="Turn right">→</button>
+          </div>
+          <figure class="strip">
+            <canvas id="strip" width="900" height="58" role="img" aria-label="The last 30 seconds: who drove, and the monitor's state."></canvas>
+            <figcaption>
+              <span>last 30 s, newest at the right.</span>
+              <span>top row, who drives:
+                <span class="key"><i class="k-planner"></i>planner</span>
+                <span class="key"><i class="k-joystick"></i>joystick</span>
+                <span class="key"><i class="k-nobody"></i>nobody</span></span>
+              <span>bottom row, monitor:
+                <span class="key"><i class="k-pass"></i>pass</span>
+                <span class="key"><i class="k-slowdown"></i>slowdown</span>
+                <span class="key"><i class="k-stop"></i>stop</span>
+                <span class="key"><i class="k-silent"></i>silent</span></span>
+            </figcaption>
+          </figure>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div>
+            <h2><code>twist_mux</code>: who drives</h2>
+            <p class="state" id="p-who">–</p>
+            <dl>
+              <dt>planner (priority 10)</dt><dd id="p-plan">–</dd>
+              <dt>joystick (100)</dt><dd id="p-joy">–</dd>
+              <dt>e-stop lock (255)</dt><dd id="p-lock">released</dd>
+            </dl>
+          </div>
+          <div>
+            <h2>Collision monitor</h2>
+            <p class="state" id="p-mon">–</p>
+            <dl>
+              <dt>command in</dt><dd id="p-in">–</dd>
+              <dt>published</dt><dd id="p-out">–</dd>
+              <dt>state topic</dt><dd id="p-state">–</dd>
+            </dl>
+          </div>
+          <div>
+            <h2>Base</h2>
+            <dl>
+              <dt>moving at</dt><dd id="p-base">–</dd>
+              <dt>watchdog</dt><dd id="p-dog">–</dd>
+              <dt>contact</dt><dd id="p-bump">none</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <p class="visually-hidden" id="live" aria-live="polite"></p>
+
+      <p class="note" style="margin-top:1rem"><strong>Silent.</strong> When the command it would publish has been zero for <code>stop_pub_timeout</code> (1 s), the monitor publishes nothing at all. The base's own watchdog then holds the robot. This is <a href="../gaps.html#stop-pub-timeout">Nav2's documented behaviour</a>, kept as upstream's.</p>
+    </section>
+
+    <section id="wiring">
+      <div class="wiring-grid">
+        <fieldset class="wiring-choice">
+          <legend>Where the monitor sits</legend>
+          <label>
+            <input type="radio" name="wiring" value="monitor-last" checked>
+            <b>Monitor last (as in this project's demo)</b>
+            <span>Planner and joystick go to the mux, and what the mux forwards goes through the monitor. Nothing reaches the base unchecked; inside a stop zone every command becomes zero, turning included, so a person who drives up to a box cannot steer away from it.</span>
+          </label>
+          <label>
+            <input type="radio" name="wiring" value="joystick-bypass">
+            <b>Joystick bypasses the monitor</b>
+            <span>Only the planner goes through the monitor; the joystick joins at the mux, after it. A person can always drive out of a stop zone, and into things.</span>
+          </label>
+          <p class="note" style="margin:0">Changing this restarts the simulation. The stop zone behaves as upstream's does; see <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/issues/14">issue 14</a>, <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/issues/15">issue 15</a> and <a href="../gaps.html#velocity-polygon">velocity polygons</a>.</p>
+        </fieldset>
+
+        <figure class="flow wiring">
+          <div class="flow-scroll">
+            <svg id="wire-a" viewBox="0 0 340 292" role="img" aria-labelledby="wire-a-t wire-a-d">
+              <title id="wire-a-t">Monitor last</title>
+              <desc id="wire-a-d">Planner, joystick and emergency stop feed twist_mux. Its output goes to the collision monitor, which also reads the lidar. The monitor's output goes to the base.</desc>
+              <defs><marker id="wire-a-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+              <g class="flow-other">
+                <rect x="76" y="8" width="100" height="42" rx="4"/><text x="126" y="34" class="flow-name">Planner</text>
+                <rect x="184" y="8" width="70" height="42" rx="4"/><text x="219" y="34" class="flow-name">Joystick</text>
+                <rect x="262" y="8" width="70" height="42" rx="4"/><text x="297" y="34" class="flow-name">E-stop</text>
+                <rect x="8" y="168" width="52" height="34" rx="4"/><text x="34" y="190" class="flow-name">Lidar</text>
+                <rect x="76" y="238" width="256" height="46" rx="4"/>
+                <text x="90" y="258" class="flow-name flow-start">Base</text>
+                <text x="90" y="275" class="flow-sub flow-start">stops after 0.3 s without a command</text>
+              </g>
+              <path class="flow-line" d="M126,50 L126,84" marker-end="url(#wire-a-head)"/>
+              <path class="flow-line" d="M219,50 L219,84" marker-end="url(#wire-a-head)"/>
+              <path class="flow-line flow-dash" d="M297,50 L297,84" marker-end="url(#wire-a-head)"/>
+              <g class="flow-lean">
+                <rect x="76" y="86" width="256" height="46" rx="4"/>
+                <text x="90" y="106" class="flow-name flow-start">twist_mux</text><text x="320" y="105" class="flow-tag flow-end">LEAN</text>
+                <text x="90" y="123" class="flow-sub flow-start">decides who drives</text>
+              </g>
+              <path class="flow-line" d="M204,132 L204,160" marker-end="url(#wire-a-head)"/>
+              <path class="flow-line" d="M60,185 L74,185" marker-end="url(#wire-a-head)"/>
+              <g class="flow-lean">
+                <rect x="76" y="162" width="256" height="46" rx="4"/>
+                <text x="90" y="182" class="flow-name flow-start">collision monitor</text><text x="320" y="181" class="flow-tag flow-end">LEAN</text>
+                <text x="90" y="199" class="flow-sub flow-start">decides what to publish</text>
+              </g>
+              <path class="flow-line" d="M204,208 L204,236" marker-end="url(#wire-a-head)"/>
+            </svg>
+            <svg id="wire-b" viewBox="0 0 340 292" role="img" aria-labelledby="wire-b-t wire-b-d" hidden>
+              <title id="wire-b-t">Joystick bypasses the monitor</title>
+              <desc id="wire-b-d">The planner feeds the collision monitor, which also reads the lidar. The monitor's output, the joystick and the emergency stop feed twist_mux. Its output goes to the base.</desc>
+              <defs><marker id="wire-b-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="flow-headfill"/></marker></defs>
+              <g class="flow-other">
+                <rect x="76" y="8" width="100" height="42" rx="4"/><text x="126" y="34" class="flow-name">Planner</text>
+                <rect x="184" y="8" width="70" height="42" rx="4"/><text x="219" y="34" class="flow-name">Joystick</text>
+                <rect x="262" y="8" width="70" height="42" rx="4"/><text x="297" y="34" class="flow-name">E-stop</text>
+                <rect x="8" y="92" width="52" height="34" rx="4"/><text x="34" y="114" class="flow-name">Lidar</text>
+                <rect x="76" y="238" width="256" height="46" rx="4"/>
+                <text x="90" y="258" class="flow-name flow-start">Base</text>
+                <text x="90" y="275" class="flow-sub flow-start">stops after 0.3 s without a command</text>
+              </g>
+              <path class="flow-line" d="M126,50 L126,84" marker-end="url(#wire-b-head)"/>
+              <path class="flow-line" d="M60,109 L74,109" marker-end="url(#wire-b-head)"/>
+              <g class="flow-lean">
+                <rect x="76" y="86" width="128" height="46" rx="4"/>
+                <text x="88" y="105" class="flow-name flow-start">collision</text>
+                <text x="88" y="123" class="flow-name flow-start">monitor</text>
+                <text x="194" y="104" class="flow-tag flow-end">LEAN</text>
+              </g>
+              <path class="flow-line" d="M126,132 L126,160" marker-end="url(#wire-b-head)"/>
+              <path class="flow-line" d="M219,50 L219,160" marker-end="url(#wire-b-head)"/>
+              <path class="flow-line flow-dash" d="M297,50 L297,160" marker-end="url(#wire-b-head)"/>
+              <g class="flow-lean">
+                <rect x="76" y="162" width="256" height="46" rx="4"/>
+                <text x="90" y="182" class="flow-name flow-start">twist_mux</text><text x="320" y="181" class="flow-tag flow-end">LEAN</text>
+                <text x="90" y="199" class="flow-sub flow-start">decides who drives</text>
+              </g>
+              <path class="flow-line" d="M204,208 L204,236" marker-end="url(#wire-b-head)"/>
+            </svg>
+          </div>
+          <figcaption id="wire-cap">Solid lines carry velocity commands; the dashed line is the lock.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="scope">
+      <h2>What is real here and what is not</h2>
+      <p>From the Lean code, through the same C interface the nodes use: the mux's priorities, timeouts and lock; the monitor's lifecycle state, which readings of a scan count, the conversion of each point to whole millimetres, the test of each point against each zone, <code>min_points</code>, the choice of action, and when a zero is withheld. Both are configured with the parameters of the project's Gazebo demo.</p>
+      <p>Not modelled here:</p>
+      <ul class="conds">
+        <li><strong>Late or missing scans.</strong> The Lean code checks the scan's age against <code>source_timeout</code> on every command, but this lidar always delivers on time, so that stop never occurs.</li>
+        <li><strong>Transforms.</strong> The lidar sits at a fixed offset from the base. There is no tf2, no failed lookup, and no correction for motion since the scan (the demo does not use it either): while the robot turns, the points the monitor works with lag behind the boxes by up to a fifth of a second, as drawn.</li>
+        <li><strong>Lifecycle.</strong> The monitor is configured and activated once, at the start and at each reset.</li>
+        <li><strong>The C library's arithmetic.</strong> The scan's points are computed by JavaScript's <code>cos</code> and <code>sin</code>, not the ones the C++ node calls; a point can differ in its last bits.</li>
+        <li><strong>Sensor noise.</strong> Every ray hits exactly where the box is.</li>
+        <li><strong>Physics.</strong> The robot moves exactly as commanded, and a box neither moves nor gives way.</li>
+        <li><strong>Message timing.</strong> Every message is handled at once and in order. Nothing is delayed or lost.</li>
+        <li><strong>The rest of the nodes.</strong> Circle zones, zones fed by a topic, a clock without a valid reading, parameter checks and logging are in the Lean code or the C++ shim and are not used on this page.</li>
+      </ul>
+      <p class="note">The WebAssembly build was compared with the native build on <span id="equiv-n">617,465</span> random calls of the C interface; every answer was the same. It was tried in headless Chrome only. The file is 1.44 MB (250 kB compressed). <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/tree/main/site/playground">How it is built and checked.</a></p>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap wide">
+    <span>ROSlean, a <a href="https://www.beneficialaifoundation.org/">Beneficial AI Foundation</a> project.</span>
+    <span><a href="../twist_mux.html">twist_mux</a> · <a href="../collision_monitor.html">Collision monitor</a></span>
+  </div>
+</footer>
+<script type="module" src="playground.js?v=1"></script>
+</body>
+</html>

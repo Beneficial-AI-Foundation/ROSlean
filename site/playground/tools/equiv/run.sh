@@ -50,4 +50,8 @@ for seed in $SEEDS; do
     fail=1
   fi
 done
+# shellcheck disable=SC2086
+echo "total: $(for s in $SEEDS; do cat "$W/cases.$s.txt"; done | wc -l | tr -d ' ') calls, $(for s in $SEEDS; do cat "$W/native.$s.txt"; done | wc -l | tr -d ' ') answers"
+for s in $SEEDS; do cat "$W/native.$s.txt"; done |
+  awk '{ k = $1; if (k == "out") k = "out kind " $2; n[k]++ } END { for (k in n) printf "    %-12s %d\n", k, n[k] }' | LC_ALL=C sort
 exit $fail

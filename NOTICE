@@ -7,3 +7,10 @@ roslean_twist_mux reimplements the arbitration rules of twist_mux
 (https://github.com/ros-teleop/twist_mux), which is also licensed under the
 Apache License, Version 2.0. The rules were read from the upstream source;
 docs/SPEC.md lists them and every deliberate difference.
+
+site/playground/roslean_core.wasm and roslean_core.js are compiled files that
+contain, besides this project's code, the runtime and standard library of
+Lean 4 (https://github.com/leanprover/lean4, Apache License, Version 2.0), one
+source file of libuv (MIT), and parts of Emscripten's system libraries (MIT or
+University of Illinois/NCSA; musl, MIT; LLVM runtime libraries, Apache License
+2.0 with LLVM exceptions). site/playground/THIRD_PARTY.md lists them.
