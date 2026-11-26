@@ -12,7 +12,7 @@ differ:
 
   params_file      defaults to this package's params/nav2_params.yaml: Nav2's
                    default parameters with zones this monitor accepts
-  zones            slowdown (default) or stop_slowdown: which of this
+  zones            stop_slowdown (default) or slowdown: which of this
                    package's two parameter files is the default
   check_params     true (default): a parameter file the monitor would refuse
                    is reported before anything is started

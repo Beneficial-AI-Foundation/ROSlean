@@ -384,12 +384,14 @@ collision_monitor:
     # only and refuses a file with an `approach` zone. Everything else in the
     # section is Nav2's: frames, topics, timeouts, the source.
     #
-    # This file (zones:=stop_slowdown) has a stop zone inside a slowdown
-    # zone. A stop zone answers every command with zero while it is occupied,
-    # also the turn or the retreat that would clear it and Nav2's recovery
-    # behaviours: under Nav2's planner a robot can end up standing for good
-    # (docs/DROP_IN_COLLISION_MONITOR.md, option C). The default file of this
-    # package, nav2_params.yaml (zones:=slowdown), has no stop zone.
+    # This file (zones:=slowdown) has one slowdown zone and NO STOP ZONE: the
+    # monitor makes the robot slower near obstacles and never stops it.
+    # Keeping the robot off obstacles is then left to Nav2's planner and
+    # controller. The default file of this package, nav2_params.yaml
+    # (zones:=stop_slowdown), has a stop zone as well; a stop zone answers
+    # every command with zero while it is occupied, also the turn that would
+    # clear it, and under Nav2's planner a robot can end up standing for good
+    # (docs/DROP_IN_COLLISION_MONITOR.md, option C).
     #
     # THE COORDINATES ARE AN EXAMPLE. They are margins around the footprint
     # the rest of this file assumes, a circle of radius 0.22 m about
@@ -405,18 +407,7 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
-    polygons: ["FootprintStop", "FootprintSlow"]
-    # Stop: 0.20 m beyond the footprint ahead, 0.05 m to the sides and
-    # behind. With `min_points` readings inside, every command becomes zero,
-    # turning and backing off included.
-    FootprintStop:
-      type: "polygon"
-      points: "[[0.42, 0.27], [0.42, -0.27], [-0.27, -0.27], [-0.27, 0.27]]"
-      action_type: "stop"
-      min_points: 6
-      visualize: True
-      polygon_pub_topic: "polygon_stop"
-      enabled: True
+    polygons: ["FootprintSlow"]
     # Slowdown: 0.60 m beyond the footprint ahead, 0.10 m to the sides and
     # behind. With `min_points` readings inside, every command is multiplied
     # by `slowdown_ratio`, whatever its direction.

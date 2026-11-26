@@ -97,7 +97,9 @@ class Params(unittest.TestCase):
             with open(os.path.join(PARAMS, name)) as f:
                 p = yaml.safe_load(f)['collision_monitor']['ros__parameters']
             zones[key] = [p[z]['action_type'] for z in p['polygons']]
-        self.assertEqual(zones, {'slowdown': ['slowdown'], 'stop_slowdown': ['stop', 'slowdown']})
+        self.assertEqual(zones, {'stop_slowdown': ['stop', 'slowdown'], 'slowdown': ['slowdown']})
+        self.assertEqual(next(iter(derive.ZONES)), 'stop_slowdown')   # the default
+        self.assertEqual(derive.ZONES['stop_slowdown'], 'nav2_params.yaml')
 
     def test_nav2s_file_is_refused(self):
         bad, note = derive.refusals(os.path.join(

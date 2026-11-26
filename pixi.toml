@@ -90,12 +90,13 @@ cm-gazebo-bringup-scenario = { cmd = "bash -c 'source install/setup.bash && ros2
 # Nav2 started by the package roslean_nav2_bringup, which has the Lean monitor wired in
 # (docs/DROP_IN_COLLISION_MONITOR.md, option C). nav2-bringup: the launch file alone, for a robot
 # or a simulator that is already running (pixi run nav2-bringup map:=MAP.yaml). nav2-bringup-sim:
-# the simulated apartment of cm-gazebo-bringup with Nav2 from that package, the slowdown zone
-# only and this robot's parameters; zones:=stop adds the stop zone. nav2-bringup-tour: the same
-# without windows for 300 simulated seconds, with a summary (--zones stop, --seconds N).
+# the simulated apartment of cm-gazebo-bringup with Nav2 from that package, this robot's
+# parameters, a stop and a slowdown zone; zones:=slowdown leaves the stop zone out.
+# nav2-bringup-tour: the same without windows for 300 simulated seconds, with a summary;
+# its --zones stop is the stop and the slowdown zone; add --zones slowdown for the other (--seconds N).
 nav2-bringup = { cmd = "bash -c 'source install/setup.bash && ros2 launch roslean_nav2_bringup bringup_launch.py \"$@\"' --", depends-on = ["build"] }
-nav2-bringup-sim = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_nav2_launch.py bringup:=roslean_nav2_bringup zones:=slowdown \"$@\"' --", depends-on = ["build"] }
-nav2-bringup-tour = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/nav2_observe.py tour --bringup roslean_nav2_bringup --zones slowdown \"$@\"' --", depends-on = ["build"] }
+nav2-bringup-sim = { cmd = "bash -c 'source install/setup.bash && ros2 launch $(ros2 pkg prefix roslean_collision_monitor)/share/roslean_collision_monitor/demo/gazebo/cm_nav2_launch.py bringup:=roslean_nav2_bringup \"$@\"' --", depends-on = ["build"] }
+nav2-bringup-tour = { cmd = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/nav2_observe.py tour --bringup roslean_nav2_bringup --zones stop \"$@\"' --", depends-on = ["build"] }
 # With cm-gazebo running: put a box 1.2 m in front of the robot; take it away.
 cm-box-drop = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py drop'"
 cm-box-remove = "bash -c 'source install/setup.bash && python3 ros/roslean_collision_monitor/demo/gazebo/obstacle.py remove'"

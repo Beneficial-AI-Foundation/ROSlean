@@ -34,8 +34,8 @@ COMPONENT = 'roslean_collision_monitor::CollisionMonitorNode'
 
 # zones:=<key> -> file in params/. The first is the default.
 ZONES = {
-    'slowdown': 'nav2_params.yaml',
-    'stop_slowdown': 'nav2_params_stop_slowdown.yaml',
+    'stop_slowdown': 'nav2_params.yaml',
+    'slowdown': 'nav2_params_slowdown.yaml',
 }
 
 # (what, pattern in Nav2's navigation_launch.py, replacement). Quotes and

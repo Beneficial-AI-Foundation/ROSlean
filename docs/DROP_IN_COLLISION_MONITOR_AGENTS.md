@@ -76,11 +76,12 @@ Stop before changing anything, and ask, in each of these cases:
     zones of their own: it brings its own zones, which are an example and
     are not Nav2's `approach` zone. Explain that and ask.
 13. Option C, and the human has not been told that its default parameter
-    file has **no stop zone** (the monitor slows the robot near obstacles
-    and never stops it), that `zones:=stop_slowdown` adds one with the
-    consequence of case 1, and that the zone coordinates are an example for
-    a robot of radius 0.22 m. Which zones, and their size, are the human's
-    decision.
+    file has a stop zone with the consequence of case 1 (under a planner
+    the robot can end up standing for good), that `zones:=slowdown` selects
+    a file with **no stop zone** (the monitor slows the robot near
+    obstacles and never stops it), and that the zone coordinates are an
+    example for a robot of radius 0.22 m. Which zones, and their size, are
+    the human's decision.
 
 ## 1. Preconditions
 
@@ -310,12 +311,12 @@ bringup_launch.py …` or `navigation_launch.py …`, the command becomes
 to tell the human, from
 [DROP_IN_COLLISION_MONITOR.md](DROP_IN_COLLISION_MONITOR.md#option-c-the-bring-up-package):
 `use_composition` defaults to `False` in both files; without `params_file`
-the package's own file is used (`zones:=slowdown`, the default, or
-`zones:=stop_slowdown`); with `params_file` the file is checked first.
+the package's own file is used (`zones:=stop_slowdown`, the default, or
+`zones:=slowdown`); with `params_file` the file is checked first.
 
 ```sh
 ros2 launch roslean_nav2_bringup bringup_launch.py --show-args | grep -A2 -e "'zones'" -e "'check_params'"
-# expected: both arguments, zones with the choices ['slowdown', 'stop_slowdown'] and the default 'slowdown'
+# expected: both arguments, zones with the choices ['stop_slowdown', 'slowdown'] and the default 'stop_slowdown'
 ros2 run roslean_nav2_bringup sync_params.py
 # expected, for each of the two files: "... equal to .../nav2_bringup/params/nav2_params.yaml outside the collision_monitor section"
 ```
@@ -476,7 +477,8 @@ keep or revert: upstream's node accepts both versions of the file.
 - The output of the parameter check (step 2) and of the dry run (step 5).
 - Which option, which files were edited (option B) or that none were.
 - Option C: which zones file is used, that its coordinates are an example,
-  and, for the default, that there is no stop zone.
+  and what its stop zone means under a planner (or, with `zones:=slowdown`,
+  that there is no stop zone).
 - The outputs of the checks in step 8, including the two diffs.
 - That `~/toggle`, run-time parameter changes and
   `~/collision_points_marker` are gone, and whether anything used them.

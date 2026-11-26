@@ -303,10 +303,11 @@ manager, no composition); it stays.
 
 **What it is not.** It is not stock Nav2. Nav2's default collision monitor
 zone is an `approach` zone, which this node does not have. The package
-starts Nav2 with other zones, so the robot is protected differently, and by
-default less: the default parameter file has a slowdown zone and **no stop
-zone**, so the monitor makes the robot slower near obstacles and never stops
-it. The zone coordinates in the package's parameter files are an example for
+starts Nav2 with other zones, so the robot is protected differently: the
+default parameter file has a stop zone inside a slowdown zone, and a stop
+zone answers every command with zero while something is in it, including
+the turn that would clear it, so that under a planner the robot can end up
+standing for good. The zone coordinates in the package's parameter files are an example for
 the robot Nav2's default parameters assume (a circle of radius 0.22 m); they
 are not fitted to your robot. Nothing here was run on a physical robot.
 
@@ -326,8 +327,8 @@ ros2 launch roslean_nav2_bringup navigation_launch.py
 | --- | --- |
 | `launch/navigation_launch.py` | `nav2_bringup`'s `navigation_launch.py` with the collision monitor taken from `roslean_collision_monitor`, as an executable and as a component |
 | `launch/bringup_launch.py` | `nav2_bringup`'s `bringup_launch.py` (localisation or SLAM, and navigation) including the file above. Localisation and SLAM are Nav2's launch files, unchanged |
-| `params/nav2_params.yaml` | `nav2_bringup`'s `nav2_params.yaml` with another `collision_monitor` section: one slowdown zone. The default |
-| `params/nav2_params_stop_slowdown.yaml` | the same with a stop zone inside the slowdown zone |
+| `params/nav2_params.yaml` | `nav2_bringup`'s `nav2_params.yaml` with another `collision_monitor` section: a stop zone inside a slowdown zone. The default |
+| `params/nav2_params_slowdown.yaml` | the same with the slowdown zone only |
 
 The launch files take the arguments of Nav2's files of the same name, with
 the same meaning (`namespace`, `use_sim_time`, `autostart`, `params_file`,
@@ -339,7 +340,7 @@ What differs from Nav2's:
 | Argument | Here | Why |
 | --- | --- | --- |
 | `params_file` | default: this package's `params/nav2_params.yaml` | Nav2's own file is refused by the node |
-| `zones` (new) | `slowdown` (default) or `stop_slowdown`: which of the package's two files is used when `params_file` is not given. Without effect when it is | see [Which zones](#which-zones-and-what-was-measured) |
+| `zones` (new) | `stop_slowdown` (default) or `slowdown`: which of the package's two files is used when `params_file` is not given. Without effect when it is | see [Which zones](#which-zones-and-what-was-measured) |
 | `use_composition` | default `False`, also in `bringup_launch.py` (Nav2: `True` there) | the stand-alone executable is the form that has every property claimed for the node: only it survives a `/clock` message with a negative time ([SPEC.md](collision_monitor/SPEC.md#deliberate-differences-in-roslean), D15 and ND10). `use_composition:=True` works: the component `roslean_collision_monitor::CollisionMonitorNode` is loaded into `nav2_container` |
 | `check_params` (new) | `true` (default): the parameter file is looked at before anything is started | see [Your own parameter file](#your-own-parameter-file) |
 
@@ -395,28 +396,32 @@ the one of `params/nav2_params.yaml` and fit the zones.
 
 Neither file does what `approach` does. The choice between them:
 
-- **`zones:=slowdown`** (default). One zone, 0.60 m beyond the assumed
-  footprint ahead and 0.10 m to the sides and behind; while six readings are
-  inside, every command is multiplied by 0.4. The monitor never stops the
-  robot. Keeping it off obstacles is left to Nav2's planner and controller
-  (the costmaps). If they command a collision, the monitor lets it happen at
-  0.4 times the speed.
-- **`zones:=stop_slowdown`**. In addition a stop zone, 0.20 m beyond the
-  footprint ahead and 0.05 m to the sides and behind: while six readings are
-  inside, every command becomes zero. That stops the robot before an
-  obstacle, and it also answers with zero the turn or the retreat that
-  would clear the zone, and Nav2's recovery behaviours. A robot can end up
-  standing for good.
+- **`zones:=stop_slowdown`** (default). A stop zone, 0.20 m beyond the
+  assumed footprint ahead and 0.05 m to the sides and behind, inside a
+  slowdown zone, 0.60 m ahead and 0.10 m to the sides and behind. While six
+  readings are in the slowdown zone every command is multiplied by 0.4;
+  while six are in the stop zone every command becomes zero. That stops the
+  robot before an obstacle, and it also answers with zero the turn or the
+  retreat that would clear the zone, and Nav2's recovery behaviours. Under
+  a planner the robot can end up standing for good: in the tours of
+  [TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md), section
+  7.5, it did in three runs of six (this node: 1, 1 and 8 places reached,
+  standing at the end of two runs; upstream's node on the same zones: 8, 2
+  and 5, standing in one; stock Nav2 with `approach`, one run: 11 places,
+  never standing).
+- **`zones:=slowdown`**. The slowdown zone alone. The monitor never stops
+  the robot. Keeping it off obstacles is left to Nav2's planner and
+  controller (the costmaps). If they command a collision, the monitor lets
+  it happen at 0.4 times the speed.
 
-What was measured is little, and it does not show that either choice "just
-works". In the simulated apartment of the tutorial, Nav2 drove a TurtleBot3
-on the tour of five places for 300 simulated seconds per run, started by
-this package's `bringup_launch.py`
-(`pixi run nav2-bringup-tour`, which is `nav2_observe.py tour --bringup
-roslean_nav2_bringup --zones slowdown`). The parameters were the demo's for
-that robot (radius 0.105 m, zones of `demo/gazebo/nav2_monitor.yaml`), not
-this package's example file. Slowdown zone only, three runs, one after the
-other:
+**What was measured with the slowdown zone alone.** In the simulated
+apartment of the tutorial, Nav2 drove a TurtleBot3 on the tour of five
+places for 300 simulated seconds per run, started by this package's
+`bringup_launch.py` (`pixi run nav2-bringup-tour --zones slowdown`, which is
+`nav2_observe.py tour --bringup roslean_nav2_bringup --zones slowdown`). The
+parameters were the demo's for that robot (radius 0.105 m, the slowdown
+zone of the demo's `nav2_monitor.yaml`), not this package's example file.
+Three runs, one after the other:
 
 | Run | Places reached | Distance driven | Time the monitor answered non-zero commands with zero | At the end | Closest to obstacles |
 | --- | --- | --- | --- | --- | --- |
@@ -424,40 +429,23 @@ other:
 | 2 | 1 | 14.6 m | 0 s | at (0.14, 2.69), 0.3 m from the second place, 0.50 m in the last 30 s: the planner failed 88 times to find a path to it | smallest lidar reading 0.154 m; outline 0.10 m from the nearest occupied cell |
 | 3 | 6 | 27.9 m | 0 s | driving | smallest lidar reading 0.120 m; outline 0.01 m from the nearest occupied cell |
 
-For comparison, the runs of
-[TUTORIAL_COLLISION_MONITOR.md](TUTORIAL_COLLISION_MONITOR.md), section 7.5,
-made earlier with the same script, world and duration (and without the
-last column, which is new): with the stop zone and the slowdown zone, this
-node reached 1, 1 and 8 places and stood for good at the end of two runs;
-upstream's node on the same zones 8, 2 and 5, standing in one; stock Nav2
-with `approach`, one run, 11 places, never standing.
+What the three runs show, and what they do not:
 
-How to read it:
-
-- Without the stop zone the monitor never held the robot, as intended. The
-  robot still did not get round reliably: one run of three ended with the
-  robot standing and one with the robot making no progress, both for
-  Nav2's own reasons (lost localisation in the first, no path in the
-  second). Three runs do not separate the two zone sets.
-- Without the stop zone the robot came closer to things. In two runs of
-  three something was at the lidar's lower limit of 0.12 m, where the body
-  is 0.03 to 0.05 m from it, and in the first run the robot ended inside
-  the area the map reserves for the table and chairs. The simulation has no
-  contact sensor: whether the robot touched anything is not known. In no
-  run was it driven for a second without moving. No run with `approach` or
-  with the stop zone has these closeness figures, so it is not known how
-  close those let the robot come on this tour.
-- The machine was shared and loaded (load average 2.5 to 6.5; another session was using it), which affects Nav2's timing. Runs with the stop
-  zone and with stock Nav2 made on the same day for comparison were lost:
-  the machine went to sleep during them.
-
-So `zones:=slowdown` is the default because a default that can leave the
-robot standing for good is worse to start with, not
-because it was shown to be safe or to work. It protects less than either
-alternative. For a robot that must be stopped before an obstacle by the
-monitor, use `zones:=stop_slowdown` and read
-[section 7.6 of the tutorial](TUTORIAL_COLLISION_MONITOR.md), or stay with
-stock Nav2 and `approach`.
+- The monitor never held the robot. Two runs of three still ended with the
+  robot stuck, for Nav2's own reasons: lost localisation in the first, no
+  path in the second.
+- The robot came within centimetres of obstacles with nothing to stop it.
+  In two runs something was at the lidar's lower limit of 0.12 m, where the
+  body is 0.03 to 0.05 m from it, and in the first run the robot ended
+  inside the area the map reserves for the table and chairs.
+- Whether the robot touched anything is not known: the simulation has no
+  contact sensor. In no run was it driven for a second without moving.
+- There is no baseline. The last column is new; no run with `approach` or
+  with the stop zone has it, so it is not known how close those let the
+  robot come on this tour. The runs with the stop zone and with `approach`
+  quoted above were made earlier, on another day.
+- Three runs, one machine (macOS arm64, load average 2.5 to 6.5 while
+  another session used it), the TurtleBot3's zones.
 
 #### Check that it is this node
 
@@ -635,7 +623,7 @@ the node and formed the bond with it, not that a robot was protected.
 | `colcon build` in a separate workspace that contains a copy of this repository: the command of option A; then the command of option B | 2 packages; 3 packages. A plain `colcon list` does not show the overlay |
 | The guard of the tests: `roslean_collision_monitor` configured with the overlay sourced; a test script asked for `nav2_collision_monitor/collision_monitor` with the overlay sourced | CMake warns and registers no test against upstream; the script exits with a message |
 | `check_params.py` on Nav2's `nav2_params.yaml` and `nav2_multirobot_params_1.yaml`, upstream's `collision_monitor_params.yaml`, and the parameter files of this repository | Refusal reported for the first two, none for the others, as the node decides |
-| `roslean_nav2_bringup`: `ros2 launch roslean_nav2_bringup navigation_launch.py`, default and `zones:=stop_slowdown`, each with `use_composition` `False` (default) and `True` (with a `nav2_container` started by hand) | `[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: …; nothing unsupported found`; `Managed nodes are active`; the node's `Monitoring …` line with 1 and 2 zones; stand-alone: the process is `…/lib/roslean_collision_monitor/collision_monitor`, `active`, bonded; composed: `Load Library: …/libcollision_monitor_component.dylib` |
+| `roslean_nav2_bringup`: `ros2 launch roslean_nav2_bringup navigation_launch.py`, with each of the two parameter files, each with `use_composition` `False` (default) and `True` (with a `nav2_container` started by hand) | `[roslean_nav2_bringup] collision monitor: roslean_collision_monitor; parameters: …; nothing unsupported found`; `Managed nodes are active`; the node's `Monitoring …` line with 1 and 2 zones; stand-alone: the process is `…/lib/roslean_collision_monitor/collision_monitor`, `active`, bonded; composed: `Load Library: …/libcollision_monitor_component.dylib` |
 | `ros2 launch roslean_nav2_bringup bringup_launch.py map:=…` with the demo's map (static transforms, no scan): default; `use_composition:=True zones:=stop_slowdown`; `slam:=True` without a map | `lifecycle_manager_localization` (with `slam:=True`: `lifecycle_manager_slam`) and `lifecycle_manager_navigation`: `Managed nodes are active`; the monitor as in the row above |
 | The same two launch files with Nav2's own `nav2_params.yaml` as `params_file` | The message under [Your own parameter file](#your-own-parameter-file), exit code 1, no node started. With `check_params:=false`: the node's own refusal and `Aborting bringup`, as under [Nav2's default parameters](#nav2s-default-parameters-the-expected-refusal) |
 | `bringup_launch.py` of `roslean_nav2_bringup` in the simulated apartment (Gazebo without a window, TurtleBot3, the demo's parameters for that robot), Nav2 driving the tour, 300 simulated seconds, slowdown zone only, three runs | The table under [Which zones, and what was measured](#which-zones-and-what-was-measured) |
@@ -650,7 +638,7 @@ Nav2's own `bringup_launch.py` as a whole through the overlay (it starts
 localisation and needs a map; the one of `roslean_nav2_bringup` was run);
 of `roslean_nav2_bringup`: `slam:=True` with a scan, a namespace, `use_respawn`, the
 package's own parameter files (the example zones for a radius of 0.22 m)
-with a robot or a simulator, `zones:=stop_slowdown` in the simulator through
+with a robot or a simulator, the stop zone in the simulator through
 this package, any `nav2_bringup` other than 1.3.12;
 Nav2 with a simulator or a robot through the overlay (the simulated runs of
 the tutorial use the renamed package and an edited copy of
