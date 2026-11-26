@@ -158,6 +158,19 @@
 
       <h3 id="cm-demo">The demo</h3>
       <p>In Gazebo, a script drops a box in front of a moving TurtleBot3. The monitor scales the command to 40% in the slowdown zone and demands zero in the stop zone. The robot resumes when the box is removed.</p>
+      <figure class="video">
+        <video id="cm-video" controls playsinline preload="metadata" width="1920" height="1080"
+               poster="media/collision_monitor_generated.jpg" src="media/collision_monitor_generated.mp4"
+               aria-describedby="cm-video-caption">
+          Your browser cannot play this video. Download it:
+          <a href="media/collision_monitor_generated.mp4">3D replay</a>,
+          <a href="media/collision_monitor_gazebo.mp4">Gazebo footage</a>.
+        </video>
+        <figcaption>
+          <span id="cm-video-caption" aria-live="polite">A 3D replay drawn from the messages of a recorded Gazebo run. The robot's path, the box, the lidar points and every decision of the monitor are the recorded ones.</span>
+          <button id="cm-video-switch" type="button">Watch the original Gazebo footage</button>
+        </figcaption>
+      </figure>
       <p>In the Nav2 variant, the lifecycle manager starts the Lean monitor with stop and slowdown zones. The box check passed ten times with ROSlean and four times upstream. One earlier attempt failed during Nav2 startup.</p>
       <p class="note">The stop zone also blocks reverse, turn, and recovery commands. <a href="https://github.com/Beneficial-AI-Foundation/ROSlean/blob/main/docs/TUTORIAL_COLLISION_MONITOR.md">Gazebo and Nav2 tutorial</a>.</p>
       <div class="links">
@@ -174,5 +187,36 @@
     <span><a href="twist_mux.html">twist_mux</a> · <a href="collision_monitor.html">Collision monitor</a></span>
   </div>
 </footer>
+<script>
+// Collision monitor video: the 3D replay by default; the button swaps in the Gazebo
+// footage of the same run (same length and timeline) and keeps the playback position.
+(function () {
+  var video = document.getElementById('cm-video');
+  var button = document.getElementById('cm-video-switch');
+  var caption = document.getElementById('cm-video-caption');
+  var takes = {
+    generated: { file: 'media/collision_monitor_generated', caption: caption.textContent, other: 'Watch the original Gazebo footage' },
+    gazebo: { file: 'media/collision_monitor_gazebo',
+      caption: 'The original footage of the same run: a TurtleBot3 in Gazebo, filmed by a camera in the simulated world. The zones and lidar points are drawn on top.',
+      other: 'Back to the 3D replay' }
+  };
+  var current = 'generated';
+  button.addEventListener('click', function () {
+    current = current === 'generated' ? 'gazebo' : 'generated';
+    var take = takes[current];
+    var at = video.currentTime, playing = !video.paused && !video.ended;
+    video.poster = take.file + '.jpg';
+    video.src = take.file + '.mp4';
+    if (at > 0) {
+      video.addEventListener('loadedmetadata', function () {
+        video.currentTime = at;
+        if (playing) video.play();
+      }, { once: true });
+    }
+    caption.textContent = take.caption;
+    button.textContent = take.other;
+  });
+})();
+</script>
 </body>
 </html>
